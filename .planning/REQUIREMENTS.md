@@ -17,7 +17,7 @@
 
 - [x] **WSB-01**: Service sends `connected` event after WebSocket connection is established for a call
 - [x] **WSB-02**: Service sends `start` event with streamSid, callSid, tracks, and mediaFormat before forwarding audio
-- [ ] **WSB-03**: Service forwards inbound RTP audio as `media` events (base64 mulaw payload) to the WebSocket
+- [x] **WSB-03**: Service forwards inbound RTP audio as `media` events (base64 mulaw payload) to the WebSocket
 - [x] **WSB-04**: Service sends `stop` event when the SIP call ends
 - [x] **WSB-05**: Service receives `media` events from WebSocket and converts them to outbound RTP to the caller
 - [x] **WSB-06**: Call metadata (From, To, SIP Call-ID) is included in `start.customParameters`
@@ -31,8 +31,8 @@
 
 ### Concurrency
 
-- [ ] **CON-01**: Multiple simultaneous calls are supported, each with an independent WebSocket connection
-- [ ] **CON-02**: Per-call RTP sockets are cleaned up after call ends (no file descriptor leak)
+- [x] **CON-01**: Multiple simultaneous calls are supported, each with an independent WebSocket connection
+- [x] **CON-02**: Per-call RTP sockets are cleaned up after call ends (no file descriptor leak)
 
 ### Configuration
 
@@ -109,13 +109,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SIP-05 | Phase 2 | Complete |
 | WSB-01 | Phase 2 | Complete |
 | WSB-02 | Phase 2 | Complete |
-| WSB-03 | Phase 2 | Pending |
+| WSB-03 | Phase 2 | Complete |
 | WSB-04 | Phase 2 | Complete |
 | WSB-05 | Phase 2 | Complete |
 | WSB-06 | Phase 2 | Complete |
 | WSB-07 | Phase 2 | Complete |
-| CON-01 | Phase 2 | Pending |
-| CON-02 | Phase 2 | Pending |
+| CON-01 | Phase 2 | Complete |
+| CON-02 | Phase 2 | Complete |
 | LCY-01 | Phase 2 | Pending |
 | WSR-01 | Phase 3 | Pending |
 | WSR-02 | Phase 3 | Pending |

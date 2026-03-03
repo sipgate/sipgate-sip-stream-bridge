@@ -52,7 +52,7 @@ Plans:
 - [ ] 02-01-PLAN.md — SDP offer parser + answer builder, per-call RTP handler with DTMF detection
 - [ ] 02-02-PLAN.md — WS client with Twilio Media Streams protocol (connected/start/media/stop/dtmf)
 - [ ] 02-03-PLAN.md — SIP UserAgent INVITE/ACK/BYE/OPTIONS dispatch extension + unregister
-- [ ] 02-04-PLAN.md — CallManager: INVITE lifecycle orchestration, CallSession map, audio bridge wiring
+- [x] 02-04-PLAN.md — CallManager: INVITE lifecycle orchestration, CallSession map, audio bridge wiring
 - [ ] 02-05-PLAN.md — Entrypoint wiring + SIGTERM/SIGINT graceful shutdown (terminateAll + unregister)
 
 ### Phase 3: Resilience
@@ -91,6 +91,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/3 | In Progress|  |
-| 2. Core Bridge | 3/5 | In Progress|  |
+| 2. Core Bridge | 4/5 | In Progress|  |
 | 3. Resilience | 0/3 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |

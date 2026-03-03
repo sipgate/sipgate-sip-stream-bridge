@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T13:10:19Z"
+last_updated: "2026-03-03T13:14:44Z"
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 
 ## Current Position
 
-Phase: 2 of 4 (Core Bridge)
-Plan: 4 of 4 in current phase (02-01 completed last, out-of-order wave execution)
-Status: In progress
-Last activity: 2026-03-03 — Completed 02-01 (SDP/RTP primitives: parseSdpOffer, buildSdpAnswer, createRtpHandler)
+Phase: 2 of 4 (Core Bridge) — COMPLETE
+Plan: 4 of 4 in current phase (02-04 completed — CallManager)
+Status: Phase 2 complete, ready for Phase 3
+Last activity: 2026-03-03 — Completed 02-04 (CallManager: full INVITE lifecycle, bidirectional audio bridge, BYE/disconnect teardown)
 
-Progress: [██████░░░░] 50%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [██████░░░░] 50%
 
 *Updated after each plan completion*
 | Phase 02-core-bridge P03 | 1 | 1 tasks | 1 files |
+| Phase 02-core-bridge P04 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,10 @@ Recent decisions affecting current work:
 - [02-01]: Extension-header-aware RTP parser — CC and X bits handled per RFC 3550 to avoid silent data corruption
 - [02-01]: dispose() swallows socket.close() errors — ENOTCONN when already closed should not propagate as unhandled rejection
 - [02-01]: DTMF emitted only on End=true — telephone-event is retransmitted multiple times; emitting on each packet causes duplicates
+- [02-04]: SDP_CONTACT_IP ?? '127.0.0.1' fallback in terminateSession — safe default matching outbound SIP socket IP logic
+- [02-04]: sendBye=false path for remote BYE — 200 OK already sent; outbound BYE would be RFC 3261 protocol violation
+- [02-04]: onDisconnect wired after session stored — ensures terminateSession finds session in Map and doesn't silently no-op
+- [02-04]: CallManager.getCallbacks() decouples SIP event routing from socket implementation — clean boundary for Phase 3 wiring
 
 ### Pending Todos
 
@@ -98,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 02-01-PLAN.md — SDP/RTP primitives (parseSdpOffer, buildSdpAnswer, createRtpHandler)
+Stopped at: Completed 02-04-PLAN.md — CallManager (full INVITE lifecycle, bidirectional audio bridge)
 Resume file: None
