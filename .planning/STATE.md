@@ -10,27 +10,27 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 1 of 4 (Foundation)
-Plan: 1 of 3 in current phase
+Plan: 3 of 3 in current phase
 Status: In progress
-Last activity: 2026-03-03 — Completed 01-01 (project scaffold + config/logger modules)
+Last activity: 2026-03-03 — Completed 01-03 (Docker infrastructure: Dockerfile, docker-compose.yml, .env.example)
 
-Progress: [█░░░░░░░░░] 8%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
+- Total plans completed: 2
 - Average duration: 2 min
-- Total execution time: 0.03 hours
+- Total execution time: 0.07 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation | 1 | 2 min | 2 min |
+| 01-foundation | 2 | 4 min | 2 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2 min)
+- Last 5 plans: 01-01 (2 min), 01-03 (2 min)
 - Trend: -
 
 *Updated after each plan completion*
@@ -50,6 +50,9 @@ Recent decisions affecting current work:
 - [01-01]: z.ipv4() replaces z.string().ip() — Zod 4 changed IP validation to standalone type
 - [01-01]: console.error for config failures — pino not yet initialized at config load time
 - [01-01]: No setInterval keepalive in Phase 1 — process exits after logging; Phase 2 adds real async activity
+- [01-03]: 4-stage Dockerfile (base/fetcher/builder/production) — pnpm fetch layer caches only on lockfile changes
+- [01-03]: network_mode: host in docker-compose.yml — required for Phase 2 RTP (Docker port-proxy adds ~10ms UDP jitter)
+- [01-03]: MEDIUM confidence warning on SIP_DOMAIN and SIP_REGISTRAR in .env.example — verify from sipgate portal
 
 ### Pending Todos
 
@@ -65,5 +68,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 01-01-PLAN.md — project scaffold, config/logger modules implemented
+Stopped at: Completed 01-03-PLAN.md — Docker infrastructure (Dockerfile, docker-compose.yml, .env.example)
 Resume file: None

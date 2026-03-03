@@ -44,9 +44,9 @@
 
 ### Docker
 
-- [ ] **DCK-01**: Service is packaged as a Docker image using multi-stage build on node:22-alpine
-- [ ] **DCK-02**: Docker Compose file is provided with `network_mode: host` for Linux production use
-- [ ] **DCK-03**: Dockerfile documents RTP port range requirement in comments
+- [x] **DCK-01**: Service is packaged as a Docker image using multi-stage build on node:22-alpine
+- [x] **DCK-02**: Docker Compose file is provided with `network_mode: host` for Linux production use
+- [x] **DCK-03**: Dockerfile documents RTP port range requirement in comments
 
 ### Observability
 
@@ -100,9 +100,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-05 | Phase 1 | Complete |
 | SIP-01 | Phase 1 | Pending |
 | SIP-02 | Phase 1 | Pending |
-| DCK-01 | Phase 1 | Pending |
-| DCK-02 | Phase 1 | Pending |
-| DCK-03 | Phase 1 | Pending |
+| DCK-01 | Phase 1 | Complete |
+| DCK-02 | Phase 1 | Complete |
+| DCK-03 | Phase 1 | Complete |
 | OBS-01 | Phase 1 | Complete |
 | SIP-03 | Phase 2 | Pending |
 | SIP-04 | Phase 2 | Pending |
