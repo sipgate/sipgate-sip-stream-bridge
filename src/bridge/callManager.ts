@@ -55,6 +55,8 @@ export interface CallSession {
   okRetransmitTimer: ReturnType<typeof setTimeout> | null;
   /** True while WS reconnect loop is running — gates RTP audio forwarding (WSR-03) */
   wsReconnecting: boolean;
+  /** Silence injection interval during WS reconnect — cleared on teardown to prevent send-after-dispose crash */
+  silenceInterval: ReturnType<typeof setInterval> | null;
 }
 
 const USER_AGENT = 'audio-dock/0.1.0';
@@ -430,6 +432,7 @@ export class CallManager {
       log: callLog,
       okRetransmitTimer: null,
       wsReconnecting: false,
+      silenceInterval: null,
     };
     this.sessions.set(sipCallId, session);
 
@@ -576,6 +579,13 @@ export class CallManager {
       session.okRetransmitTimer = null;
     }
 
+    // Cancel silence injection interval if WS reconnect loop is in progress —
+    // prevents ERR_SOCKET_DGRAM_NOT_RUNNING if BYE arrives while the loop is sleeping
+    if (session.silenceInterval !== null) {
+      clearInterval(session.silenceInterval);
+      session.silenceInterval = null;
+    }
+
     session.log.info({ event: 'call_ended', reason, sendBye }, 'Call terminated');
 
     if (sendBye) {
@@ -621,12 +631,18 @@ export class CallManager {
     const started   = Date.now();
     let   delay     = 1_000;
 
-    // Send μ-law silence to caller throughout reconnect window — prevents dead-air
-    const silenceInterval = setInterval(() => {
+    // Send μ-law silence to caller throughout reconnect window — prevents dead-air.
+    // Stored on session so terminateSession can clear it if BYE arrives mid-sleep.
+    session.silenceInterval = setInterval(() => {
       session.rtp.sendAudio(Buffer.alloc(160, 0xff));
     }, 20);
 
-    const cleanup = (): void => clearInterval(silenceInterval);
+    const cleanup = (): void => {
+      if (session.silenceInterval !== null) {
+        clearInterval(session.silenceInterval);
+        session.silenceInterval = null;
+      }
+    };
 
     const attempt = async (n: number): Promise<void> => {
       // BYE race guard: if session was terminated externally, exit without zombie reconnect

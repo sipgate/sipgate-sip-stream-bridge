@@ -7,14 +7,13 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx --watch src/index.ts",
+    "dev": "tsx --env-file=.env --watch src/index.ts",
     "build": "tsup src/index.ts --format esm --out-dir dist",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "pino": "^10.3.1",
-    "sip.js": "^0.21.2",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
   },

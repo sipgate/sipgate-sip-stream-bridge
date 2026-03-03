@@ -66,6 +66,8 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
   private outSeq = 0;
   private outTimestamp = 0;
   private readonly outSsrc: number;
+  /** RTP timestamp of the last emitted DTMF event — deduplicates RFC 4733 redundant End packets */
+  private lastDtmfTimestamp = -1;
 
   constructor(
     private readonly socket: dgram.Socket,
@@ -145,15 +147,19 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
       return;
     }
 
-    if (payloadType === 101) {
-      // RFC 4733 telephone-event
+    if (payloadType === 113) {
+      // RFC 4733 telephone-event (sipgate uses PT 113 for telephone-event/8000)
       const payload = buf.subarray(headerLen);
       if (payload.length < 4) return;
       const isEnd = (payload[1] & 0x80) !== 0;
       if (isEnd) {
         const eventCode = payload[0];
         const digit = DTMF_DIGIT[eventCode];
-        if (digit !== undefined) {
+        // RFC 4733 §2.5: senders MUST transmit 3 redundant End packets with the same
+        // RTP timestamp. Deduplicate by timestamp so only one event is emitted per keypress.
+        const rtpTimestamp = buf.readUInt32BE(4);
+        if (digit !== undefined && rtpTimestamp !== this.lastDtmfTimestamp) {
+          this.lastDtmfTimestamp = rtpTimestamp;
           this.emit('dtmf', { digit });
         }
       }

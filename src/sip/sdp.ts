@@ -44,10 +44,10 @@ export function buildSdpAnswer(localIp: string, localRtpPort: number): string {
     's=audio-dock',
     `c=IN IP4 ${localIp}`,
     't=0 0',
-    `m=audio ${localRtpPort} RTP/AVP 0 101`,
+    `m=audio ${localRtpPort} RTP/AVP 0 113`,
     'a=rtpmap:0 PCMU/8000',
-    'a=rtpmap:101 telephone-event/8000',
-    'a=fmtp:101 0-16',
+    'a=rtpmap:113 telephone-event/8000',
+    'a=fmtp:113 0-16',
     'a=ptime:20',
     'a=sendrecv',
   ];

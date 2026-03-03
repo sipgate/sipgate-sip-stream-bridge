@@ -11,9 +11,6 @@ importers:
       pino:
         specifier: ^10.3.1
         version: 10.3.1
-      sip.js:
-        specifier: ^0.21.2
-        version: 0.21.2
       ws:
         specifier: ^8.19.0
         version: 8.19.0
@@ -539,10 +536,6 @@ packages:
     resolution: {integrity: sha512-b3rppTKm9T+PsVCBEOUR46GWI7fdOs00VKZ1+9c1EWDaDMvjQc6tUwuFyIprgGgTcWoVHSKrU8H31ZHA2e0RHA==}
     engines: {node: '>=10'}
 
-  sip.js@0.21.2:
-    resolution: {integrity: sha512-tSqTcIgrOd2IhP/rd70JablvAp+fSfLSxO4hGNY6LkWRY1SKygTO7OtJEV/BQb8oIxtMRx0LE7nUF2MaqGbFzA==}
-    engines: {node: '>=10.0'}
-
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
 
@@ -1003,8 +996,6 @@ snapshots:
       fsevents: 2.3.3
 
   safe-stable-stringify@2.5.0: {}
-
-  sip.js@0.21.2: {}
 
   sonic-boom@4.2.1:
     dependencies:
