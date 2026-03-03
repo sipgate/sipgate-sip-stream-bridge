@@ -469,9 +469,12 @@ export class CallManager {
     const cancelOk = buildResponse({ status: 200, reason: 'OK', vias, from, to, callId, cseq });
     this.sipHandle.sendRaw(Buffer.from(cancelOk), rinfo.port, rinfo.address);
 
-    if (this.sessions.has(callId)) {
-      // 200 OK already sent — CANCEL loses the race; UAC will send ACK + BYE
-      this.log.info({ event: 'cancel_ignored', callId }, 'CANCEL received after 200 OK — ignoring (200 wins)');
+    const session = this.sessions.get(callId);
+    if (session) {
+      // 200 OK was sent but never reached the caller (otherwise they'd send BYE, not CANCEL).
+      // Terminate the session and let the WS backend know via the stop event.
+      this.log.info({ event: 'cancel_after_200', callId }, 'CANCEL received after 200 OK — terminating session');
+      this.terminateSession(session, 'remote_cancel', false);
       return;
     }
 
