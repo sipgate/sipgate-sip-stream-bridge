@@ -23,7 +23,7 @@ See archive: `.planning/milestones/v1.0-ROADMAP.md`
 **Milestone Goal:** Rewrite audio-dock in Go — same external interface, deterministic audio, static binary Docker image, observability included.
 
 - [x] **Phase 4: Go Scaffold** - Go module, zerolog structured logging, fail-fast config validation, Docker static binary
-- [ ] **Phase 5: SIP Registration** - Connect to sipgate, register with Digest Auth, automatic re-registration loop
+- [x] **Phase 5: SIP Registration** - Connect to sipgate, register with Digest Auth, automatic re-registration loop
 - [ ] **Phase 6: Inbound Call + RTP Bridge** - Accept INVITE, negotiate PCMU, bidirectional RTP↔WebSocket bridge with full Twilio Media Streams protocol
 - [ ] **Phase 7: WebSocket Resilience + DTMF** - Reconnect with exponential backoff, silence drop during reconnect, DTMF forwarding
 - [ ] **Phase 8: Lifecycle + Observability** - Graceful SIGTERM shutdown, /health and /metrics HTTP endpoints
@@ -56,7 +56,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 05-01-PLAN.md — sipgo Agent (UA/Server/Client) + Registrar (REGISTER/DoDigestAuth/reregisterLoop/Unregister) + main.go wiring (SIP-01, SIP-02)
+- [x] 05-01-PLAN.md — sipgo Agent (UA/Server/Client) + Registrar (REGISTER/DoDigestAuth/reregisterLoop/Unregister) + main.go wiring (SIP-01, SIP-02)
 
 ### Phase 6: Inbound Call + RTP Bridge
 **Goal**: The service accepts an inbound SIP INVITE, negotiates PCMU, opens a per-call RTP socket, connects a dedicated WebSocket, and forwards audio bidirectionally — the full Twilio Media Streams protocol (connected/start/media/stop) flows end-to-end; multiple simultaneous calls work independently; all resources are cleaned up when a call ends
@@ -114,7 +114,7 @@ Plans:
 | 2. Core Bridge | v1.0 | 5/5 | Complete | 2026-03-03 |
 | 3. Resilience | v1.0 | 2/2 | Complete | 2026-03-03 |
 | 4. Go Scaffold | v2.0 | Complete    | 2026-03-03 | 2026-03-03 |
-| 5. SIP Registration | v2.0 | 0/1 | Not started | - |
+| 5. SIP Registration | v2.0 | 1/1 | Complete | 2026-03-03 |
 | 6. Inbound Call + RTP Bridge | v2.0 | 0/3 | Not started | - |
 | 7. WebSocket Resilience + DTMF | v2.0 | 0/2 | Not started | - |
 | 8. Lifecycle + Observability | v2.0 | 0/2 | Not started | - |

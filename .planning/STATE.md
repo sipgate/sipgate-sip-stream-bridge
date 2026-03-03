@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
 status: in_progress
-last_updated: "2026-03-03T22:06:30Z"
+last_updated: "2026-03-03T22:30:00Z"
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 10
-  completed_plans: 2
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
 ---
 
 # Project State
@@ -18,29 +18,30 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 4 — Go Scaffold (complete)
+**Current focus:** Phase 5 — SIP Registration (05-01 complete)
 
 ## Current Position
 
-Phase: 4 of 8 (Go Scaffold)
-Plan: 2 of 2 in current phase (04-02 complete — phase complete)
+Phase: 5 of 8 (SIP Registration)
+Plan: 1 of 1 in current phase (05-01 complete)
 Status: In progress
-Last activity: 2026-03-03 — 04-02 Docker build complete (FROM scratch Go image 1.06 MB, CA certs, docker-compose.yml)
+Last activity: 2026-03-03 — 05-01 SIP registration complete (sipgo Agent + Registrar + Digest Auth + re-register loop)
 
-Progress: ██░░░░░░░░ 20%
+Progress: ███░░░░░░░ 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2 (v2.0); 10 (v1.0)
-- Average duration: ~3.5min (v2.0)
-- Total execution time: ~7min
+- Total plans completed: 3 (v2.0); 10 (v1.0)
+- Average duration: ~3.3min (v2.0)
+- Total execution time: ~10min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 04-go-scaffold | 2/2 | ~7min | ~3.5min |
+| 05-sip-registration | 1/1 | ~3min | ~3min |
 
 *Updated after each plan completion*
 
@@ -65,6 +66,11 @@ v2.0 decisions:
 - [04-02] GOARCH=amd64 explicit in Dockerfile — prevents exec format errors from ARM Mac hosts building for Linux CI/prod
 - [04-02] CA certs included in Phase 4 Dockerfile — avoids Docker layer invalidation when Phase 6 TLS is added
 - [04-02] No RTP EXPOSE range in Dockerfile — large ranges stall Docker Desktop port proxy on macOS; Phase 6 adds with warning
+- [05-01] 75% re-register interval — matches diago's calcRetry pattern (confirmed from source); SIP-02 satisfied
+- [05-01] nil client guard in doRegister — sipgo Client.Do panics on nil receiver; guard returns proper error (Rule 1 fix)
+- [05-01] Server.Close() not used — returns nil in sipgo v1.2.0; shutdown via ctx cancel + ua.Close()
+- [05-01] slog-zerolog bridge added — sipgo slog output flows as zerolog JSON; avoids fragmented log stream
+- [05-01] pion/sdp + pion/rtp added in Phase 5 — avoids go.mod changes mid Phase 6 sprint
 
 ### Pending Todos
 
@@ -72,12 +78,12 @@ None.
 
 ### Blockers/Concerns
 
-- [Phase 5] sipgo graceful shutdown (#116) not built-in — requires manual BYE drain loop in CallManager (LCY-01 mitigation already planned in Phase 8)
+- [Phase 6] sipgo graceful shutdown (#116) not built-in — requires manual BYE drain loop in CallManager (LCY-01 mitigation already planned in Phase 8)
 - [Phase 6] DTMF PT mismatch risk: sipgate uses PT 113; must extract PT from SDP offer, never hardcode
-- [Phase 5] Verify sipgate server-granted Expires value — log it on first registration to confirm re-register timer is firing at correct interval
+- [Phase 5 validation] Verify sipgate server-granted Expires value — log it on first live registration to confirm re-register timer interval (server_expires_s field logged)
 
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 04-02-PLAN.md — Docker build complete. Phase 04-go-scaffold done. Next: Phase 05 (SIP UA).
+Stopped at: Completed 05-01-PLAN.md — SIP Agent + Registrar + Digest Auth + re-register loop. Phase 05 Plan 01 done. Next: Phase 06 (Call Handling / INVITE handler).
 Resume file: None
