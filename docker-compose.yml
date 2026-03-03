@@ -1,0 +1,23 @@
+# docker-compose.yml — Linux production configuration
+#
+# network_mode: host gives the container direct access to the host network stack.
+# This is REQUIRED for RTP media (Phase 2): Docker's port-proxy adds ~10ms jitter
+# to every UDP packet and prevents the container from binding to ephemeral UDP ports.
+#
+# macOS / Windows: network_mode: host is silently ignored by Docker Desktop.
+# For Phase 2 RTP testing on macOS, use docker-compose.override.yml:
+#
+#   services:
+#     audio-dock:
+#       network_mode: bridge
+#       ports:
+#         - "10000-10099:10000-10099/udp"
+#
+services:
+  audio-dock:
+    build: .
+    image: audio-dock:latest
+    network_mode: host
+    env_file:
+      - .env
+    restart: unless-stopped
