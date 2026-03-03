@@ -91,6 +91,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/3 | In Progress|  |
-| 2. Core Bridge | 2/5 | In Progress|  |
+| 2. Core Bridge | 3/5 | In Progress|  |
 | 3. Resilience | 0/3 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |

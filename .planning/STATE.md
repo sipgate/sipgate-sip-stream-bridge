@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T13:11:07.165Z"
+last_updated: "2026-03-03T13:10:19Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 2 of 4 (Core Bridge)
-Plan: 3 of 4 in current phase
+Plan: 4 of 4 in current phase (02-01 completed last, out-of-order wave execution)
 Status: In progress
-Last activity: 2026-03-03 — Completed 02-03 (SIP inbound dispatch: SipCallbacks + sendRaw + unregister on SipHandle)
+Last activity: 2026-03-03 — Completed 02-01 (SDP/RTP primitives: parseSdpOffer, buildSdpAnswer, createRtpHandler)
 
-Progress: [█████░░░░░] 41%
+Progress: [██████░░░░] 50%
 
 ## Performance Metrics
 
@@ -79,6 +79,10 @@ Recent decisions affecting current work:
 - [Phase 02-core-bridge]: SipCallbacks optional on createSipUserAgent — backward compatible, existing 2-arg call sites still compile
 - [Phase 02-core-bridge]: unregister() is fire-and-forget (Promise.resolve()) — shutdown drain timeout covers the response window
 - [Phase 02-core-bridge]: OPTIONS auto-responded inline (no callback) — keepalive probes are transport-layer, not call logic
+- [02-01]: as number assertion on nextPort counter — TypeScript cannot narrow mutable module variables through a guard; explicit cast is minimal correct fix
+- [02-01]: Extension-header-aware RTP parser — CC and X bits handled per RFC 3550 to avoid silent data corruption
+- [02-01]: dispose() swallows socket.close() errors — ENOTCONN when already closed should not propagate as unhandled rejection
+- [02-01]: DTMF emitted only on End=true — telephone-event is retransmitted multiple times; emitting on each packet causes duplicates
 
 ### Pending Todos
 
@@ -94,5 +98,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 02-03-PLAN.md — SIP inbound dispatch + SipHandle extension (sendRaw/unregister/SipCallbacks)
+Stopped at: Completed 02-01-PLAN.md — SDP/RTP primitives (parseSdpOffer, buildSdpAnswer, createRtpHandler)
 Resume file: None
