@@ -1,14 +1,22 @@
 import { config } from './config/index.js';
 import { createChildLogger } from './logger/index.js';
+import { createSipUserAgent } from './sip/userAgent.js';
 
 const log = createChildLogger({ component: 'main' });
 
 log.info(
   { event: 'startup', sipUser: config.SIP_USER, sipDomain: config.SIP_DOMAIN },
-  'audio-dock starting — config validated',
+  'audio-dock starting'
 );
 
-// Phase 2 will call createSipUserAgent here.
-// For Phase 1, keep the process alive so Docker can observe it running.
-log.info({ event: 'ready' }, 'Waiting for SIP setup (Phase 2)');
-// process stays alive via event loop; no explicit blocking needed.
+async function main(): Promise<void> {
+  const _sipHandle = await createSipUserAgent(config, createChildLogger({ component: 'sip' }));
+  log.info({ event: 'sip_booted' }, 'SIP UserAgent started — waiting for REGISTER confirmation');
+  // The SIP WebSocket transport keeps the Node.js event loop alive.
+  // Phase 2 will add INVITE handlers here.
+}
+
+main().catch((err: Error) => {
+  log.error({ err, event: 'fatal' }, 'Fatal startup error');
+  process.exit(1);
+});
