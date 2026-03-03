@@ -63,12 +63,11 @@ Plans:
   1. When the WebSocket backend disconnects during an active call, the SIP call stays up and the service reconnects to the WebSocket with exponential backoff; the caller hears a brief gap and the call continues
   2. After WebSocket reconnect, the backend receives a fresh `connected` then `start` event before any `media` events resume
   3. After 20 sequential calls, the process file descriptor count returns to the same baseline as after 0 calls (no descriptor leak)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Exponential backoff reconnect loop in WS Client with drop-not-buffer policy during reconnect window
-- [ ] 03-02: Re-emit connected + start sequence after WS reconnect before forwarding audio
-- [ ] 03-03: RTP socket lifecycle registry — verify cleanup with fd-count test after sequential calls
+- [ ] 03-01-PLAN.md — WS reconnect loop in CallManager: exponential backoff (1s/2s/4s cap, 30s budget), RTP silence during reconnect, re-emit connected+start on reconnect, drop inbound RTP while reconnecting
+- [x] 03-02-PLAN.md — FD leak test script: standalone Node.js ESM script verifying RTP socket cleanup after 20 sequential calls
 
 ### Phase 4: Observability
 **Goal**: Operators can query the service's registration status and call volume over HTTP, and a Prometheus scraper can track key counters
@@ -91,6 +90,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/3 | In Progress|  |
-| 2. Core Bridge | 5/5 | Complete   | 2026-03-03 |
-| 3. Resilience | 0/3 | Not started | - |
+| 2. Core Bridge | 5/5 | Complete    | 2026-03-03 |
+| 3. Resilience | 1/2 | In Progress | - |
 | 4. Observability | 0/2 | Not started | - |

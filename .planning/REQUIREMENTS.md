@@ -27,7 +27,7 @@
 
 - [ ] **WSR-01**: If WebSocket disconnects during an active call, service reconnects with exponential backoff
 - [ ] **WSR-02**: After WebSocket reconnect, service re-sends `connected` then `start` before forwarding audio
-- [ ] **WSR-03**: Audio arriving from RTP during WebSocket reconnect window is dropped (not buffered indefinitely)
+- [x] **WSR-03**: Audio arriving from RTP during WebSocket reconnect window is dropped (not buffered indefinitely)
 
 ### Concurrency
 
@@ -119,7 +119,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LCY-01 | Phase 2 | Complete |
 | WSR-01 | Phase 3 | Pending |
 | WSR-02 | Phase 3 | Pending |
-| WSR-03 | Phase 3 | Pending |
+| WSR-03 | Phase 3 | Complete |
 | OBS-02 | Phase 4 | Pending |
 | OBS-03 | Phase 4 | Pending |
 

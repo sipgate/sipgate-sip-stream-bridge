@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T13:18:57.852Z"
+last_updated: "2026-03-03T13:31:37Z"
 progress:
-  total_phases: 2
+  total_phases: 4
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 9
+  completed_plans: 9
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 2 - Core Bridge
+**Current focus:** Phase 3 - Resilience
 
 ## Current Position
 
-Phase: 2 of 4 (Core Bridge) — COMPLETE
-Plan: 5 of 5 in current phase (02-05 completed — Wired entrypoint + graceful shutdown)
-Status: Phase 2 fully complete, ready for Phase 3
-Last activity: 2026-03-03 — Completed 02-05 (wired entrypoint: CallManager + SipHandle + SIGTERM/SIGINT graceful shutdown)
+Phase: 3 of 4 (Resilience) — IN PROGRESS
+Plan: 2 of N in current phase (03-02 completed — FD leak verification script)
+Status: Phase 3 plan 02 complete
+Last activity: 2026-03-03 — Completed 03-02 (FD leak test: 20x createRtpHandler + dispose() exits 0 with delta=0)
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -50,6 +50,8 @@ Progress: [████████░░] 75%
 | Phase 02-core-bridge P03 | 1 | 1 tasks | 1 files |
 | Phase 02-core-bridge P04 | 2 | 1 tasks | 1 files |
 | Phase 02-core-bridge P05 | 1 | 1 tasks | 1 files |
+| Phase 03-resilience P01 | 2 | 1 tasks | 1 files |
+| Phase 03-resilience P02 | 5 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -92,6 +94,9 @@ Recent decisions affecting current work:
 - [Phase 02-05]: SIGTERM and SIGINT share same shutdown() function — avoids handler drift between dev and production
 - [Phase 02-05]: 5-second drain timeout cleared in finally — guarantees process.exit even if unregister hangs
 - [Phase 02-05]: Shutdown sequence: terminateAll() then unregister() per CONTEXT.md locked decision
+- [03-02]: Use node --import tsx/esm for .mjs test scripts — resolves TypeScript sources without separate build step
+- [03-02]: Port range 20000-20099 for test — distinct from production 10000-10099, no conflicts when service runs
+- [03-02]: 50ms post-loop delay + delta tolerance ±2 — absorbs Node.js internals; real leak produces 20 FDs delta
 
 ### Pending Todos
 
@@ -107,5 +112,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 02-05-PLAN.md — Wired entrypoint (CallManager + SipHandle + SIGTERM/SIGINT graceful shutdown)
+Stopped at: Completed 03-02-PLAN.md — FD leak verification script (test/fd-leak.mjs, WSR-03 satisfied)
 Resume file: None
