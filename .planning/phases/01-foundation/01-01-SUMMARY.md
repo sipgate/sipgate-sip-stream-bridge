@@ -85,7 +85,7 @@ Each task was committed atomically:
 1. **Task 1: Project scaffold — pnpm init, tsconfig, install dependencies** - `98233a4` (chore)
 2. **Task 2: Config module (Zod) + Logger module (pino) + entrypoint** - `a006b70` (feat)
 
-**Plan metadata:** TBD (docs: complete plan)
+**Plan metadata:** `da257b6` (docs: complete plan)
 
 ## Files Created/Modified
 - `package.json` - ESM package with type:module, engines>=22, dev/build/start/typecheck scripts
