@@ -53,10 +53,10 @@ Plans:
   1. On startup with valid credentials, the service sends REGISTER, handles the 401 Digest Auth challenge, and logs a structured JSON line confirming successful registration
   2. The service re-registers automatically at 75–90% of the server-granted Expires interval without manual intervention; re-registration is visible in logs
   3. On startup with invalid credentials, the service logs a structured error and exits non-zero
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 05-01: sipgo UserAgent + Server + Client construction, UDP/TCP listener goroutines, REGISTER with DoDigestAuth, re-register ticker at 75% of server-granted Expires (SIP-01, SIP-02)
+- [ ] 05-01-PLAN.md — sipgo Agent (UA/Server/Client) + Registrar (REGISTER/DoDigestAuth/reregisterLoop/Unregister) + main.go wiring (SIP-01, SIP-02)
 
 ### Phase 6: Inbound Call + RTP Bridge
 **Goal**: The service accepts an inbound SIP INVITE, negotiates PCMU, opens a per-call RTP socket, connects a dedicated WebSocket, and forwards audio bidirectionally — the full Twilio Media Streams protocol (connected/start/media/stop) flows end-to-end; multiple simultaneous calls work independently; all resources are cleaned up when a call ends
@@ -113,7 +113,7 @@ Plans:
 | 1. Foundation | v1.0 | 3/3 | Complete | 2026-03-03 |
 | 2. Core Bridge | v1.0 | 5/5 | Complete | 2026-03-03 |
 | 3. Resilience | v1.0 | 2/2 | Complete | 2026-03-03 |
-| 4. Go Scaffold | v2.0 | 2/2 | Complete | 2026-03-03 |
+| 4. Go Scaffold | v2.0 | Complete    | 2026-03-03 | 2026-03-03 |
 | 5. SIP Registration | v2.0 | 0/1 | Not started | - |
 | 6. Inbound Call + RTP Bridge | v2.0 | 0/3 | Not started | - |
 | 7. WebSocket Resilience + DTMF | v2.0 | 0/2 | Not started | - |
