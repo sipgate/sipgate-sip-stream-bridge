@@ -9,9 +9,9 @@
 
 - [x] **SIP-01**: Service registers with sipgate SIP trunking on startup using configured credentials
 - [x] **SIP-02**: Service automatically re-registers before the SIP registration expires (before Expires timer runs out)
-- [ ] **SIP-03**: Service accepts inbound SIP INVITE and negotiates PCMU (G.711 mu-law 8kHz) codec
-- [ ] **SIP-04**: Service rejects inbound INVITE with 503 if the target WebSocket cannot be connected
-- [ ] **SIP-05**: Service sends SIP BYE when call ends from either side
+- [x] **SIP-03**: Service accepts inbound SIP INVITE and negotiates PCMU (G.711 mu-law 8kHz) codec
+- [x] **SIP-04**: Service rejects inbound INVITE with 503 if the target WebSocket cannot be connected
+- [x] **SIP-05**: Service sends SIP BYE when call ends from either side
 
 ### WebSocket Bridge
 
@@ -104,9 +104,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DCK-02 | Phase 1 | Complete |
 | DCK-03 | Phase 1 | Complete |
 | OBS-01 | Phase 1 | Complete |
-| SIP-03 | Phase 2 | Pending |
-| SIP-04 | Phase 2 | Pending |
-| SIP-05 | Phase 2 | Pending |
+| SIP-03 | Phase 2 | Complete |
+| SIP-04 | Phase 2 | Complete |
+| SIP-05 | Phase 2 | Complete |
 | WSB-01 | Phase 2 | Complete |
 | WSB-02 | Phase 2 | Complete |
 | WSB-03 | Phase 2 | Pending |

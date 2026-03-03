@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T13:09:10Z"
+last_updated: "2026-03-03T13:11:07.165Z"
 progress:
-  total_phases: 4
+  total_phases: 2
   completed_phases: 1
-  total_plans: 12
-  completed_plans: 4
+  total_plans: 8
+  completed_plans: 6
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 2 of 4 (Core Bridge)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-03-03 — Completed 02-02 (WsClient: Twilio Media Streams protocol with 2-second connect timeout)
+Last activity: 2026-03-03 — Completed 02-03 (SIP inbound dispatch: SipCallbacks + sendRaw + unregister on SipHandle)
 
-Progress: [████░░░░░░] 33%
+Progress: [█████░░░░░] 41%
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [████░░░░░░] 33%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 02-core-bridge P03 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,12 @@ Recent decisions affecting current work:
 - [02-02]: rtpTimestamp increments by 160 per sendAudio call (20ms × 8kHz) — correct PCMU RTP clock
 - [02-02]: stop() calls ws.close() when OPEN (graceful close frame), ws.terminate() otherwise — avoids hanging sockets
 - [02-02]: onAudio ignores non-media events silently — forward-compatible with Twilio protocol extensions
+- [02-03]: SipCallbacks optional on createSipUserAgent — backward compatible, existing 2-arg call sites still compile
+- [02-03]: unregister() is fire-and-forget (Promise.resolve()) — shutdown drain timeout covers the response window
+- [02-03]: OPTIONS auto-responded inline (no callback) — keepalive probes are transport-layer, not call logic
+- [Phase 02-core-bridge]: SipCallbacks optional on createSipUserAgent — backward compatible, existing 2-arg call sites still compile
+- [Phase 02-core-bridge]: unregister() is fire-and-forget (Promise.resolve()) — shutdown drain timeout covers the response window
+- [Phase 02-core-bridge]: OPTIONS auto-responded inline (no callback) — keepalive probes are transport-layer, not call logic
 
 ### Pending Todos
 
@@ -87,5 +94,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 02-02-PLAN.md — WsClient Twilio Media Streams protocol factory
+Stopped at: Completed 02-03-PLAN.md — SIP inbound dispatch + SipHandle extension (sendRaw/unregister/SipCallbacks)
 Resume file: None
