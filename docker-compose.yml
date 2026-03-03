@@ -1,17 +1,22 @@
-# docker-compose.yml — Linux production configuration
+# docker-compose.yml — Linux production configuration (v2.0 Go binary)
 #
 # network_mode: host gives the container direct access to the host network stack.
-# This is REQUIRED for RTP media (Phase 2): Docker's port-proxy adds ~10ms jitter
+# This is REQUIRED for RTP media (Phase 6): Docker's port-proxy adds ~10ms jitter
 # to every UDP packet and prevents the container from binding to ephemeral UDP ports.
 #
 # macOS / Windows: network_mode: host is silently ignored by Docker Desktop.
-# For Phase 2 RTP testing on macOS, use docker-compose.override.yml:
+# For RTP testing on macOS, use docker-compose.override.yml:
 #
 #   services:
 #     audio-dock:
 #       network_mode: bridge
 #       ports:
+#         - "5060:5060/udp"
+#         - "5060:5060/tcp"
 #         - "10000-10099:10000-10099/udp"
+#
+# WARNING: Restrict the UDP port range to ≤100 ports in the override — publishing
+# large ranges causes Docker Desktop's port proxy to stall on startup.
 #
 services:
   audio-dock:
