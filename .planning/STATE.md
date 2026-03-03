@@ -1,0 +1,69 @@
+# Project State
+
+## Project Reference
+
+See: .planning/PROJECT.md (updated 2026-03-03)
+
+**Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
+**Current focus:** Phase 1 - Foundation
+
+## Current Position
+
+Phase: 1 of 4 (Foundation)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-03-03 — Completed 01-01 (project scaffold + config/logger modules)
+
+Progress: [█░░░░░░░░░] 8%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 1
+- Average duration: 2 min
+- Total execution time: 0.03 hours
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 01-foundation | 1 | 2 min | 2 min |
+
+**Recent Trend:**
+- Last 5 plans: 01-01 (2 min)
+- Trend: -
+
+*Updated after each plan completion*
+
+## Accumulated Context
+
+### Decisions
+
+Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- [Pre-phase]: SIP.js over drachtio — no C++ sidecar required, simpler Docker image
+- [Pre-phase]: Reject SIP INVITE with 503 if WebSocket unavailable — fail fast
+- [Pre-phase]: Reconnect WS on drop, keep SIP call alive — better UX than forcing redial
+- [Pre-phase]: Twilio Media Streams wire format — drop-in compatibility with AI voice backends
+- [01-01]: Zod 4 named import { z } — Zod 4 removed the default export
+- [01-01]: z.ipv4() replaces z.string().ip() — Zod 4 changed IP validation to standalone type
+- [01-01]: console.error for config failures — pino not yet initialized at config load time
+- [01-01]: No setInterval keepalive in Phase 1 — process exits after logging; Phase 2 adds real async activity
+
+### Pending Todos
+
+None yet.
+
+### Blockers/Concerns
+
+- [Phase 1]: SIP.js has no official Node.js transport — custom WebSocket transport required; validate SIP REGISTER works before building any media logic on top (see research/SUMMARY.md pitfall 1)
+- [Phase 1]: Verify exact sipgate WSS URL and SIP registrar hostname from sipgate portal — research found wss://sip.sipgate.de / sipconnect.sipgate.de at MEDIUM confidence only
+- [Phase 1]: SIP.js viaHost timing issue (#1002) — local socket address only known after connect(); community workaround must be validated against SIP.js 0.21.x API
+- [Phase 2]: macOS development needs explicit UDP port publishing (network_mode: host is Linux-only) — decide on port range before first RTP test
+
+## Session Continuity
+
+Last session: 2026-03-03
+Stopped at: Completed 01-01-PLAN.md — project scaffold, config/logger modules implemented
+Resume file: None
