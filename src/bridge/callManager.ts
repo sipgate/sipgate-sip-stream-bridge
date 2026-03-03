@@ -51,6 +51,8 @@ export interface CallSession {
   /** Next CSeq value for in-dialog requests (BYE) */
   cseq: number;
   log: Logger;
+  /** 200 OK retransmit timer handle — cleared on ACK (RFC 3261 §13.3.1.4) */
+  okRetransmitTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const USER_AGENT = 'audio-dock/0.1.0';
@@ -186,8 +188,15 @@ export class CallManager {
           this.log.error({ err, event: 'invite_unhandled_error' }, 'Unhandled error in INVITE handler');
         });
       },
-      onAck: (_raw: string, _rinfo: RemoteInfo) => {
-        // ACK confirms our 200 OK; audio bridge is already running — no-op
+      onAck: (raw: string, _rinfo: RemoteInfo) => {
+        // ACK received — stop 200 OK retransmission
+        const callId = extractHeader(raw, 'Call-ID');
+        const session = this.sessions.get(callId);
+        if (session?.okRetransmitTimer !== null && session?.okRetransmitTimer !== undefined) {
+          clearTimeout(session.okRetransmitTimer);
+          session.okRetransmitTimer = null;
+          session.log.debug({ event: 'ack_received' }, 'ACK received — 200 OK retransmit stopped');
+        }
       },
       onBye: (raw: string, rinfo: RemoteInfo) => {
         this.handleBye(raw, rinfo);
@@ -356,7 +365,8 @@ export class CallManager {
       sipDomain: this.config.SIP_DOMAIN,
       localSipPort: 5060,
     });
-    this.sipHandle.sendRaw(Buffer.from(ok), rinfo.port, rinfo.address);
+    const okBuf = Buffer.from(ok);
+    this.sipHandle.sendRaw(okBuf, rinfo.port, rinfo.address);
 
     // 9. Store session in Map
     const session: CallSession = {
@@ -374,8 +384,21 @@ export class CallManager {
       localRtpPort: rtp.localPort,
       cseq: 1,
       log: callLog,
+      okRetransmitTimer: null,
     };
     this.sessions.set(sipCallId, session);
+
+    // 9a. Retransmit 200 OK until ACK arrives (RFC 3261 §13.3.1.4)
+    // Timer doubles from T1=500ms up to T2=4000ms per attempt.
+    let retransmitInterval = 500; // T1
+    const scheduleOkRetransmit = (): void => {
+      if (!this.sessions.has(sipCallId)) return; // session gone (BYE before ACK)
+      this.sipHandle.sendRaw(okBuf, rinfo.port, rinfo.address);
+      callLog.debug({ event: '200_ok_retransmit', interval: retransmitInterval }, '200 OK retransmitted');
+      retransmitInterval = Math.min(retransmitInterval * 2, 4000); // cap at T2
+      session.okRetransmitTimer = setTimeout(scheduleOkRetransmit, retransmitInterval);
+    };
+    session.okRetransmitTimer = setTimeout(scheduleOkRetransmit, retransmitInterval);
     callLog.info({ event: 'call_started', from: fromUri, to: toUri }, 'Call started');
 
     // 10. Wire audio bridge AFTER session is stored
@@ -432,6 +455,13 @@ export class CallManager {
   private terminateSession(session: CallSession, reason: string, sendBye: boolean): void {
     if (!this.sessions.has(session.callId)) return; // idempotent
     this.sessions.delete(session.callId);
+
+    // Cancel any pending 200 OK retransmit timer
+    if (session.okRetransmitTimer !== null) {
+      clearTimeout(session.okRetransmitTimer);
+      session.okRetransmitTimer = null;
+    }
+
     session.log.info({ event: 'call_ended', reason, sendBye }, 'Call terminated');
 
     if (sendBye) {
