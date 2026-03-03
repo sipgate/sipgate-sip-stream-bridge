@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundation** - SIP registration running in Docker with validated configuration
 - [x] **Phase 2: Core Bridge** - Bidirectional audio flowing end-to-end for concurrent calls (completed 2026-03-03)
-- [ ] **Phase 3: Resilience** - Service survives WebSocket drops and cleans up resources correctly
+- [x] **Phase 3: Resilience** - Service survives WebSocket drops and cleans up resources correctly (completed 2026-03-03)
 - [ ] **Phase 4: Observability** - Health endpoint and Prometheus metrics expose production state
 
 ## Phase Details
@@ -66,7 +66,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — WS reconnect loop in CallManager: exponential backoff (1s/2s/4s cap, 30s budget), RTP silence during reconnect, re-emit connected+start on reconnect, drop inbound RTP while reconnecting
+- [x] 03-01-PLAN.md — WS reconnect loop in CallManager: exponential backoff (1s/2s/4s cap, 30s budget), RTP silence during reconnect, re-emit connected+start on reconnect, drop inbound RTP while reconnecting
 - [x] 03-02-PLAN.md — FD leak test script: standalone Node.js ESM script verifying RTP socket cleanup after 20 sequential calls
 
 ### Phase 4: Observability
@@ -91,5 +91,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/3 | In Progress|  |
 | 2. Core Bridge | 5/5 | Complete    | 2026-03-03 |
-| 3. Resilience | 1/2 | In Progress | - |
+| 3. Resilience | 2/2 | Complete    | 2026-03-03 |
 | 4. Observability | 0/2 | Not started | - |

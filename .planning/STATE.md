@@ -94,6 +94,9 @@ Recent decisions affecting current work:
 - [Phase 02-05]: SIGTERM and SIGINT share same shutdown() function — avoids handler drift between dev and production
 - [Phase 02-05]: 5-second drain timeout cleared in finally — guarantees process.exit even if unregister hangs
 - [Phase 02-05]: Shutdown sequence: terminateAll() then unregister() per CONTEXT.md locked decision
+- [03-01]: Route rtp.on('audio') and rtp.on('dtmf') via session.ws (not closure-captured ws) — handlers pick up new WsClient after reconnect without re-registration
+- [03-01]: Drop inbound RTP during reconnect (wsReconnecting gate) — consistent with Phase 2 drop-not-buffer policy
+- [03-01]: cleanup() called before session.wsReconnecting=false on success — prevents silence/audio interleave
 - [03-02]: Use node --import tsx/esm for .mjs test scripts — resolves TypeScript sources without separate build step
 - [03-02]: Port range 20000-20099 for test — distinct from production 10000-10099, no conflicts when service runs
 - [03-02]: 50ms post-loop delay + delta tolerance ±2 — absorbs Node.js internals; real leak produces 20 FDs delta
@@ -112,5 +115,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 03-02-PLAN.md — FD leak verification script (test/fd-leak.mjs, WSR-03 satisfied)
+Stopped at: Completed 03-01-PLAN.md — WS reconnect loop (startWsReconnectLoop, wsReconnecting flag, WSR-01/02/03)
 Resume file: None
