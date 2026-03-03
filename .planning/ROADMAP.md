@@ -68,12 +68,12 @@ Plans:
   3. When the caller hangs up, the service sends SIP BYE and a `stop` event to the WebSocket; when the WebSocket sends `stop`, the service sends SIP BYE to the caller
   4. If the target WebSocket is unreachable at call start, the INVITE is rejected with SIP 503 and no RTP socket is leaked
   5. Two simultaneous calls each get an independent WebSocket connection and independent RTP socket; hanging up one call does not affect the other; after each call ends there are no leaked goroutines or file descriptors
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: SIP INVITE handler — DialogServerCache, SDP parsing (pion/sdp), SDP answer with PCMU + telephone-event, 503 rejection if WS unavailable (SIP-03, SIP-04, SIP-05)
-- [ ] 06-02: CallManager + CallSession — per-call RTP socket pool, goroutine lifecycle, concurrent session map, FD cleanup on call end (CON-01, CON-02)
-- [ ] 06-03: WebSocket bridge — Twilio Media Streams protocol (connected/start/media/stop events), call metadata in customParameters, bidirectional audio forwarding (WSB-01..06)
+- [ ] 06-01-PLAN.md — TDD SDP parsing (CallerSDP/ParseCallerSDP/BuildSDPAnswer) + SIP INVITE/ACK/BYE/OPTIONS handler with DialogServerCache (SIP-03, SIP-04, SIP-05)
+- [ ] 06-02-PLAN.md — TDD PortPool (channel-based bounded pool) + CallManager (sync.Map registry) + CallSession (per-call RTP socket + goroutine lifecycle + ws.go stubs) (CON-01, CON-02, WSR-01)
+- [ ] 06-03-PLAN.md — Full WebSocket bridge (Twilio connected/start/media/stop events via gobwas/ws) + main.go Phase 6 wiring (WSB-01..06)
 
 ### Phase 7: WebSocket Resilience + DTMF
 **Goal**: When the WebSocket drops mid-call, the service reconnects with exponential backoff, re-sends the handshake sequence, and resumes audio forwarding — DTMF digits pressed by the caller are forwarded as `dtmf` events exactly once per keypress
