@@ -53,6 +53,8 @@ export interface CallSession {
   log: Logger;
 }
 
+const USER_AGENT = 'audio-dock/0.1.0';
+
 // ── Internal SIP helpers ──────────────────────────────────────────────────────
 
 function extractHeader(raw: string, name: string): string {
@@ -93,6 +95,7 @@ function buildResponse(p: BuildResponseParams): string {
     `To: ${p.to}`,
     `Call-ID: ${p.callId}`,
     `CSeq: ${p.cseq}`,
+    `User-Agent: ${USER_AGENT}`,
   ];
   if (p.status === 200 && p.sdpBody) {
     lines.push(`Contact: <sip:${p.sipUser}@${p.localIp}:${p.localSipPort}>`);
@@ -128,6 +131,7 @@ function buildBye(p: BuildByeParams): string {
     `To: <${p.toUri}>;tag=${p.toTag}`,
     `Call-ID: ${p.callId}`,
     `CSeq: ${p.cseq} BYE`,
+    `User-Agent: ${USER_AGENT}`,
     'Content-Length: 0',
     '',
   ].join('\r\n') + '\r\n';
