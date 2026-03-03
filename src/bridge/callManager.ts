@@ -60,10 +60,20 @@ function extractHeader(raw: string, name: string): string {
   return m ? m[1].trim() : '';
 }
 
+/** Extract ALL Via headers from a raw SIP message (RFC 3261 §20.42) */
+function extractAllVias(raw: string): string[] {
+  const vias: string[] = [];
+  for (const line of raw.split('\r\n')) {
+    const m = line.match(/^Via:\s*(.+)$/i);
+    if (m) vias.push(m[1].trim());
+  }
+  return vias;
+}
+
 interface BuildResponseParams {
   status: number;
   reason: string;
-  via: string;
+  vias: string[];  // ALL Via headers from the request — not just the first
   from: string;
   to: string;
   callId: string;
@@ -78,7 +88,7 @@ interface BuildResponseParams {
 function buildResponse(p: BuildResponseParams): string {
   const lines = [
     `SIP/2.0 ${p.status} ${p.reason}`,
-    `Via: ${p.via}`,
+    ...p.vias.map((v) => `Via: ${v}`),
     `From: ${p.from}`,
     `To: ${p.to}`,
     `Call-ID: ${p.callId}`,
@@ -199,7 +209,6 @@ export class CallManager {
 
   private async handleInvite(raw: string, rinfo: RemoteInfo): Promise<void> {
     // 1. Extract required headers
-    const via = extractHeader(raw, 'Via');
     const from = extractHeader(raw, 'From');
     const toHeader = extractHeader(raw, 'To');
     const sipCallId = extractHeader(raw, 'Call-ID');
@@ -213,7 +222,7 @@ export class CallManager {
       const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
       const sdpAnswer = buildSdpAnswer(localIp, existing.localRtpPort);
       const ok200 = buildResponse({
-        status: 200, reason: 'OK', via, from,
+        status: 200, reason: 'OK', vias: extractAllVias(raw), from,
         to: `${toHeader};tag=${existing.localTag}`,
         callId: sipCallId, cseq, sdpBody: sdpAnswer, localIp,
         sipUser: this.config.SIP_USER, sipDomain: this.config.SIP_DOMAIN,
@@ -246,10 +255,11 @@ export class CallManager {
 
     try {
     // 2. Send 100 Trying immediately (no To-tag)
+    const vias = extractAllVias(raw);
     const trying = buildResponse({
       status: 100,
       reason: 'Trying',
-      via,
+      vias,
       from,
       to: toHeader,
       callId: sipCallId,
@@ -264,7 +274,7 @@ export class CallManager {
       const resp488 = buildResponse({
         status: 488,
         reason: 'Not Acceptable Here',
-        via,
+        vias,
         from,
         to: toHeader,
         callId: sipCallId,
@@ -293,7 +303,7 @@ export class CallManager {
     const ringing = buildResponse({
       status: 180,
       reason: 'Ringing',
-      via,
+      vias,
       from,
       to: `${toHeader};tag=${localTag}`,
       callId: sipCallId,
@@ -314,7 +324,7 @@ export class CallManager {
       const resp503 = buildResponse({
         status: 503,
         reason: 'Service Unavailable',
-        via,
+        vias,
         from,
         to: toHeader,
         callId: sipCallId,
@@ -331,7 +341,7 @@ export class CallManager {
     const ok = buildResponse({
       status: 200,
       reason: 'OK',
-      via,
+      vias,
       from,
       to: `${toHeader};tag=${localTag}`,
       callId: sipCallId,
@@ -391,21 +401,15 @@ export class CallManager {
     }
 
     // Send 200 OK to BYE (copy Via/From/To/Call-ID/CSeq from the BYE)
-    const via = extractHeader(raw, 'Via');
-    const from = extractHeader(raw, 'From');
-    const to = extractHeader(raw, 'To');
-    const cseq = extractHeader(raw, 'CSeq');
-    const byeOk = [
-      'SIP/2.0 200 OK',
-      `Via: ${via}`,
-      `From: ${from}`,
-      `To: ${to}`,
-      `Call-ID: ${callId}`,
-      `CSeq: ${cseq}`,
-      'Content-Length: 0',
-      '',
-      '',
-    ].join('\r\n') + '\r\n';
+    const byeOk = buildResponse({
+      status: 200,
+      reason: 'OK',
+      vias: extractAllVias(raw),
+      from: extractHeader(raw, 'From'),
+      to: extractHeader(raw, 'To'),
+      callId,
+      cseq: extractHeader(raw, 'CSeq'),
+    });
     this.sipHandle.sendRaw(Buffer.from(byeOk), rinfo.port, rinfo.address);
 
     // Remote sent BYE — do NOT send our own BYE back (sendBye=false)
