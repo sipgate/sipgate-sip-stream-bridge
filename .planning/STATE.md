@@ -1,119 +1,50 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: unknown
-last_updated: "2026-03-03T13:31:37Z"
+milestone: v1.1
+milestone_name: Observability
+status: milestone_complete
+last_updated: "2026-03-03T20:52:33.570Z"
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-03)
+See: .planning/PROJECT.md (updated 2026-03-03 after v1.0 milestone)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 3 - Resilience
+**Current focus:** Planning next milestone (v1.1 Observability — Phase 4)
 
 ## Current Position
 
-Phase: 3 of 4 (Resilience) — IN PROGRESS
-Plan: 2 of N in current phase (03-02 completed — FD leak verification script)
-Status: Phase 3 plan 02 complete
-Last activity: 2026-03-03 — Completed 03-02 (FD leak test: 20x createRtpHandler + dispose() exits 0 with delta=0)
+Phase: v1.0 complete — milestone archived
+Status: Ready for v1.1 planning (Phase 4: Observability)
+Last activity: 2026-03-03 — v1.0 milestone archived (10 plans, 3 phases, 27 requirements)
 
-Progress: [████████░░] 80%
-
-## Performance Metrics
-
-**Velocity:**
-- Total plans completed: 2
-- Average duration: 2 min
-- Total execution time: 0.07 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01-foundation | 2 | 4 min | 2 min |
-
-**Recent Trend:**
-- Last 5 plans: 01-01 (2 min), 01-03 (2 min)
-- Trend: -
-
-*Updated after each plan completion*
-| Phase 02-core-bridge P03 | 1 | 1 tasks | 1 files |
-| Phase 02-core-bridge P04 | 2 | 1 tasks | 1 files |
-| Phase 02-core-bridge P05 | 1 | 1 tasks | 1 files |
-| Phase 03-resilience P01 | 2 | 1 tasks | 1 files |
-| Phase 03-resilience P02 | 5 | 1 tasks | 1 files |
+Progress: [██████████] v1.0 complete
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [Pre-phase]: SIP.js over drachtio — no C++ sidecar required, simpler Docker image
-- [Pre-phase]: Reject SIP INVITE with 503 if WebSocket unavailable — fail fast
-- [Pre-phase]: Reconnect WS on drop, keep SIP call alive — better UX than forcing redial
-- [Pre-phase]: Twilio Media Streams wire format — drop-in compatibility with AI voice backends
-- [01-01]: Zod 4 named import { z } — Zod 4 removed the default export
-- [01-01]: z.ipv4() replaces z.string().ip() — Zod 4 changed IP validation to standalone type
-- [01-01]: console.error for config failures — pino not yet initialized at config load time
-- [01-01]: No setInterval keepalive in Phase 1 — process exits after logging; Phase 2 adds real async activity
-- [01-02]: Omit transportConstructor from UserAgentOptions — UserAgent.defaultTransportConstructor does not exist in SIP.js 0.21.x; WebSocketTransport is used by default
-- [01-02]: refreshFrequency 90 in Registerer — automatic re-registration at 90% expiry without manual timers (SIP-02)
-- [01-02]: viaHost falls back to SIP_DOMAIN if SDP_CONTACT_IP not set — fails loudly at sipgate rather than silently timing out
-- [01-03]: 4-stage Dockerfile (base/fetcher/builder/production) — pnpm fetch layer caches only on lockfile changes
-- [01-03]: network_mode: host in docker-compose.yml — required for Phase 2 RTP (Docker port-proxy adds ~10ms UDP jitter)
-- [01-03]: MEDIUM confidence warning on SIP_DOMAIN and SIP_REGISTRAR in .env.example — verify from sipgate portal
-- [02-02]: rtpTimestamp increments by 160 per sendAudio call (20ms × 8kHz) — correct PCMU RTP clock
-- [02-02]: stop() calls ws.close() when OPEN (graceful close frame), ws.terminate() otherwise — avoids hanging sockets
-- [02-02]: onAudio ignores non-media events silently — forward-compatible with Twilio protocol extensions
-- [02-03]: SipCallbacks optional on createSipUserAgent — backward compatible, existing 2-arg call sites still compile
-- [02-03]: unregister() is fire-and-forget (Promise.resolve()) — shutdown drain timeout covers the response window
-- [02-03]: OPTIONS auto-responded inline (no callback) — keepalive probes are transport-layer, not call logic
-- [Phase 02-core-bridge]: SipCallbacks optional on createSipUserAgent — backward compatible, existing 2-arg call sites still compile
-- [Phase 02-core-bridge]: unregister() is fire-and-forget (Promise.resolve()) — shutdown drain timeout covers the response window
-- [Phase 02-core-bridge]: OPTIONS auto-responded inline (no callback) — keepalive probes are transport-layer, not call logic
-- [02-01]: as number assertion on nextPort counter — TypeScript cannot narrow mutable module variables through a guard; explicit cast is minimal correct fix
-- [02-01]: Extension-header-aware RTP parser — CC and X bits handled per RFC 3550 to avoid silent data corruption
-- [02-01]: dispose() swallows socket.close() errors — ENOTCONN when already closed should not propagate as unhandled rejection
-- [02-01]: DTMF emitted only on End=true — telephone-event is retransmitted multiple times; emitting on each packet causes duplicates
-- [02-04]: SDP_CONTACT_IP ?? '127.0.0.1' fallback in terminateSession — safe default matching outbound SIP socket IP logic
-- [02-04]: sendBye=false path for remote BYE — 200 OK already sent; outbound BYE would be RFC 3261 protocol violation
-- [02-04]: onDisconnect wired after session stored — ensures terminateSession finds session in Map and doesn't silently no-op
-- [02-04]: CallManager.getCallbacks() decouples SIP event routing from socket implementation — clean boundary for Phase 3 wiring
-- [Phase 02-05]: SIGTERM and SIGINT share same shutdown() function — avoids handler drift between dev and production
-- [Phase 02-05]: 5-second drain timeout cleared in finally — guarantees process.exit even if unregister hangs
-- [Phase 02-05]: Shutdown sequence: terminateAll() then unregister() per CONTEXT.md locked decision
-- [03-01]: Route rtp.on('audio') and rtp.on('dtmf') via session.ws (not closure-captured ws) — handlers pick up new WsClient after reconnect without re-registration
-- [03-01]: Drop inbound RTP during reconnect (wsReconnecting gate) — consistent with Phase 2 drop-not-buffer policy
-- [03-01]: cleanup() called before session.wsReconnecting=false on success — prevents silence/audio interleave
-- [03-02]: Use node --import tsx/esm for .mjs test scripts — resolves TypeScript sources without separate build step
-- [03-02]: Port range 20000-20099 for test — distinct from production 10000-10099, no conflicts when service runs
-- [03-02]: 50ms post-loop delay + delta tolerance ±2 — absorbs Node.js internals; real leak produces 20 FDs delta
+All decisions logged in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-- [Phase 1]: SIP.js has no official Node.js transport — custom WebSocket transport required; validate SIP REGISTER works before building any media logic on top (see research/SUMMARY.md pitfall 1)
-- [Phase 1]: Verify exact sipgate WSS URL and SIP registrar hostname from sipgate portal — research found wss://sip.sipgate.de / sipconnect.sipgate.de at MEDIUM confidence only
-- [Phase 1]: SIP.js viaHost timing issue (#1002) — local socket address only known after connect(); community workaround must be validated against SIP.js 0.21.x API
-- [Phase 2]: macOS development needs explicit UDP port publishing (network_mode: host is Linux-only) — decide on port range before first RTP test
+- [Deferred]: macOS development needs explicit UDP port publishing (network_mode: host is Linux-only) — decide on port range before first RTP test on macOS
+- [Human verification]: 11 items require live sipgate credentials (SIP registration, audio E2E, concurrent calls) — not code deficiencies
 
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 03-01-PLAN.md — WS reconnect loop (startWsReconnectLoop, wsReconnecting flag, WSR-01/02/03)
-Resume file: None
+Stopped at: v1.0 milestone complete — archived to .planning/milestones/
+Resume with: `/gsd:new-milestone` for v1.1 Observability
