@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
 status: in_progress
-last_updated: "2026-03-03T22:01:50Z"
+last_updated: "2026-03-03T22:06:30Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -18,29 +18,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 4 — Go Scaffold
+**Current focus:** Phase 4 — Go Scaffold (complete)
 
 ## Current Position
 
 Phase: 4 of 8 (Go Scaffold)
-Plan: 1 of 2 in current phase (04-01 complete)
+Plan: 2 of 2 in current phase (04-02 complete — phase complete)
 Status: In progress
-Last activity: 2026-03-03 — 04-01 Go scaffold complete (Go module, Config struct, zerolog entry point)
+Last activity: 2026-03-03 — 04-02 Docker build complete (FROM scratch Go image 1.06 MB, CA certs, docker-compose.yml)
 
-Progress: █░░░░░░░░░ 10%
+Progress: ██░░░░░░░░ 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0 (v2.0); 10 (v1.0)
-- Average duration: — (v2.0 not started)
-- Total execution time: —
+- Total plans completed: 2 (v2.0); 10 (v1.0)
+- Average duration: ~3.5min (v2.0)
+- Total execution time: ~7min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 04-go-scaffold | 1/2 | ~5min | ~5min |
+| 04-go-scaffold | 2/2 | ~7min | ~3.5min |
 
 *Updated after each plan completion*
 
@@ -62,6 +62,9 @@ v2.0 decisions:
 - [04-01] SDP_CONTACT_IP is required (not optional) — needed for SDP contact line in Phase 6
 - [04-01] WS_TARGET_URL kept as exact v1.0 env var name for drop-in compatibility (NOT WS_URL)
 - [04-01] Config package uses fmt.Fprintf+os.Exit, not zerolog — avoids circular dep before logger init
+- [04-02] GOARCH=amd64 explicit in Dockerfile — prevents exec format errors from ARM Mac hosts building for Linux CI/prod
+- [04-02] CA certs included in Phase 4 Dockerfile — avoids Docker layer invalidation when Phase 6 TLS is added
+- [04-02] No RTP EXPOSE range in Dockerfile — large ranges stall Docker Desktop port proxy on macOS; Phase 6 adds with warning
 
 ### Pending Todos
 
@@ -76,5 +79,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 04-01-PLAN.md — Go module, Config struct, zerolog entry point done. Next: 04-02.
+Stopped at: Completed 04-02-PLAN.md — Docker build complete. Phase 04-go-scaffold done. Next: Phase 05 (SIP UA).
 Resume file: None

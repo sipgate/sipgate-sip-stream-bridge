@@ -22,7 +22,7 @@ See archive: `.planning/milestones/v1.0-ROADMAP.md`
 
 **Milestone Goal:** Rewrite audio-dock in Go — same external interface, deterministic audio, static binary Docker image, observability included.
 
-- [ ] **Phase 4: Go Scaffold** - Go module, zerolog structured logging, fail-fast config validation, Docker static binary
+- [x] **Phase 4: Go Scaffold** - Go module, zerolog structured logging, fail-fast config validation, Docker static binary
 - [ ] **Phase 5: SIP Registration** - Connect to sipgate, register with Digest Auth, automatic re-registration loop
 - [ ] **Phase 6: Inbound Call + RTP Bridge** - Accept INVITE, negotiate PCMU, bidirectional RTP↔WebSocket bridge with full Twilio Media Streams protocol
 - [ ] **Phase 7: WebSocket Resilience + DTMF** - Reconnect with exponential backoff, silence drop during reconnect, DTMF forwarding
@@ -42,8 +42,8 @@ See archive: `.planning/milestones/v1.0-ROADMAP.md`
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Go module init + config validation (go-simpler/env) + zerolog entry point (CFG-01..05, OBS-01)
-- [ ] 04-02-PLAN.md — Two-stage Dockerfile (golang:1.26-alpine + FROM scratch) + docker-compose.yml update (DCK-01..03)
+- [x] 04-01-PLAN.md — Go module init + config validation (go-simpler/env) + zerolog entry point (CFG-01..05, OBS-01)
+- [x] 04-02-PLAN.md — Two-stage Dockerfile (golang:1.26-alpine + FROM scratch) + docker-compose.yml update (DCK-01..03)
 
 ### Phase 5: SIP Registration
 **Goal**: The service connects to sipgate's SIP registrar, authenticates with Digest Auth, and maintains registration automatically via a re-register loop — registration status is visible in logs
@@ -113,7 +113,7 @@ Plans:
 | 1. Foundation | v1.0 | 3/3 | Complete | 2026-03-03 |
 | 2. Core Bridge | v1.0 | 5/5 | Complete | 2026-03-03 |
 | 3. Resilience | v1.0 | 2/2 | Complete | 2026-03-03 |
-| 4. Go Scaffold | 1/2 | In Progress|  | - |
+| 4. Go Scaffold | v2.0 | 2/2 | Complete | 2026-03-03 |
 | 5. SIP Registration | v2.0 | 0/1 | Not started | - |
 | 6. Inbound Call + RTP Bridge | v2.0 | 0/3 | Not started | - |
 | 7. WebSocket Resilience + DTMF | v2.0 | 0/2 | Not started | - |

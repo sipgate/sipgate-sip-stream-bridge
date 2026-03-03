@@ -45,9 +45,9 @@
 
 ### Docker & Runtime
 
-- [ ] **DCK-01**: Service is built as a static Go binary with `CGO_ENABLED=0` — no Node.js runtime
-- [ ] **DCK-02**: Docker Compose file is provided with `network_mode: host` for Linux production use
-- [ ] **DCK-03**: Dockerfile enforces `CGO_ENABLED=0`; final image uses `FROM scratch` or distroless (~8–15 MB vs 180 MB Node.js Alpine)
+- [x] **DCK-01**: Service is built as a static Go binary with `CGO_ENABLED=0` — no Node.js runtime
+- [x] **DCK-02**: Docker Compose file is provided with `network_mode: host` for Linux production use
+- [x] **DCK-03**: Dockerfile enforces `CGO_ENABLED=0`; final image uses `FROM scratch` or distroless (~8–15 MB vs 180 MB Node.js Alpine)
 
 ### Observability
 
@@ -118,9 +118,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-03 | Phase 4 | Complete |
 | CFG-04 | Phase 4 | Complete |
 | CFG-05 | Phase 4 | Complete |
-| DCK-01 | Phase 4 | Pending |
-| DCK-02 | Phase 4 | Pending |
-| DCK-03 | Phase 4 | Pending |
+| DCK-01 | Phase 4 | Complete |
+| DCK-02 | Phase 4 | Complete |
+| DCK-03 | Phase 4 | Complete |
 | OBS-01 | Phase 4 | Complete |
 | OBS-02 | Phase 8 | Pending |
 | OBS-03 | Phase 8 | Pending |
