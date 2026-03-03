@@ -7,8 +7,8 @@
 
 ### SIP Core
 
-- [ ] **SIP-01**: Service registers with sipgate SIP trunking on startup using configured credentials
-- [ ] **SIP-02**: Service automatically re-registers before the SIP registration expires (before Expires timer runs out)
+- [x] **SIP-01**: Service registers with sipgate SIP trunking on startup using configured credentials
+- [x] **SIP-02**: Service automatically re-registers before the SIP registration expires (before Expires timer runs out)
 - [ ] **SIP-03**: Service accepts inbound SIP INVITE and negotiates PCMU (G.711 mu-law 8kHz) codec
 - [ ] **SIP-04**: Service rejects inbound INVITE with 503 if the target WebSocket cannot be connected
 - [ ] **SIP-05**: Service sends SIP BYE when call ends from either side
@@ -98,8 +98,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-03 | Phase 1 | Complete |
 | CFG-04 | Phase 1 | Complete |
 | CFG-05 | Phase 1 | Complete |
-| SIP-01 | Phase 1 | Pending |
-| SIP-02 | Phase 1 | Pending |
+| SIP-01 | Phase 1 | Complete |
+| SIP-02 | Phase 1 | Complete |
 | DCK-01 | Phase 1 | Complete |
 | DCK-02 | Phase 1 | Complete |
 | DCK-03 | Phase 1 | Complete |
@@ -130,4 +130,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-03*
-*Last updated: 2026-03-03 after roadmap creation*
+*Last updated: 2026-03-03 after 01-02 completion (SIP-01, SIP-02 marked complete)*

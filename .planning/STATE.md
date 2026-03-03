@@ -50,6 +50,9 @@ Recent decisions affecting current work:
 - [01-01]: z.ipv4() replaces z.string().ip() — Zod 4 changed IP validation to standalone type
 - [01-01]: console.error for config failures — pino not yet initialized at config load time
 - [01-01]: No setInterval keepalive in Phase 1 — process exits after logging; Phase 2 adds real async activity
+- [01-02]: Omit transportConstructor from UserAgentOptions — UserAgent.defaultTransportConstructor does not exist in SIP.js 0.21.x; WebSocketTransport is used by default
+- [01-02]: refreshFrequency 90 in Registerer — automatic re-registration at 90% expiry without manual timers (SIP-02)
+- [01-02]: viaHost falls back to SIP_DOMAIN if SDP_CONTACT_IP not set — fails loudly at sipgate rather than silently timing out
 - [01-03]: 4-stage Dockerfile (base/fetcher/builder/production) — pnpm fetch layer caches only on lockfile changes
 - [01-03]: network_mode: host in docker-compose.yml — required for Phase 2 RTP (Docker port-proxy adds ~10ms UDP jitter)
 - [01-03]: MEDIUM confidence warning on SIP_DOMAIN and SIP_REGISTRAR in .env.example — verify from sipgate portal
@@ -68,5 +71,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 01-03-PLAN.md — Docker infrastructure (Dockerfile, docker-compose.yml, .env.example)
+Stopped at: Completed 01-02-PLAN.md — SIP.js UserAgent factory + entrypoint wiring
 Resume file: None

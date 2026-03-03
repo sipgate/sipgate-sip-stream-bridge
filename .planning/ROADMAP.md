@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [ ] 01-01-PLAN.md — Project scaffold, TypeScript config, env validation (Zod), structured JSON logger
-- [ ] 01-02-PLAN.md — SIP.js Node.js transport adapter, UserAgent construction, SIP REGISTER + re-REGISTER
+- [x] 01-02-PLAN.md — SIP.js Node.js transport adapter, UserAgent construction, SIP REGISTER + re-REGISTER
 - [ ] 01-03-PLAN.md — Dockerfile (multi-stage, node:22-alpine), Docker Compose with host networking, RTP port range comments
 
 ### Phase 2: Core Bridge
