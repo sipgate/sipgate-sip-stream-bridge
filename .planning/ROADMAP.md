@@ -46,14 +46,14 @@ Plans:
   4. If the WebSocket backend is unreachable when the call arrives, the caller receives a SIP 503 rejection
   5. Two simultaneous calls each receive independent `streamSid` values and independent WebSocket connections; audio does not cross between them
   6. After a call ends (either side), the service sends SIP BYE and a `stop` event; on SIGTERM all active calls are terminated and the service UNREGISTERS before exiting
-**Plans**: TBD
+**Plans**: 5 plans
 
 Plans:
-- [ ] 02-01: Custom SessionDescriptionHandler (UDP socket bind, SDP generation with SDP_CONTACT_IP, remote SDP parse)
-- [ ] 02-02: RTP Handler (dgram socket per call, 12-byte header strip/add, packet events)
-- [ ] 02-03: WS Client (one WebSocket per call, Twilio protocol serializer for all event types)
-- [ ] 02-04: Audio Bridge (RTP payload to base64 JSON and back, stateless conversion)
-- [ ] 02-05: Call Manager (CallSession map, INVITE dispatch, fail-fast WS pre-connect, lifecycle orchestration, graceful shutdown)
+- [ ] 02-01-PLAN.md — SDP offer parser + answer builder, per-call RTP handler with DTMF detection
+- [ ] 02-02-PLAN.md — WS client with Twilio Media Streams protocol (connected/start/media/stop/dtmf)
+- [ ] 02-03-PLAN.md — SIP UserAgent INVITE/ACK/BYE/OPTIONS dispatch extension + unregister
+- [ ] 02-04-PLAN.md — CallManager: INVITE lifecycle orchestration, CallSession map, audio bridge wiring
+- [ ] 02-05-PLAN.md — Entrypoint wiring + SIGTERM/SIGINT graceful shutdown (terminateAll + unregister)
 
 ### Phase 3: Resilience
 **Goal**: The service survives WebSocket drops mid-call without hanging up the caller, and correctly releases all file descriptors after calls end
