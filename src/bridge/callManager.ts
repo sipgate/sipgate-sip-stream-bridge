@@ -15,6 +15,7 @@
 
 import crypto from 'node:crypto';
 import type { RemoteInfo } from 'node:dgram';
+import os from 'node:os';
 
 import type { Logger } from 'pino';
 
@@ -126,6 +127,15 @@ function buildBye(p: BuildByeParams): string {
  * Extract [host, port] from a SIP Contact URI like sip:user@host:port
  * or sip:host:port. Falls back to ['127.0.0.1', 5060] on parse failure.
  */
+function getLocalIp(): string {
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const iface of ifaces ?? []) {
+      if (!iface.internal && iface.family === 'IPv4') return iface.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
 function parseContactTarget(uri: string): [string, number] {
   const m = uri.match(/[@:]([a-zA-Z0-9._-]+):(\d+)/);
   if (m) return [m[1], parseInt(m[2], 10)];
@@ -137,6 +147,8 @@ function parseContactTarget(uri: string): [string, number] {
 
 export class CallManager {
   private readonly sessions = new Map<string, CallSession>();
+  /** Call-IDs currently being set up (between first INVITE and 200 OK stored) — dedup retransmissions */
+  private readonly pendingInvites = new Set<string>();
   private readonly config: Config;
   private sipHandle!: SipHandle; // set via setSipHandle() before any calls arrive
   private readonly log: Logger;
@@ -193,6 +205,25 @@ export class CallManager {
     const sipCallId = extractHeader(raw, 'Call-ID');
     const cseq = extractHeader(raw, 'CSeq');
 
+    // Dedup: ignore retransmissions while call is being set up or already established
+    if (this.pendingInvites.has(sipCallId)) return;
+    const existing = this.sessions.get(sipCallId);
+    if (existing) {
+      // Re-send 200 OK so sipgate stops retransmitting
+      const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
+      const sdpAnswer = buildSdpAnswer(localIp, existing.localRtpPort);
+      const ok200 = buildResponse({
+        status: 200, reason: 'OK', via, from,
+        to: `${toHeader};tag=${existing.localTag}`,
+        callId: sipCallId, cseq, sdpBody: sdpAnswer, localIp,
+        sipUser: this.config.SIP_USER, sipDomain: this.config.SIP_DOMAIN,
+        localSipPort: 5060,
+      });
+      this.sipHandle.sendRaw(Buffer.from(ok200), rinfo.port, rinfo.address);
+      return;
+    }
+    this.pendingInvites.add(sipCallId);
+
     // remoteTag: caller's ;tag= from From header
     const remoteTag = raw.match(/;tag=([^\s;>]+)/i)?.[1] ?? '';
     // remoteUri: caller's SIP URI from From header (strip angle brackets)
@@ -202,10 +233,18 @@ export class CallManager {
       raw.match(/Contact:\s*<([^>]+)>/i)?.[1] ??
       `sip:${rinfo.address}:${rinfo.port}`;
 
-    // Derive from/to URIs for WS params (best-effort)
-    const fromUri = remoteUri;
-    const toUri = `sip:${this.config.SIP_USER}@${this.config.SIP_DOMAIN}`;
+    // P-Asserted-Identity carries the real caller number when From is anonymous
+    const pai = extractHeader(raw, 'P-Asserted-Identity');
+    const fromUri = pai
+      ? (pai.match(/<([^>]+)>/)?.[1] ?? pai.trim())
+      : remoteUri;
 
+    // Request-URI contains the actual dialed number (first line of INVITE)
+    const requestUri = raw.split('\r\n')[0].match(/INVITE\s+(\S+)\s+SIP/i)?.[1]
+      ?? `sip:${this.config.SIP_USER}@${this.config.SIP_DOMAIN}`;
+    const toUri = requestUri;
+
+    try {
     // 2. Send 100 Trying immediately (no To-tag)
     const trying = buildResponse({
       status: 100,
@@ -287,7 +326,7 @@ export class CallManager {
     }
 
     // 8. Send 200 OK with SDP answer
-    const localIp = this.config.SDP_CONTACT_IP ?? '127.0.0.1';
+    const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
     const sdpAnswer = buildSdpAnswer(localIp, rtp.localPort);
     const ok = buildResponse({
       status: 200,
@@ -336,6 +375,9 @@ export class CallManager {
     ws.onDisconnect(() => this.terminateSession(session, 'ws_disconnect', true));
     // Enable RTP forwarding — no audio forwarded until here
     rtp.startForwarding();
+    } finally {
+      this.pendingInvites.delete(sipCallId);
+    }
   }
 
   // ── Private: BYE handler ────────────────────────────────────────────────────
@@ -385,7 +427,7 @@ export class CallManager {
     session.log.info({ event: 'call_ended', reason, sendBye }, 'Call terminated');
 
     if (sendBye) {
-      const localIp = this.config.SDP_CONTACT_IP ?? '127.0.0.1';
+      const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
       const bye = buildBye({
         remoteTarget: session.remoteTarget,
         localIp,
