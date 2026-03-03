@@ -8,6 +8,16 @@ A Node.js/TypeScript service that registers with sipgate trunking via SIP, accep
 
 Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive through transient drops, and the integration is drop-in compatible with Twilio Media Streams consumers.
 
+## Current Milestone: v2.0 Go Rewrite
+
+**Goal:** Rewrite audio-dock in Go to eliminate GC-induced audio jitter and achieve deterministic sub-millisecond latency — same external interface, smaller Docker image, observability included.
+
+**Target features:**
+- Complete Go implementation: SIP registration, bidirectional RTP↔WebSocket bridge, Twilio Media Streams protocol
+- Deterministic audio: no drain-queue workarounds; Go goroutines + raw `net.UDPConn` handle UDP natively
+- `/health` + `/metrics` (Prometheus) via stdlib `net/http` — no additional framework needed
+- Static Go binary in Docker FROM scratch or distroless — significantly smaller image than Node.js runtime
+
 ## Requirements
 
 ### Validated
@@ -25,8 +35,10 @@ Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket end
 
 ### Active
 
+- [ ] Complete Go rewrite with 1:1 feature parity to v1.0 (SIP bridge + WS bridge + resilience)
 - [ ] `GET /health` returns JSON with registration status and active call count (OBS-02)
 - [ ] `GET /metrics` returns Prometheus exposition format with key counters (OBS-03)
+- [ ] Static Go binary Docker image — no Node.js runtime
 
 ### Out of Scope
 
@@ -54,9 +66,11 @@ Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket end
 ## Constraints
 
 - **Tech Stack**: Node.js + TypeScript — no compiled sidecar processes
-- **SIP Library**: SIP.js — pure JS, manageable Docker image
+- **Language**: Go — deterministic GC, goroutines, direct syscall UDP access
+- **SIP Library**: TBD (research needed — sipgo/emiago is the main candidate)
 - **Transport**: UDP/TCP SIP, RTP audio
 - **Config**: Environment variables only — no config files, suitable for Docker/K8s secrets
+- **Backwards compat**: Same env var names as v1.0, same WS protocol — drop-in replacement
 
 ## Key Decisions
 
@@ -72,4 +86,4 @@ Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket end
 | pnpm fetch layer in Dockerfile | Cache layer invalidates only on lockfile change, not source | ✓ Good — fast rebuilds |
 
 ---
-*Last updated: 2026-03-03 after v1.0 milestone*
+*Last updated: 2026-03-03 after v1.0 milestone; v2.0 Go Rewrite started*
