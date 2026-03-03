@@ -12,6 +12,7 @@ export interface SipCallbacks {
   onInvite?: (raw: string, rinfo: RemoteInfo) => void;
   onAck?: (raw: string, rinfo: RemoteInfo) => void;
   onBye?: (raw: string, rinfo: RemoteInfo) => void;
+  onCancel?: (raw: string, rinfo: RemoteInfo) => void;
 }
 
 export interface SipHandle {
@@ -230,6 +231,8 @@ export async function createSipUserAgent(
         callbacks?.onAck?.(raw, rinfo);
       } else if (firstLine.startsWith('BYE ')) {
         callbacks?.onBye?.(raw, rinfo);
+      } else if (firstLine.startsWith('CANCEL ')) {
+        callbacks?.onCancel?.(raw, rinfo);
       } else if (firstLine.startsWith('OPTIONS ')) {
         // Respond 200 OK to OPTIONS keepalive (defends against sipgate liveness probes)
         const via = getHeader(raw, 'Via') ?? '';

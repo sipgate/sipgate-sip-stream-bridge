@@ -74,6 +74,16 @@ function extractAllVias(raw: string): string[] {
   return vias;
 }
 
+/** Extract ALL Record-Route headers (RFC 3261 §12.1.2 — MUST be echoed in 200 OK) */
+function extractAllRecordRoutes(raw: string): string[] {
+  const rrs: string[] = [];
+  for (const line of raw.split('\r\n')) {
+    const m = line.match(/^Record-Route:\s*(.+)$/i);
+    if (m) rrs.push(m[1].trim());
+  }
+  return rrs;
+}
+
 interface BuildResponseParams {
   status: number;
   reason: string;
@@ -82,6 +92,7 @@ interface BuildResponseParams {
   to: string;
   callId: string;
   cseq: string;
+  recordRoutes?: string[]; // Copy from INVITE (RFC 3261 §12.1.2 MUST)
   sdpBody?: string;
   localIp?: string;
   sipUser?: string;
@@ -99,6 +110,9 @@ function buildResponse(p: BuildResponseParams): string {
     `CSeq: ${p.cseq}`,
     `User-Agent: ${USER_AGENT}`,
   ];
+  if (p.recordRoutes?.length) {
+    lines.push(...p.recordRoutes.map((rr) => `Record-Route: ${rr}`));
+  }
   if (p.status === 200 && p.sdpBody) {
     lines.push(`Contact: <sip:${p.sipUser}@${p.localIp}:${p.localSipPort}>`);
     lines.push('Content-Type: application/sdp');
@@ -165,6 +179,8 @@ export class CallManager {
   private readonly sessions = new Map<string, CallSession>();
   /** Call-IDs currently being set up (between first INVITE and 200 OK stored) — dedup retransmissions */
   private readonly pendingInvites = new Set<string>();
+  /** Call-IDs for which CANCEL was received before 200 OK was sent */
+  private readonly cancelledInvites = new Set<string>();
   private readonly config: Config;
   private sipHandle!: SipHandle; // set via setSipHandle() before any calls arrive
   private readonly log: Logger;
@@ -200,6 +216,9 @@ export class CallManager {
       },
       onBye: (raw: string, rinfo: RemoteInfo) => {
         this.handleBye(raw, rinfo);
+      },
+      onCancel: (raw: string, rinfo: RemoteInfo) => {
+        this.handleCancel(raw, rinfo);
       },
     };
   }
@@ -269,6 +288,7 @@ export class CallManager {
     try {
     // 2. Send 100 Trying immediately (no To-tag)
     const vias = extractAllVias(raw);
+    const recordRoutes = extractAllRecordRoutes(raw);
     const trying = buildResponse({
       status: 100,
       reason: 'Trying',
@@ -306,6 +326,12 @@ export class CallManager {
       log: callLog,
     });
     rtp.setRemote(sdpOffer.remoteIp, sdpOffer.remotePort);
+
+    // Check if CANCEL arrived while we were awaiting RTP allocation
+    if (this.cancelledInvites.has(sipCallId)) {
+      rtp.dispose();
+      return; // 487 already sent by handleCancel
+    }
 
     // 5. Generate per-call identifiers
     const callSid = 'CA' + crypto.randomBytes(16).toString('hex');
@@ -348,6 +374,13 @@ export class CallManager {
       return;
     }
 
+    // Check if CANCEL arrived while we were awaiting WS connection
+    if (this.cancelledInvites.has(sipCallId)) {
+      ws.stop();
+      rtp.dispose();
+      return; // 487 already sent by handleCancel
+    }
+
     // 8. Send 200 OK with SDP answer
     const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
     const sdpAnswer = buildSdpAnswer(localIp, rtp.localPort);
@@ -355,6 +388,7 @@ export class CallManager {
       status: 200,
       reason: 'OK',
       vias,
+      recordRoutes,
       from,
       to: `${toHeader};tag=${localTag}`,
       callId: sipCallId,
@@ -366,6 +400,10 @@ export class CallManager {
       localSipPort: 5060,
     });
     const okBuf = Buffer.from(ok);
+    callLog.info(
+      { event: '200_ok_sent', dest: `${rinfo.address}:${rinfo.port}`, recordRoutes: recordRoutes.length },
+      '200 OK sent',
+    );
     this.sipHandle.sendRaw(okBuf, rinfo.port, rinfo.address);
 
     // 9. Store session in Map
@@ -394,7 +432,7 @@ export class CallManager {
     const scheduleOkRetransmit = (): void => {
       if (!this.sessions.has(sipCallId)) return; // session gone (BYE before ACK)
       this.sipHandle.sendRaw(okBuf, rinfo.port, rinfo.address);
-      callLog.debug({ event: '200_ok_retransmit', interval: retransmitInterval }, '200 OK retransmitted');
+      callLog.info({ event: '200_ok_retransmit', interval: retransmitInterval }, '200 OK retransmitted');
       retransmitInterval = Math.min(retransmitInterval * 2, 4000); // cap at T2
       session.okRetransmitTimer = setTimeout(scheduleOkRetransmit, retransmitInterval);
     };
@@ -414,7 +452,45 @@ export class CallManager {
     rtp.startForwarding();
     } finally {
       this.pendingInvites.delete(sipCallId);
+      this.cancelledInvites.delete(sipCallId);
     }
+  }
+
+  // ── Private: CANCEL handler ─────────────────────────────────────────────────
+
+  private handleCancel(raw: string, rinfo: RemoteInfo): void {
+    const callId = extractHeader(raw, 'Call-ID');
+    const vias = extractAllVias(raw);
+    const from = extractHeader(raw, 'From');
+    const to = extractHeader(raw, 'To');
+    const cseq = extractHeader(raw, 'CSeq');
+
+    // Always respond 200 OK to CANCEL (RFC 3261 §9.2)
+    const cancelOk = buildResponse({ status: 200, reason: 'OK', vias, from, to, callId, cseq });
+    this.sipHandle.sendRaw(Buffer.from(cancelOk), rinfo.port, rinfo.address);
+
+    if (this.sessions.has(callId)) {
+      // 200 OK already sent — CANCEL loses the race; UAC will send ACK + BYE
+      this.log.info({ event: 'cancel_ignored', callId }, 'CANCEL received after 200 OK — ignoring (200 wins)');
+      return;
+    }
+
+    if (this.pendingInvites.has(callId)) {
+      // Still setting up — mark as cancelled so handleInvite sends 487 after its next await
+      this.cancelledInvites.add(callId);
+      const resp487 = buildResponse({
+        status: 487,
+        reason: 'Request Terminated',
+        vias: extractAllVias(raw), from, to,
+        callId,
+        cseq: extractHeader(raw, 'CSeq').replace('CANCEL', 'INVITE'),
+      });
+      this.sipHandle.sendRaw(Buffer.from(resp487), rinfo.port, rinfo.address);
+      this.log.info({ event: 'cancel_pending', callId }, 'CANCEL received during setup — 487 sent');
+      return;
+    }
+
+    this.log.warn({ event: 'cancel_unknown', callId }, 'CANCEL for unknown call-id');
   }
 
   // ── Private: BYE handler ────────────────────────────────────────────────────
