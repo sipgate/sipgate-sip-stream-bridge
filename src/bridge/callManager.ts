@@ -117,12 +117,12 @@ function buildResponse(p: BuildResponseParams): string {
     lines.push(`Contact: <sip:${p.sipUser}@${p.localIp}:${p.localSipPort}>`);
     lines.push('Content-Type: application/sdp');
     lines.push(`Content-Length: ${Buffer.byteLength(p.sdpBody)}`);
-    lines.push('');
-    lines.push(p.sdpBody);
+    lines.push(''); // blank line — body follows directly, no extra \r\n appended
+    return lines.join('\r\n') + '\r\n' + p.sdpBody;
   } else {
     lines.push('Content-Length: 0', '');
+    return lines.join('\r\n') + '\r\n';
   }
-  return lines.join('\r\n') + '\r\n';
 }
 
 interface BuildByeParams {
@@ -268,7 +268,8 @@ export class CallManager {
     // remoteTag: caller's ;tag= from From header
     const remoteTag = raw.match(/;tag=([^\s;>]+)/i)?.[1] ?? '';
     // remoteUri: caller's SIP URI from From header (strip angle brackets)
-    const remoteUri = raw.match(/From:\s*(?:<([^>]+)>|([^\s;]+))/i)?.[1] ?? '';
+    // Skip optional display name (e.g. "Alice" <sip:...>) before the angle-bracket URI
+    const remoteUri = raw.match(/^From:[^<\r\n]*<([^>]+)>/im)?.[1] ?? '';
     // remoteContact: Contact URI for BYE routing
     const remoteContact =
       raw.match(/Contact:\s*<([^>]+)>/i)?.[1] ??
