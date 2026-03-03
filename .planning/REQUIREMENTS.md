@@ -37,11 +37,11 @@
 
 ### Configuration
 
-- [ ] **CFG-01**: SIP credentials (user, password, domain/registrar) are configured via environment variables (same names as v1.0 for drop-in compatibility)
-- [ ] **CFG-02**: Target WebSocket URL is configured via environment variable
-- [ ] **CFG-03**: RTP port range (min/max) is configured via environment variables
-- [ ] **CFG-04**: External/reachable IP for SDP contact line is configured via environment variable (`SDP_CONTACT_IP`)
-- [ ] **CFG-05**: Service fails to start with a descriptive error if any required configuration is missing
+- [x] **CFG-01**: SIP credentials (user, password, domain/registrar) are configured via environment variables (same names as v1.0 for drop-in compatibility)
+- [x] **CFG-02**: Target WebSocket URL is configured via environment variable
+- [x] **CFG-03**: RTP port range (min/max) is configured via environment variables
+- [x] **CFG-04**: External/reachable IP for SDP contact line is configured via environment variable (`SDP_CONTACT_IP`)
+- [x] **CFG-05**: Service fails to start with a descriptive error if any required configuration is missing
 
 ### Docker & Runtime
 
@@ -51,7 +51,7 @@
 
 ### Observability
 
-- [ ] **OBS-01**: Service logs structured JSON with callId and streamSid context on each relevant log line (zerolog)
+- [x] **OBS-01**: Service logs structured JSON with callId and streamSid context on each relevant log line (zerolog)
 - [ ] **OBS-02**: `GET /health` returns JSON with `registered: true/false` and `activeCalls: N` reflecting current state
 - [ ] **OBS-03**: `GET /metrics` returns valid Prometheus exposition format including `active_calls_total`, `sip_registration_status`, `rtp_packets_received_total`, `rtp_packets_sent_total`, `ws_reconnect_attempts_total`
 
@@ -96,40 +96,40 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SIP-01 | TBD | Pending |
-| SIP-02 | TBD | Pending |
-| SIP-03 | TBD | Pending |
-| SIP-04 | TBD | Pending |
-| SIP-05 | TBD | Pending |
-| WSB-01 | TBD | Pending |
-| WSB-02 | TBD | Pending |
-| WSB-03 | TBD | Pending |
-| WSB-04 | TBD | Pending |
-| WSB-05 | TBD | Pending |
-| WSB-06 | TBD | Pending |
-| WSB-07 | TBD | Pending |
-| WSR-01 | TBD | Pending |
-| WSR-02 | TBD | Pending |
-| WSR-03 | TBD | Pending |
-| CON-01 | TBD | Pending |
-| CON-02 | TBD | Pending |
-| CFG-01 | TBD | Pending |
-| CFG-02 | TBD | Pending |
-| CFG-03 | TBD | Pending |
-| CFG-04 | TBD | Pending |
-| CFG-05 | TBD | Pending |
-| DCK-01 | TBD | Pending |
-| DCK-02 | TBD | Pending |
-| DCK-03 | TBD | Pending |
-| OBS-01 | TBD | Pending |
-| OBS-02 | TBD | Pending |
-| OBS-03 | TBD | Pending |
-| LCY-01 | TBD | Pending |
+| SIP-01 | Phase 5 | Pending |
+| SIP-02 | Phase 5 | Pending |
+| SIP-03 | Phase 6 | Pending |
+| SIP-04 | Phase 6 | Pending |
+| SIP-05 | Phase 6 | Pending |
+| WSB-01 | Phase 6 | Pending |
+| WSB-02 | Phase 6 | Pending |
+| WSB-03 | Phase 6 | Pending |
+| WSB-04 | Phase 6 | Pending |
+| WSB-05 | Phase 6 | Pending |
+| WSB-06 | Phase 6 | Pending |
+| WSB-07 | Phase 7 | Pending |
+| WSR-01 | Phase 7 | Pending |
+| WSR-02 | Phase 7 | Pending |
+| WSR-03 | Phase 7 | Pending |
+| CON-01 | Phase 6 | Pending |
+| CON-02 | Phase 6 | Pending |
+| CFG-01 | Phase 4 | Complete |
+| CFG-02 | Phase 4 | Complete |
+| CFG-03 | Phase 4 | Complete |
+| CFG-04 | Phase 4 | Complete |
+| CFG-05 | Phase 4 | Complete |
+| DCK-01 | Phase 4 | Pending |
+| DCK-02 | Phase 4 | Pending |
+| DCK-03 | Phase 4 | Pending |
+| OBS-01 | Phase 4 | Complete |
+| OBS-02 | Phase 8 | Pending |
+| OBS-03 | Phase 8 | Pending |
+| LCY-01 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 29 total
-- Mapped to phases: TBD (filled by roadmapper)
-- Unmapped: TBD
+- Mapped to phases: 29
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-03*

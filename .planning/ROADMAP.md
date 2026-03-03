@@ -113,7 +113,7 @@ Plans:
 | 1. Foundation | v1.0 | 3/3 | Complete | 2026-03-03 |
 | 2. Core Bridge | v1.0 | 5/5 | Complete | 2026-03-03 |
 | 3. Resilience | v1.0 | 2/2 | Complete | 2026-03-03 |
-| 4. Go Scaffold | v2.0 | 0/2 | Not started | - |
+| 4. Go Scaffold | 1/2 | In Progress|  | - |
 | 5. SIP Registration | v2.0 | 0/1 | Not started | - |
 | 6. Inbound Call + RTP Bridge | v2.0 | 0/3 | Not started | - |
 | 7. WebSocket Resilience + DTMF | v2.0 | 0/2 | Not started | - |
