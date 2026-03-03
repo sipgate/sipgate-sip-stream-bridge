@@ -24,7 +24,7 @@ import { createChildLogger } from '../logger/index.js';
 import { createRtpHandler, type RtpHandler } from '../rtp/rtpHandler.js';
 import { buildSdpAnswer, parseSdpOffer } from '../sip/sdp.js';
 import type { SipCallbacks, SipHandle } from '../sip/userAgent.js';
-import { createWsClient, type WsClient } from '../ws/wsClient.js';
+import { createWsClient, type WsCallParams, type WsClient } from '../ws/wsClient.js';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -53,6 +53,8 @@ export interface CallSession {
   log: Logger;
   /** 200 OK retransmit timer handle — cleared on ACK (RFC 3261 §13.3.1.4) */
   okRetransmitTimer: ReturnType<typeof setTimeout> | null;
+  /** True while WS reconnect loop is running — gates RTP audio forwarding (WSR-03) */
+  wsReconnecting: boolean;
 }
 
 const USER_AGENT = 'audio-dock/0.1.0';
@@ -327,6 +329,9 @@ export class CallManager {
       log: callLog,
     });
     rtp.setRemote(sdpOffer.remoteIp, sdpOffer.remotePort);
+    // NAT hole-punch: send one silence packet outbound so the router creates a
+    // mapping for this port. sipgate's inbound RTP will then traverse the same rule.
+    rtp.sendAudio(Buffer.alloc(160, 0xff)); // μ-law silence
 
     // Check if CANCEL arrived while we were awaiting RTP allocation
     if (this.cancelledInvites.has(sipCallId)) {
@@ -424,6 +429,7 @@ export class CallManager {
       cseq: 1,
       log: callLog,
       okRetransmitTimer: null,
+      wsReconnecting: false,
     };
     this.sessions.set(sipCallId, session);
 
@@ -441,14 +447,42 @@ export class CallManager {
     callLog.info({ event: 'call_started', from: fromUri, to: toUri }, 'Call started');
 
     // 10. Wire audio bridge AFTER session is stored
-    // RTP audio → WS backend
-    rtp.on('audio', (payload: Buffer) => ws.sendAudio(payload));
-    // DTMF → WS backend
-    rtp.on('dtmf', ({ digit }: { digit: string }) => ws.sendDtmf(digit));
+    // RTP audio → WS backend (route via session.ws so post-reconnect handler picks up new WsClient)
+    let firstRtp = true;
+    rtp.on('audio', (payload: Buffer) => {
+      if (session.wsReconnecting) return; // drop during reconnect window — WSR-03
+      if (firstRtp) {
+        callLog.info({ event: 'first_rtp_audio', bytes: payload.length }, 'First RTP audio packet received from sipgate');
+        firstRtp = false;
+      }
+      session.ws.sendAudio(payload);
+    });
+    // DTMF → WS backend (route via session.ws so post-reconnect handler picks up new WsClient)
+    rtp.on('dtmf', ({ digit }: { digit: string }) => session.ws.sendDtmf(digit));
     // WS backend audio → outbound RTP
-    ws.onAudio((payload) => rtp.sendAudio(payload));
-    // WS disconnect → send BYE to caller then clean up
-    ws.onDisconnect(() => this.terminateSession(session, 'ws_disconnect', true));
+    let firstWsAudio = true;
+    ws.onAudio((payload) => {
+      if (firstWsAudio) {
+        callLog.info({ event: 'first_ws_audio', bytes: payload.length }, 'First audio from WS backend — sending to sipgate');
+        firstWsAudio = false;
+      }
+      rtp.sendAudio(payload);
+    });
+    // WS disconnect → start reconnect loop (keeps SIP call alive during transient WS drops)
+    // Capture params here so the reconnect loop can re-call createWsClient with same identifiers (WSR-02)
+    const wsParams: WsCallParams = {
+      streamSid: session.streamSid,
+      callSid: session.callSid,
+      from: fromUri,
+      to: toUri,
+      sipCallId,
+    };
+    ws.onDisconnect(() => {
+      session.wsReconnecting = true;
+      void this.startWsReconnectLoop(session, wsParams).catch((err: unknown) => {
+        session.log.error({ err }, 'Reconnect loop unhandled error');
+      });
+    });
     // Enable RTP forwarding — no audio forwarded until here
     rtp.startForwarding();
     } finally {
@@ -564,5 +598,81 @@ export class CallManager {
 
     session.ws.stop();     // sends stop event then closes WS
     session.rtp.dispose(); // closes dgram socket
+  }
+
+  // ── Private: WS reconnect loop ──────────────────────────────────────────────
+
+  /**
+   * Attempt to reconnect the WebSocket with exponential backoff.
+   *
+   * - Sends μ-law silence to caller every 20ms throughout the reconnect window (WSR-01).
+   * - Re-calls createWsClient with the same params so backend receives fresh
+   *   connected + start events on reconnect (WSR-02).
+   * - Inbound RTP is dropped via session.wsReconnecting gate (WSR-03).
+   * - Exits early if caller sends BYE while loop is sleeping (anti-zombie guard).
+   * - Calls terminateSession on budget exhaustion (30s) to send SIP BYE.
+   */
+  private async startWsReconnectLoop(
+    session: CallSession,
+    params: WsCallParams,
+  ): Promise<void> {
+    const BUDGET_MS = 30_000;
+    const CAP_MS    = 4_000;
+    const started   = Date.now();
+    let   delay     = 1_000;
+
+    // Send μ-law silence to caller throughout reconnect window — prevents dead-air
+    const silenceInterval = setInterval(() => {
+      session.rtp.sendAudio(Buffer.alloc(160, 0xff));
+    }, 20);
+
+    const cleanup = (): void => clearInterval(silenceInterval);
+
+    const attempt = async (n: number): Promise<void> => {
+      // BYE race guard: if session was terminated externally, exit without zombie reconnect
+      if (!this.sessions.has(session.callId)) {
+        cleanup();
+        return;
+      }
+
+      session.log.info({ event: 'ws_reconnect_attempt', attempt: n, delay }, 'Attempting WS reconnect');
+
+      try {
+        const newWs = await createWsClient(this.config.WS_TARGET_URL, params, session.log);
+        // Success: clear silence, reset flag, swap in new WsClient
+        cleanup();
+        session.wsReconnecting = false;
+        session.ws = newWs;
+
+        // Re-wire WS audio → RTP (old ws.onAudio listeners are on the dead socket and won't fire)
+        newWs.onAudio((payload) => {
+          session.rtp.sendAudio(payload);
+        });
+
+        // Re-wire disconnect handler recursively so future drops are also handled
+        newWs.onDisconnect(() => {
+          session.wsReconnecting = true;
+          void this.startWsReconnectLoop(session, params).catch((err: unknown) => {
+            session.log.error({ err }, 'Reconnect loop unhandled error');
+          });
+        });
+
+        session.log.info({ event: 'ws_reconnected', attempt: n }, 'WS reconnected — resuming audio bridge');
+      } catch {
+        const elapsed = Date.now() - started;
+        if (elapsed + delay >= BUDGET_MS) {
+          cleanup();
+          session.log.warn({ event: 'ws_reconnect_failed', elapsed }, 'WS reconnect budget exhausted — sending BYE');
+          this.terminateSession(session, 'ws_reconnect_failed', true);
+          return;
+        }
+        session.log.info({ event: 'ws_reconnect_wait', delay, elapsed }, 'WS reconnect failed — waiting before retry');
+        await new Promise<void>((res) => setTimeout(res, delay));
+        delay = Math.min(delay * 2, CAP_MS);
+        await attempt(n + 1);
+      }
+    };
+
+    await attempt(1);
   }
 }
