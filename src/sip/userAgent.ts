@@ -22,6 +22,8 @@ export interface SipHandle {
   unregister(): Promise<void>;
 }
 
+const USER_AGENT = 'audio-dock/0.1.0';
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function randomHex(n: number): string {
@@ -75,6 +77,7 @@ function buildRegister(p: {
     `CSeq: ${p.seq} REGISTER`,
     `Contact: <${contactUri}>`,
     `Expires: ${p.expires}`,
+    `User-Agent: ${USER_AGENT}`,
   ];
   if (p.auth) lines.push(`Authorization: ${p.auth}`);
   lines.push('Content-Length: 0', '');
@@ -241,6 +244,7 @@ export async function createSipUserAgent(
           `To: ${to}`,
           `Call-ID: ${callIdVal}`,
           `CSeq: ${cseqVal}`,
+          `User-Agent: ${USER_AGENT}`,
           'Content-Length: 0',
           '',
         ].join('\r\n') + '\r\n';
