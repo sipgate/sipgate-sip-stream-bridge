@@ -56,7 +56,7 @@
 
 ### Lifecycle
 
-- [ ] **LCY-01**: On SIGTERM/SIGINT, service sends SIP BYE to all active calls, UNREGISTER, and closes all WebSocket connections before exiting
+- [x] **LCY-01**: On SIGTERM/SIGINT, service sends SIP BYE to all active calls, UNREGISTER, and closes all WebSocket connections before exiting
 
 ## v2 Requirements
 
@@ -116,7 +116,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WSB-07 | Phase 2 | Complete |
 | CON-01 | Phase 2 | Complete |
 | CON-02 | Phase 2 | Complete |
-| LCY-01 | Phase 2 | Pending |
+| LCY-01 | Phase 2 | Complete |
 | WSR-01 | Phase 3 | Pending |
 | WSR-02 | Phase 3 | Pending |
 | WSR-03 | Phase 3 | Pending |

@@ -13,7 +13,7 @@ audio-dock is built in four phases that follow the dependency order of the probl
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundation** - SIP registration running in Docker with validated configuration
-- [ ] **Phase 2: Core Bridge** - Bidirectional audio flowing end-to-end for concurrent calls
+- [x] **Phase 2: Core Bridge** - Bidirectional audio flowing end-to-end for concurrent calls (completed 2026-03-03)
 - [ ] **Phase 3: Resilience** - Service survives WebSocket drops and cleans up resources correctly
 - [ ] **Phase 4: Observability** - Health endpoint and Prometheus metrics expose production state
 
@@ -91,6 +91,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/3 | In Progress|  |
-| 2. Core Bridge | 4/5 | In Progress|  |
+| 2. Core Bridge | 5/5 | Complete   | 2026-03-03 |
 | 3. Resilience | 0/3 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |

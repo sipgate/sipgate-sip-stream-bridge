@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T13:14:44Z"
+last_updated: "2026-03-03T13:18:57.852Z"
 progress:
   total_phases: 2
   completed_phases: 2
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-03-03)
 ## Current Position
 
 Phase: 2 of 4 (Core Bridge) — COMPLETE
-Plan: 4 of 4 in current phase (02-04 completed — CallManager)
-Status: Phase 2 complete, ready for Phase 3
-Last activity: 2026-03-03 — Completed 02-04 (CallManager: full INVITE lifecycle, bidirectional audio bridge, BYE/disconnect teardown)
+Plan: 5 of 5 in current phase (02-05 completed — Wired entrypoint + graceful shutdown)
+Status: Phase 2 fully complete, ready for Phase 3
+Last activity: 2026-03-03 — Completed 02-05 (wired entrypoint: CallManager + SipHandle + SIGTERM/SIGINT graceful shutdown)
 
 Progress: [████████░░] 75%
 
@@ -49,6 +49,7 @@ Progress: [████████░░] 75%
 *Updated after each plan completion*
 | Phase 02-core-bridge P03 | 1 | 1 tasks | 1 files |
 | Phase 02-core-bridge P04 | 2 | 1 tasks | 1 files |
+| Phase 02-core-bridge P05 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,9 @@ Recent decisions affecting current work:
 - [02-04]: sendBye=false path for remote BYE — 200 OK already sent; outbound BYE would be RFC 3261 protocol violation
 - [02-04]: onDisconnect wired after session stored — ensures terminateSession finds session in Map and doesn't silently no-op
 - [02-04]: CallManager.getCallbacks() decouples SIP event routing from socket implementation — clean boundary for Phase 3 wiring
+- [Phase 02-05]: SIGTERM and SIGINT share same shutdown() function — avoids handler drift between dev and production
+- [Phase 02-05]: 5-second drain timeout cleared in finally — guarantees process.exit even if unregister hangs
+- [Phase 02-05]: Shutdown sequence: terminateAll() then unregister() per CONTEXT.md locked decision
 
 ### Pending Todos
 
@@ -103,5 +107,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 02-04-PLAN.md — CallManager (full INVITE lifecycle, bidirectional audio bridge)
+Stopped at: Completed 02-05-PLAN.md — Wired entrypoint (CallManager + SipHandle + SIGTERM/SIGINT graceful shutdown)
 Resume file: None
