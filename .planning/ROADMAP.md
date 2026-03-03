@@ -66,7 +66,7 @@ Plans:
   1. An inbound call triggers a `connected` then `start` event on the WebSocket with correct streamSid, callSid, tracks, mediaFormat, and From/To/Call-ID in `start.customParameters`
   2. Voice audio spoken into the call appears as `media` events (base64 PCMU) on the WebSocket; audio sent as `media` events from the WebSocket is heard by the caller
   3. When the caller hangs up, the service sends SIP BYE and a `stop` event to the WebSocket; when the WebSocket sends `stop`, the service sends SIP BYE to the caller
-  4. If the target WebSocket is unreachable at call start, the INVITE is rejected with SIP 503 and no RTP socket is leaked
+  4. If the target WebSocket is unreachable at call start, the service sends SIP BYE to the caller and no RTP socket or goroutine is leaked (the INVITE receives a 200 OK before the WS dial attempt; unreachability is detected in session.run() and triggers BYE)
   5. Two simultaneous calls each get an independent WebSocket connection and independent RTP socket; hanging up one call does not affect the other; after each call ends there are no leaked goroutines or file descriptors
 **Plans**: 3 plans
 
