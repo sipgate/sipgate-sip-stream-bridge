@@ -1,3 +1,16 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: unknown
+last_updated: "2026-03-03T13:09:10Z"
+progress:
+  total_phases: 4
+  completed_phases: 1
+  total_plans: 12
+  completed_plans: 4
+---
+
 # Project State
 
 ## Project Reference
@@ -5,16 +18,16 @@
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 1 - Foundation
+**Current focus:** Phase 2 - Core Bridge
 
 ## Current Position
 
-Phase: 1 of 4 (Foundation)
-Plan: 3 of 3 in current phase
+Phase: 2 of 4 (Core Bridge)
+Plan: 2 of 4 in current phase
 Status: In progress
-Last activity: 2026-03-03 — Completed 01-03 (Docker infrastructure: Dockerfile, docker-compose.yml, .env.example)
+Last activity: 2026-03-03 — Completed 02-02 (WsClient: Twilio Media Streams protocol with 2-second connect timeout)
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -56,6 +69,9 @@ Recent decisions affecting current work:
 - [01-03]: 4-stage Dockerfile (base/fetcher/builder/production) — pnpm fetch layer caches only on lockfile changes
 - [01-03]: network_mode: host in docker-compose.yml — required for Phase 2 RTP (Docker port-proxy adds ~10ms UDP jitter)
 - [01-03]: MEDIUM confidence warning on SIP_DOMAIN and SIP_REGISTRAR in .env.example — verify from sipgate portal
+- [02-02]: rtpTimestamp increments by 160 per sendAudio call (20ms × 8kHz) — correct PCMU RTP clock
+- [02-02]: stop() calls ws.close() when OPEN (graceful close frame), ws.terminate() otherwise — avoids hanging sockets
+- [02-02]: onAudio ignores non-media events silently — forward-compatible with Twilio protocol extensions
 
 ### Pending Todos
 
@@ -71,5 +87,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 01-02-PLAN.md — SIP.js UserAgent factory + entrypoint wiring
+Stopped at: Completed 02-02-PLAN.md — WsClient Twilio Media Streams protocol factory
 Resume file: None

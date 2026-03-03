@@ -15,13 +15,13 @@
 
 ### WebSocket Bridge
 
-- [ ] **WSB-01**: Service sends `connected` event after WebSocket connection is established for a call
-- [ ] **WSB-02**: Service sends `start` event with streamSid, callSid, tracks, and mediaFormat before forwarding audio
+- [x] **WSB-01**: Service sends `connected` event after WebSocket connection is established for a call
+- [x] **WSB-02**: Service sends `start` event with streamSid, callSid, tracks, and mediaFormat before forwarding audio
 - [ ] **WSB-03**: Service forwards inbound RTP audio as `media` events (base64 mulaw payload) to the WebSocket
-- [ ] **WSB-04**: Service sends `stop` event when the SIP call ends
-- [ ] **WSB-05**: Service receives `media` events from WebSocket and converts them to outbound RTP to the caller
-- [ ] **WSB-06**: Call metadata (From, To, SIP Call-ID) is included in `start.customParameters`
-- [ ] **WSB-07**: Service forwards DTMF digits as `dtmf` events to the WebSocket
+- [x] **WSB-04**: Service sends `stop` event when the SIP call ends
+- [x] **WSB-05**: Service receives `media` events from WebSocket and converts them to outbound RTP to the caller
+- [x] **WSB-06**: Call metadata (From, To, SIP Call-ID) is included in `start.customParameters`
+- [x] **WSB-07**: Service forwards DTMF digits as `dtmf` events to the WebSocket
 
 ### WebSocket Resilience
 
@@ -107,13 +107,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SIP-03 | Phase 2 | Pending |
 | SIP-04 | Phase 2 | Pending |
 | SIP-05 | Phase 2 | Pending |
-| WSB-01 | Phase 2 | Pending |
-| WSB-02 | Phase 2 | Pending |
+| WSB-01 | Phase 2 | Complete |
+| WSB-02 | Phase 2 | Complete |
 | WSB-03 | Phase 2 | Pending |
-| WSB-04 | Phase 2 | Pending |
-| WSB-05 | Phase 2 | Pending |
-| WSB-06 | Phase 2 | Pending |
-| WSB-07 | Phase 2 | Pending |
+| WSB-04 | Phase 2 | Complete |
+| WSB-05 | Phase 2 | Complete |
+| WSB-06 | Phase 2 | Complete |
+| WSB-07 | Phase 2 | Complete |
 | CON-01 | Phase 2 | Pending |
 | CON-02 | Phase 2 | Pending |
 | LCY-01 | Phase 2 | Pending |
