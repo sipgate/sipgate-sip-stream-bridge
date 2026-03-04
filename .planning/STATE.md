@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
 status: unknown
-last_updated: "2026-03-04T14:55:20.202Z"
+last_updated: "2026-03-04T15:00:16.855Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 7 — WebSocket Resilience + DTMF
+**Current focus:** Phase 8 — Production Hardening
 
 ## Current Position
 
-Phase: 7 of 8 — IN PROGRESS
-Plan: 1 of 2 in phase 7
-Status: 07-01 complete (2026-03-04) — WS reconnect loop refactor done
-Last activity: 2026-03-04 — 07-01: wsSignal + handshake() + reconnect() + refactored run() with reconnect loop
+Phase: 7 of 8 — COMPLETE
+Plan: 2 of 2 in phase 7
+Status: 07-02 complete (2026-03-04) — RFC 4733 DTMF pipeline implemented
+Last activity: 2026-03-04 — 07-02: parseTelephoneEvent + sendDTMF + dtmfQueue wired in rtpReader+wsPacer
 
-Progress: ████████░░ 69%
+Progress: █████████░ 88%
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Progress: ████████░░ 69%
 | 04-go-scaffold | 2/2 | ~7min | ~3.5min |
 | 05-sip-registration | 1/1 | ~3min | ~3min |
 | 06-inbound-call-rtp-bridge | 3/3 ✓ | ~8min | ~2.7min |
-| 07-websocket-resilience-dtmf | 1/2 | ~4min | ~4min |
+| 07-websocket-resilience-dtmf | 2/2 ✓ | ~6min | ~3min |
 
 *Updated after each plan completion*
 
@@ -89,6 +89,7 @@ v2.0 decisions:
 - [Phase 07-01]: [07-01] s.wg now tracks ONLY rtpReader + rtpPacer; wsPacer + wsToRTP use per-connection local wsWg
 - [Phase 07-01]: [07-01] wsToRTP WS read error signals reconnect via sig.Signal() instead of dlg.Bye(); only stop event triggers BYE
 - [Phase 07-01]: [07-01] Shutdown sequence: SetReadDeadline → wsWg.Wait() → rtpConn.Close() → s.wg.Wait() → sendStop → wsConn.Close()
+- [Phase 07-02]: parseTelephoneEvent+sendDTMF in ws.go: RFC 4733 4-byte parser + Twilio dtmf event writer; dtmfQueue size 10 non-blocking send; dtmfQueue case before ticker.C in wsPacer for DTMF priority over audio; no new dependencies
 
 ### Pending Todos
 
@@ -103,5 +104,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 07-01-PLAN.md (WS reconnect loop — wsSignal, handshake(), reconnect(), refactored run())
+Stopped at: Completed 07-02-PLAN.md (DTMF pipeline — parseTelephoneEvent, sendDTMF, dtmfQueue in session.go)
 Resume file: None

@@ -25,7 +25,7 @@ See archive: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 4: Go Scaffold** - Go module, zerolog structured logging, fail-fast config validation, Docker static binary
 - [x] **Phase 5: SIP Registration** - Connect to sipgate, register with Digest Auth, automatic re-registration loop
 - [x] **Phase 6: Inbound Call + RTP Bridge** - Accept INVITE, negotiate PCMU, bidirectional RTP↔WebSocket bridge with full Twilio Media Streams protocol
-- [ ] **Phase 7: WebSocket Resilience + DTMF** - Reconnect with exponential backoff, silence drop during reconnect, DTMF forwarding
+- [x] **Phase 7: WebSocket Resilience + DTMF** - Reconnect with exponential backoff, silence drop during reconnect, DTMF forwarding (completed 2026-03-04)
 - [ ] **Phase 8: Lifecycle + Observability** - Graceful SIGTERM shutdown, /health and /metrics HTTP endpoints
 
 ## Phase Details
@@ -116,5 +116,5 @@ Plans:
 | 4. Go Scaffold | v2.0 | Complete    | 2026-03-03 | 2026-03-03 |
 | 5. SIP Registration | v2.0 | 1/1 | Complete | 2026-03-03 |
 | 6. Inbound Call + RTP Bridge | v2.0 | 3/3 | Complete | 2026-03-04 |
-| 7. WebSocket Resilience + DTMF | 1/2 | In Progress|  | - |
+| 7. WebSocket Resilience + DTMF | 2/2 | Complete   | 2026-03-04 | - |
 | 8. Lifecycle + Observability | v2.0 | 0/2 | Not started | - |

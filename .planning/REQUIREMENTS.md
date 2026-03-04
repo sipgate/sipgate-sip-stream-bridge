@@ -22,7 +22,7 @@
 - [ ] **WSB-04**: Service sends `stop` event when the SIP call ends
 - [ ] **WSB-05**: Service receives `media` events from WebSocket and converts them to outbound RTP to the caller
 - [ ] **WSB-06**: Call metadata (From, To, SIP Call-ID) is included in `start.customParameters`
-- [ ] **WSB-07**: Service forwards DTMF digits as `dtmf` events (PT 113 telephone-event, RFC 4733 End-bit deduplication by RTP timestamp)
+- [x] **WSB-07**: Service forwards DTMF digits as `dtmf` events (PT 113 telephone-event, RFC 4733 End-bit deduplication by RTP timestamp)
 
 ### WebSocket Resilience
 
@@ -107,7 +107,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WSB-04 | Phase 6 | Pending |
 | WSB-05 | Phase 6 | Pending |
 | WSB-06 | Phase 6 | Pending |
-| WSB-07 | Phase 7 | Pending |
+| WSB-07 | Phase 7 | Complete |
 | WSR-01 | Phase 7 | Complete |
 | WSR-02 | Phase 7 | Complete |
 | WSR-03 | Phase 7 | Complete |
