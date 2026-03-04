@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 
 	"go-simpler.org/env"
@@ -19,8 +20,8 @@ type Config struct {
 	// WebSocket target (CFG-02) — env var name WS_TARGET_URL matches v1.0 exactly
 	WSTargetURL string `env:"WS_TARGET_URL,required" usage:"Target WebSocket URL (e.g. wss://my-bot.example.com/ws)"`
 
-	// SDP contact IP (CFG-04) — REQUIRED: needed for SDP contact line in Phase 6
-	SDPContactIP string `env:"SDP_CONTACT_IP,required" usage:"Externally-reachable IP address for SDP contact line"`
+	// SDP contact IP (CFG-04) — optional: defaults to outbound local IP if not set
+	SDPContactIP string `env:"SDP_CONTACT_IP" usage:"Externally-reachable IP address for SDP contact line (default: auto-detected local IP)"`
 
 	// RTP port range (CFG-03)
 	RTPPortMin int `env:"RTP_PORT_MIN" default:"10000" usage:"Minimum UDP port for RTP (inclusive)"`
@@ -44,6 +45,14 @@ func Load() Config {
 			`{"level":"fatal","msg":"configuration error","error":%q}`+"\n",
 			err.Error())
 		os.Exit(1)
+	}
+
+	// Auto-detect outbound local IP if SDP_CONTACT_IP not set (CFG-04)
+	if cfg.SDPContactIP == "" {
+		if conn, err := net.Dial("udp", "8.8.8.8:80"); err == nil {
+			cfg.SDPContactIP = conn.LocalAddr().(*net.UDPAddr).IP.String()
+			conn.Close()
+		}
 	}
 
 	// Post-load cross-field validation — go-simpler/env does not support cross-field checks (CFG-05)

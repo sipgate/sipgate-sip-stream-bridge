@@ -1,6 +1,7 @@
 package config_test // black-box test package
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -59,7 +60,11 @@ func TestMain(m *testing.M) {
 		os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 		os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
 		os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
-		config.Load()
+		cfg := config.Load()
+		if cfg.SDPContactIP == "" {
+			fmt.Fprintln(os.Stderr, "SDPContactIP is empty after Load()")
+			os.Exit(1)
+		}
 		os.Exit(0)
 	default:
 		os.Exit(m.Run())
@@ -92,15 +97,11 @@ func TestLoad_InvertedRTPPorts_ExitsNonZero(t *testing.T) {
 	}
 }
 
-func TestLoad_MissingSDPContactIP_ExitsNonZero(t *testing.T) {
+func TestLoad_MissingSDPContactIP_DefaultsToLocalIP(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "-test.run=TestMain")
 	cmd.Env = append([]string{"SUBPROC_SCENARIO=missing_sdp_contact_ip"}, os.Environ()...)
 	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatal("expected non-zero exit, got nil error")
-	}
-	output := string(out)
-	if !strings.Contains(output, "SDP_CONTACT_IP") {
-		t.Errorf("expected output to mention SDP_CONTACT_IP, got: %s", output)
+	if err != nil {
+		t.Fatalf("expected zero exit (auto-detect), got error: %v\noutput: %s", err, out)
 	}
 }
