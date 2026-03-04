@@ -15,6 +15,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/audio-dock/internal/observability"
 )
 
 // packetQueueSize is the maximum number of 20 ms PCMU frames buffered for the RTP pacer.
@@ -58,6 +59,7 @@ type CallSession struct {
 	rtpInboundQueue chan []byte     // buffered PCMU frames (160 bytes each) for wsPacer (RTP→WS)
 	lastDtmfTS      uint32         // RTP timestamp of last forwarded DTMF End packet (RFC 4733 dedup)
 	dtmfQueue       chan string     // digit strings ("0"-"9","*","#","A"-"D") from rtpReader to wsPacer
+	metrics         *observability.Metrics
 }
 
 // run is the full call session lifecycle. Called from StartSession (which runs in a goroutine).
@@ -203,6 +205,11 @@ func (s *CallSession) reconnect(ctx context.Context) (net.Conn, bool) {
 	const maxBackoff = 4 * time.Second
 
 	for attempt := 1; ; attempt++ {
+		// Increment reconnect attempt counter at the top of each iteration (OBS-03).
+		if s.metrics != nil {
+			s.metrics.WSReconnects.Inc()
+		}
+
 		// Wait for backoff duration or budget expiry (Pitfall 7: context-aware select).
 		select {
 		case <-budget.Done():
@@ -281,6 +288,11 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 		// Drop non-PCMU packets.
 		if pkt.PayloadType != 0 {
 			continue
+		}
+
+		// Increment RTP receive counter for each valid PCMU packet (OBS-03).
+		if s.metrics != nil {
+			s.metrics.RTPRx.Inc()
 		}
 
 		// Copy payload — buf is reused on the next ReadFromUDP call.
@@ -523,6 +535,10 @@ func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
 				s.log.Error().Err(err).Str("call_id", s.callID).Msg("rtpPacer: WriteTo caller failed")
 				s.cancel()
 				return
+			}
+			// Increment RTP send counter on successful packet delivery (OBS-03).
+			if s.metrics != nil {
+				s.metrics.RTPTx.Inc()
 			}
 			seqNo++
 			timestamp += 160 // 20 ms @ 8 kHz PCMU
