@@ -26,7 +26,7 @@ See archive: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 5: SIP Registration** - Connect to sipgate, register with Digest Auth, automatic re-registration loop
 - [x] **Phase 6: Inbound Call + RTP Bridge** - Accept INVITE, negotiate PCMU, bidirectional RTP↔WebSocket bridge with full Twilio Media Streams protocol
 - [x] **Phase 7: WebSocket Resilience + DTMF** - Reconnect with exponential backoff, silence drop during reconnect, DTMF forwarding (completed 2026-03-04)
-- [ ] **Phase 8: Lifecycle + Observability** - Graceful SIGTERM shutdown, /health and /metrics HTTP endpoints
+- [x] **Phase 8: Lifecycle + Observability** - Graceful SIGTERM shutdown, /health and /metrics HTTP endpoints (completed 2026-03-04)
 
 ## Phase Details
 
@@ -117,4 +117,4 @@ Plans:
 | 5. SIP Registration | v2.0 | 1/1 | Complete | 2026-03-03 |
 | 6. Inbound Call + RTP Bridge | v2.0 | 3/3 | Complete | 2026-03-04 |
 | 7. WebSocket Resilience + DTMF | 2/2 | Complete   | 2026-03-04 | - |
-| 8. Lifecycle + Observability | 1/2 | In Progress|  | - |
+| 8. Lifecycle + Observability | 2/2 | Complete   | 2026-03-04 | - |

@@ -52,8 +52,8 @@
 ### Observability
 
 - [x] **OBS-01**: Service logs structured JSON with callId and streamSid context on each relevant log line (zerolog)
-- [ ] **OBS-02**: `GET /health` returns JSON with `registered: true/false` and `activeCalls: N` reflecting current state
-- [ ] **OBS-03**: `GET /metrics` returns valid Prometheus exposition format including `active_calls_total`, `sip_registration_status`, `rtp_packets_received_total`, `rtp_packets_sent_total`, `ws_reconnect_attempts_total`
+- [x] **OBS-02**: `GET /health` returns JSON with `registered: true/false` and `activeCalls: N` reflecting current state
+- [x] **OBS-03**: `GET /metrics` returns valid Prometheus exposition format including `active_calls_total`, `sip_registration_status`, `rtp_packets_received_total`, `rtp_packets_sent_total`, `ws_reconnect_attempts_total`
 
 ### Lifecycle
 
@@ -122,8 +122,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DCK-02 | Phase 4 | Complete |
 | DCK-03 | Phase 4 | Complete |
 | OBS-01 | Phase 4 | Complete |
-| OBS-02 | Phase 8 | Pending |
-| OBS-03 | Phase 8 | Pending |
+| OBS-02 | Phase 8 | Complete |
+| OBS-03 | Phase 8 | Complete |
 | LCY-01 | Phase 8 | Complete |
 
 **Coverage:**
