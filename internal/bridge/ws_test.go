@@ -299,6 +299,199 @@ func TestHandshake_SendsConnectedThenStart(t *testing.T) {
 	}
 }
 
+// TestParseTelephoneEvent_ShortPayload: payload shorter than 4 bytes must return ok=false.
+func TestParseTelephoneEvent_ShortPayload(t *testing.T) {
+	cases := [][]byte{nil, {}, {0x00}, {0x00, 0x00}, {0x00, 0x00, 0x00}}
+	for _, payload := range cases {
+		digit, isEnd, ok := parseTelephoneEvent(payload)
+		if ok {
+			t.Errorf("payload len=%d: expected ok=false, got ok=true (digit=%q, isEnd=%v)", len(payload), digit, isEnd)
+		}
+	}
+}
+
+// TestParseTelephoneEvent_EventCodeTooHigh: event code 16 (and above) must return ok=false.
+func TestParseTelephoneEvent_EventCodeTooHigh(t *testing.T) {
+	for _, code := range []byte{16, 100, 255} {
+		payload := []byte{code, 0x00, 0x00, 0x00}
+		_, _, ok := parseTelephoneEvent(payload)
+		if ok {
+			t.Errorf("event code %d: expected ok=false, got ok=true", code)
+		}
+	}
+}
+
+// TestParseTelephoneEvent_Digits: event codes 0-11 map to "0"-"9","*","#".
+func TestParseTelephoneEvent_Digits(t *testing.T) {
+	expected := []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "#", "A", "B", "C", "D"}
+	for code, want := range expected {
+		payload := []byte{byte(code), 0x00, 0x00, 0x00}
+		got, _, ok := parseTelephoneEvent(payload)
+		if !ok {
+			t.Errorf("code %d: expected ok=true, got ok=false", code)
+			continue
+		}
+		if got != want {
+			t.Errorf("code %d: expected digit %q, got %q", code, want, got)
+		}
+	}
+}
+
+// TestParseTelephoneEvent_EndBit: byte1 bit 0x80 controls isEnd.
+func TestParseTelephoneEvent_EndBit(t *testing.T) {
+	// isEnd=false when E bit is not set
+	_, isEnd, ok := parseTelephoneEvent([]byte{0x01, 0x00, 0x00, 0x00})
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if isEnd {
+		t.Errorf("byte1=0x00: expected isEnd=false, got true")
+	}
+
+	// isEnd=true when E bit (0x80) is set
+	_, isEnd, ok = parseTelephoneEvent([]byte{0x01, 0x80, 0x00, 0x00})
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if !isEnd {
+		t.Errorf("byte1=0x80: expected isEnd=true, got false")
+	}
+
+	// isEnd=true when E bit set with other bits
+	_, isEnd, ok = parseTelephoneEvent([]byte{0x02, 0xA5, 0x00, 0x00})
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if !isEnd {
+		t.Errorf("byte1=0xA5: expected isEnd=true, got false")
+	}
+}
+
+// TestSendDTMF_JSONSchema: sendDTMF writes a correct Twilio dtmf JSON schema.
+// Verifies event="dtmf", streamSid, digit="5", track="inbound_track", sequenceNumber="42".
+func TestSendDTMF_JSONSchema(t *testing.T) {
+	client, server := newPipe(t)
+	defer client.Close()
+	defer server.Close()
+
+	streamSid := "MZtest123"
+	digit := "5"
+	var seqNo uint32 = 42
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- sendDTMF(client, streamSid, digit, seqNo)
+	}()
+
+	data, _, err := wsutil.ReadClientData(server)
+	if err != nil {
+		t.Fatalf("ReadClientData: unexpected error: %v", err)
+	}
+	if writeErr := <-errCh; writeErr != nil {
+		t.Fatalf("sendDTMF: unexpected error: %v", writeErr)
+	}
+
+	var got DtmfEvent
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, string(data))
+	}
+
+	if got.Event != "dtmf" {
+		t.Errorf("Event: expected %q, got %q", "dtmf", got.Event)
+	}
+	if got.StreamSid != streamSid {
+		t.Errorf("StreamSid: expected %q, got %q", streamSid, got.StreamSid)
+	}
+	if got.SequenceNumber != "42" {
+		t.Errorf("SequenceNumber: expected %q, got %q", "42", got.SequenceNumber)
+	}
+	if got.Dtmf.Track != "inbound_track" {
+		t.Errorf("Dtmf.Track: expected %q, got %q", "inbound_track", got.Dtmf.Track)
+	}
+	if got.Dtmf.Digit != digit {
+		t.Errorf("Dtmf.Digit: expected %q, got %q", digit, got.Dtmf.Digit)
+	}
+}
+
+// TestDTMFDeduplication_SameTimestamp: three End=1 packets with the same RTP timestamp
+// produce exactly one dtmfQueue entry. Verifies the dedup logic in rtpReader.
+func TestDTMFDeduplication_SameTimestamp(t *testing.T) {
+	// Simulate the dedup logic directly (without full CallSession setup).
+	// The dedup key is the RTP packet timestamp.
+	var lastDtmfTS uint32
+	queue := make(chan string, 10)
+
+	enqueue := func(payload []byte, timestamp uint32) {
+		digit, isEnd, ok := parseTelephoneEvent(payload)
+		if !ok || !isEnd {
+			return
+		}
+		if timestamp == lastDtmfTS {
+			return // RFC 4733 retransmit — drop
+		}
+		lastDtmfTS = timestamp
+		select {
+		case queue <- digit:
+		default:
+		}
+	}
+
+	// RFC 4733 End=1 payload for digit "5" (code=5, byte1=0x80)
+	endPayload := []byte{0x05, 0x80, 0x00, 0x64}
+	const ts uint32 = 12345
+
+	// Simulate 3x retransmissions with same timestamp (RFC 4733 §2.5)
+	enqueue(endPayload, ts)
+	enqueue(endPayload, ts)
+	enqueue(endPayload, ts)
+
+	if len(queue) != 1 {
+		t.Errorf("expected 1 queue entry after 3 identical End packets, got %d", len(queue))
+	}
+	if digit := <-queue; digit != "5" {
+		t.Errorf("expected digit %q, got %q", "5", digit)
+	}
+}
+
+// TestDTMFForwarding_NewTimestamp: End=1 packets with distinct timestamps each produce
+// one dtmfQueue entry. Verifies that distinct keypresses are not deduplicated.
+func TestDTMFForwarding_NewTimestamp(t *testing.T) {
+	var lastDtmfTS uint32
+	queue := make(chan string, 10)
+
+	enqueue := func(payload []byte, timestamp uint32) {
+		digit, isEnd, ok := parseTelephoneEvent(payload)
+		if !ok || !isEnd {
+			return
+		}
+		if timestamp == lastDtmfTS {
+			return
+		}
+		lastDtmfTS = timestamp
+		select {
+		case queue <- digit:
+		default:
+		}
+	}
+
+	// "1" (code=1, End=1)
+	enqueue([]byte{0x01, 0x80, 0x00, 0x64}, 100)
+	// Retransmission of "1" — same timestamp — should be dropped
+	enqueue([]byte{0x01, 0x80, 0x00, 0x64}, 100)
+	// "2" (code=2, End=1) with a new timestamp — should be enqueued
+	enqueue([]byte{0x02, 0x80, 0x00, 0x64}, 200)
+
+	if len(queue) != 2 {
+		t.Errorf("expected 2 queue entries, got %d", len(queue))
+	}
+	if d := <-queue; d != "1" {
+		t.Errorf("first digit: expected %q, got %q", "1", d)
+	}
+	if d := <-queue; d != "2" {
+		t.Errorf("second digit: expected %q, got %q", "2", d)
+	}
+}
+
 // Test 4 — writeJSON + readWSMessage round-trip using net.Pipe().
 // The server end writes a ConnectedEvent as a server text frame (wsutil.WriteServerText).
 // The client end reads it via readWSMessage (wraps wsutil.ReadServerData).

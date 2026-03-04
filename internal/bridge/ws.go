@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"sync"
 
@@ -138,6 +139,63 @@ func sendStop(conn net.Conn, streamSid, callSidToken string) error {
 		Event:     "stop",
 		StreamSid: streamSid,
 		Stop:      StopBody{AccountSid: "", CallSid: callSidToken},
+	})
+}
+
+// dtmfEventToDigit maps RFC 4733 event codes 0-15 to DTMF digit strings.
+// Source: RFC 4733 Section 3.10 — https://www.rfc-editor.org/rfc/rfc4733.html
+var dtmfEventToDigit = [16]string{
+	"0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+	"*", "#", "A", "B", "C", "D",
+}
+
+// parseTelephoneEvent parses the 4-byte RFC 4733 telephone-event RTP payload.
+//
+// Wire format (RFC 4733 §2.3):
+//
+//	Byte 0:   event code (0-15 for standard DTMF digits)
+//	Byte 1:   E|R|volume — E bit = MSB (0x80); 1 means this is the End packet
+//	Bytes 2-3: duration (big-endian uint16; not used for forwarding)
+//
+// Returns (digit, isEnd, ok). ok=false if payload < 4 bytes or event code > 15.
+func parseTelephoneEvent(payload []byte) (digit string, isEnd bool, ok bool) {
+	if len(payload) < 4 {
+		return "", false, false
+	}
+	eventCode := payload[0]
+	if eventCode > 15 {
+		return "", false, false
+	}
+	isEnd = (payload[1] & 0x80) != 0
+	return dtmfEventToDigit[eventCode], isEnd, true
+}
+
+// DtmfEvent is the Twilio Media Streams `dtmf` event (WSB-07).
+// Schema verified from https://www.twilio.com/docs/voice/media-streams/websocket-messages
+type DtmfEvent struct {
+	Event          string   `json:"event"`
+	StreamSid      string   `json:"streamSid"`
+	SequenceNumber string   `json:"sequenceNumber"`
+	Dtmf           DtmfBody `json:"dtmf"`
+}
+
+// DtmfBody holds the nested DTMF payload.
+type DtmfBody struct {
+	Track string `json:"track"` // always "inbound_track" per Twilio spec
+	Digit string `json:"digit"` // "0"-"9", "*", "#", "A"-"D"
+}
+
+// sendDTMF writes a `dtmf` event to the WebSocket connection.
+// Called only from wsPacer (sole WS writer invariant preserved).
+func sendDTMF(conn net.Conn, streamSid, digit string, seqNo uint32) error {
+	return writeJSON(conn, DtmfEvent{
+		Event:          "dtmf",
+		StreamSid:      streamSid,
+		SequenceNumber: fmt.Sprintf("%d", seqNo),
+		Dtmf: DtmfBody{
+			Track: "inbound_track",
+			Digit: digit,
+		},
 	})
 }
 
