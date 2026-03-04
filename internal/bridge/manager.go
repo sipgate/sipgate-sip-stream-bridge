@@ -107,33 +107,30 @@ func (m *CallManager) StartSession(
 		Port: callerSDP.RTPPort,
 	}
 
-	// Dial WS before answering — reject with 503 if WS is unavailable (WSR-01).
-	// Use context.Background() (not dlg.Context()) so a CANCEL from the caller before
-	// 200 OK doesn't immediately abort the WS dial. dlg.Context() cancels on
-	// DialogStateEnded which can happen if the caller sends CANCEL during this window.
+	// Answer the call BEFORE dialing WS — eliminates the CANCEL race window.
+	//
+	// Previously we dialed WS first (~1-5ms TCP+HTTP handshake on localhost), giving
+	// sipgo's CANCEL goroutine time to win the fsmMu race and terminate the INVITE
+	// transaction before our RespondSDP could run.  By answering first, the race window
+	// shrinks to goroutine-scheduling overhead only (μs).
+	//
+	// If CANCEL has already been processed when RespondSDP runs, sipgo returns
+	// ErrTransactionCanceled (FSM already in Completed state) and we exit cleanly.
+	// If we win the race, the call is answered and we proceed to dial WS.
+	// If WS later fails we send BYE instead of 503 (can't reject after 200 OK).
+	sdpAnswer := sip.BuildSDPAnswer(m.cfg.SDPContactIP, rtpPort, callerSDP.DTMFPayloadType)
+	if err := dlg.RespondSDP(sdpAnswer); err != nil {
+		log.Info().Err(err).Str("call_id", callID).Msg("RespondSDP 200 OK failed — CANCEL arrived before answer")
+		return
+	}
+
+	// Dial WS now that the call is answered (ACK received by RespondSDP above).
 	wsCtx, wsCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer wsCancel()
 	wsConn, err := dialWS(wsCtx, m.cfg.WSTargetURL)
 	if err != nil {
-		log.Error().Err(err).Str("call_id", callID).Msg("dialWS failed — sending 503 (WSR-01)")
-		_ = dlg.Respond(503, "Service Unavailable", nil)
-		return
-	}
-
-	// Check if CANCEL arrived while WS was connecting (sipgo auto-handles 200/487).
-	if dlg.Context().Err() != nil {
-		log.Info().Str("call_id", callID).Msg("CANCEL received during WS dial — call aborted before answer")
-		_ = wsConn.Close()
-		return
-	}
-
-	// Build SDP answer: our contact IP + acquired RTP port + mirrored DTMF PT (never hardcoded).
-	sdpAnswer := sip.BuildSDPAnswer(m.cfg.SDPContactIP, rtpPort, callerSDP.DTMFPayloadType)
-
-	// 200 OK with SDP — answers the call (caller will send ACK).
-	if err := dlg.RespondSDP(sdpAnswer); err != nil {
-		log.Error().Err(err).Str("call_id", callID).Msg("RespondSDP 200 OK failed")
-		_ = wsConn.Close()
+		log.Error().Err(err).Str("call_id", callID).Msg("dialWS failed after answer — sending BYE")
+		_ = dlg.Bye(context.Background())
 		return
 	}
 
