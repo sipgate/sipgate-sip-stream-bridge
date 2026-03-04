@@ -90,11 +90,19 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 		return
 	}
 
-	// 100 Trying — suppresses INVITE retransmissions from the proxy
-	_ = dlg.Respond(100, "Trying", nil)
+	// 100 Trying — suppresses INVITE retransmissions from the proxy.
+	// Built manually and sent via tx.Respond to avoid sipgo copying Record-Route
+	// headers from the INVITE into provisional responses. Record-Route in 180/100
+	// causes some SIP clients (softphones, mobile) to immediately send CANCEL.
+	trying := siplib.NewResponseFromRequest(req, 100, "Trying", nil)
+	trying.RemoveHeader("Record-Route")
+	_ = tx.Respond(trying)
 
-	// 180 Ringing — signals caller that we are alerting before WS dial + answer
-	_ = dlg.Respond(180, "Ringing", nil)
+	// 180 Ringing — signals caller that we are alerting before answer.
+	// Same: strip Record-Route and send without Contact (no early dialog).
+	ringing := siplib.NewResponseFromRequest(req, 180, "Ringing", nil)
+	ringing.RemoveHeader("Record-Route")
+	_ = tx.Respond(ringing)
 
 	// Launch StartSession in goroutine — dials WS, builds SDP, sends 200 OK, then bridges.
 	// dlg.Context() is cancelled when: (a) caller sends BYE → onBye/ReadBye, (b) we call dlg.Bye().
@@ -117,12 +125,13 @@ func (h *Handler) onBye(req *siplib.Request, tx siplib.ServerTransaction) {
 	}
 }
 
-// onCancel handles CANCEL requests. sipgo automatically sends 200 OK to CANCEL and 487 to
-// the matching INVITE at the transaction layer — so this handler only needs to log.
-// Without a registered handler sipgo logs "SIP request handler not found" on every CANCEL,
-// including retransmissions, which pollutes the log stream.
+// onCancel handles CANCEL requests. sipgo automatically sends 200 OK to CANCEL + 487 to
+// the matching INVITE at the transaction layer (before this handler is called). This handler
+// is only reached for CANCEL retransmissions that arrive after the original INVITE transaction
+// is already gone. We respond 200 OK to stop retransmissions.
 func (h *Handler) onCancel(req *siplib.Request, tx siplib.ServerTransaction) {
-	h.log.Info().Str("call_id", req.CallID().Value()).Msg("CANCEL received — call aborted before answer")
+	h.log.Info().Str("call_id", req.CallID().Value()).Msg("CANCEL retransmission received — responding 200 OK")
+	_ = tx.Respond(siplib.NewResponseFromRequest(req, 200, "OK", nil))
 }
 
 // onOptions sends a 200 OK for SIP OPTIONS keepalive probes (no dialog needed).
