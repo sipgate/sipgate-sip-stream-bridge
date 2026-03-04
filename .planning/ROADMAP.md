@@ -24,7 +24,7 @@ See archive: `.planning/milestones/v1.0-ROADMAP.md`
 
 - [x] **Phase 4: Go Scaffold** - Go module, zerolog structured logging, fail-fast config validation, Docker static binary
 - [x] **Phase 5: SIP Registration** - Connect to sipgate, register with Digest Auth, automatic re-registration loop
-- [ ] **Phase 6: Inbound Call + RTP Bridge** - Accept INVITE, negotiate PCMU, bidirectional RTP↔WebSocket bridge with full Twilio Media Streams protocol
+- [x] **Phase 6: Inbound Call + RTP Bridge** - Accept INVITE, negotiate PCMU, bidirectional RTP↔WebSocket bridge with full Twilio Media Streams protocol
 - [ ] **Phase 7: WebSocket Resilience + DTMF** - Reconnect with exponential backoff, silence drop during reconnect, DTMF forwarding
 - [ ] **Phase 8: Lifecycle + Observability** - Graceful SIGTERM shutdown, /health and /metrics HTTP endpoints
 
@@ -71,9 +71,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — TDD SDP parsing (CallerSDP/ParseCallerSDP/BuildSDPAnswer) + SIP INVITE/ACK/BYE/OPTIONS handler with DialogServerCache (SIP-03, SIP-04, SIP-05)
-- [ ] 06-02-PLAN.md — TDD PortPool (channel-based bounded pool) + CallManager (sync.Map registry) + CallSession (per-call RTP socket + goroutine lifecycle + ws.go stubs) (CON-01, CON-02, WSR-01)
-- [ ] 06-03-PLAN.md — Full WebSocket bridge (Twilio connected/start/media/stop events via gobwas/ws) + main.go Phase 6 wiring (WSB-01..06)
+- [x] 06-01-PLAN.md — TDD SDP parsing (CallerSDP/ParseCallerSDP/BuildSDPAnswer) + SIP INVITE/ACK/BYE/OPTIONS handler with DialogServerCache (SIP-03, SIP-04, SIP-05)
+- [x] 06-02-PLAN.md — TDD PortPool (channel-based bounded pool) + CallManager (sync.Map registry) + CallSession (per-call RTP socket + goroutine lifecycle + ws.go stubs) (CON-01, CON-02, WSR-01)
+- [x] 06-03-PLAN.md — Full WebSocket bridge (Twilio connected/start/media/stop events via gobwas/ws) + main.go Phase 6 wiring (WSB-01..06)
 
 ### Phase 7: WebSocket Resilience + DTMF
 **Goal**: When the WebSocket drops mid-call, the service reconnects with exponential backoff, re-sends the handshake sequence, and resumes audio forwarding — DTMF digits pressed by the caller are forwarded as `dtmf` events exactly once per keypress
@@ -84,11 +84,11 @@ Plans:
   2. After a successful reconnect, the service re-sends `connected` then `start` before forwarding audio; the WebSocket consumer sees the full handshake again
   3. RTP audio arriving during the reconnect window is dropped (not buffered); the service does not accumulate memory or block the RTP receive goroutine
   4. Pressing a DTMF digit on the caller's keypad produces exactly one `dtmf` event on the WebSocket (RFC 4733 End-bit deduplication by RTP timestamp; no duplicate digits)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: WebSocket reconnect loop with exponential backoff (1s/2s/4s cap, 30s budget), reconnecting flag for RTP drop, re-send connected+start on reconnect (WSR-01, WSR-02, WSR-03)
-- [ ] 07-02: RFC 4733 telephone-event detection from RTP stream, DTMF PT extracted from SDP offer, End-bit deduplication by timestamp, `dtmf` event forwarding (WSB-07)
+- [ ] 07-01-PLAN.md — WS reconnect loop (wsSignal, handshake(), reconnect() with 1s/2s/4s backoff, run() refactor for per-connection WS goroutines) (WSR-01, WSR-02, WSR-03)
+- [ ] 07-02-PLAN.md — RFC 4733 telephone-event parsing + DTMF dedup by timestamp + dtmfQueue + wsPacer DTMF case + sendDTMF (WSB-07)
 
 ### Phase 8: Lifecycle + Observability
 **Goal**: The service shuts down cleanly on SIGTERM — all active calls get BYE, the SIP registration is cancelled, and the process exits without leaving remote peers in an unknown state — and operators can query live status and scrape Prometheus metrics
@@ -115,6 +115,6 @@ Plans:
 | 3. Resilience | v1.0 | 2/2 | Complete | 2026-03-03 |
 | 4. Go Scaffold | v2.0 | Complete    | 2026-03-03 | 2026-03-03 |
 | 5. SIP Registration | v2.0 | 1/1 | Complete | 2026-03-03 |
-| 6. Inbound Call + RTP Bridge | 2/3 | In Progress|  | - |
+| 6. Inbound Call + RTP Bridge | v2.0 | 3/3 | Complete | 2026-03-04 |
 | 7. WebSocket Resilience + DTMF | v2.0 | 0/2 | Not started | - |
 | 8. Lifecycle + Observability | v2.0 | 0/2 | Not started | - |
