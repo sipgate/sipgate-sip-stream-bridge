@@ -56,6 +56,8 @@ type CallSession struct {
 	wg              sync.WaitGroup // tracks ONLY rtpReader + rtpPacer (persistent RTP goroutines)
 	packetQueue     chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer (WS→RTP)
 	rtpInboundQueue chan []byte     // buffered PCMU frames (160 bytes each) for wsPacer (RTP→WS)
+	lastDtmfTS      uint32         // RTP timestamp of last forwarded DTMF End packet (RFC 4733 dedup)
+	dtmfQueue       chan string     // digit strings ("0"-"9","*","#","A"-"D") from rtpReader to wsPacer
 }
 
 // run is the full call session lifecycle. Called from StartSession (which runs in a goroutine).
@@ -98,6 +100,7 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 	// Initialize queues before launching goroutines (Pitfall 6 for DTMF in Phase 7-02).
 	s.packetQueue = make(chan []byte, packetQueueSize)
 	s.rtpInboundQueue = make(chan []byte, rtpInboundQueueSize)
+	s.dtmfQueue = make(chan string, 10) // 10 slots; more than enough for any realistic keypress burst
 
 	// Send initial handshake on the pre-dialed connection from StartSession.
 	wsConn := initialWsConn
@@ -253,8 +256,25 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 			continue
 		}
 
-		// Drop DTMF packets — handled in Phase 7.
+		// RFC 4733 DTMF processing (WSB-07).
 		if pkt.PayloadType == s.dtmfPT {
+			digit, isEnd, ok := parseTelephoneEvent(pkt.Payload)
+			if !ok || !isEnd {
+				// Non-End packet (key held) or malformed — drop silently.
+				// Only the End=1 packet signals digit completion (RFC 4733 §2.5).
+				continue
+			}
+			// RFC 4733 deduplication by RTP timestamp:
+			// Sender retransmits End=1 packet 3x with the SAME timestamp. Drop retransmissions.
+			if pkt.Header.Timestamp == s.lastDtmfTS {
+				continue
+			}
+			s.lastDtmfTS = pkt.Header.Timestamp
+			select {
+			case s.dtmfQueue <- digit:
+			default:
+				s.log.Warn().Str("call_id", s.callID).Str("digit", digit).Msg("rtpReader: DTMF queue full — dropping digit")
+			}
 			continue
 		}
 
@@ -302,6 +322,15 @@ func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 		select {
 		case <-ctx.Done():
 			return
+		case digit := <-s.dtmfQueue:
+			// WSB-07: forward DTMF digit immediately (not paced at 20 ms).
+			// dtmfQueue case fires before ticker.C — DTMF is a control event, not audio.
+			if err := sendDTMF(wsConn, s.streamSid, digit, seqNo); err != nil {
+				s.log.Error().Err(err).Str("call_id", s.callID).Str("digit", digit).Msg("wsPacer: sendDTMF failed")
+				sig.Signal()
+				return
+			}
+			seqNo++
 		case <-ticker.C:
 			// Dequeue one PCMU frame. If none is available, skip this tick silently —
 			// the WS consumer is expected to handle gaps (the inbound stream is voice,
