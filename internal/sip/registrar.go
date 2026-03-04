@@ -73,6 +73,7 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 	registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
 	req := siplib.NewRequest(siplib.REGISTER, registrarURI)
 	req.AppendHeader(siplib.NewHeader("Expires", strconv.Itoa(r.expires)))
+	req.AppendHeader(siplib.NewHeader("User-Agent", "audio-dock/2.0"))
 
 	// Pre-set From and To with the correct AoR (sip:user@domain).
 	// ClientRequestRegisterBuild skips From/To when already present, but if we don't set them

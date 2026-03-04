@@ -108,8 +108,10 @@ func (m *CallManager) StartSession(
 	}
 
 	// Dial WS before answering — reject with 503 if WS is unavailable (WSR-01).
-	// Use a 10 s timeout derived from dlg.Context() so the call isn't left hanging.
-	wsCtx, wsCancel := context.WithTimeout(dlg.Context(), 10*time.Second)
+	// Use context.Background() (not dlg.Context()) so a CANCEL from the caller before
+	// 200 OK doesn't immediately abort the WS dial. dlg.Context() cancels on
+	// DialogStateEnded which can happen if the caller sends CANCEL during this window.
+	wsCtx, wsCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer wsCancel()
 	wsConn, err := dialWS(wsCtx, m.cfg.WSTargetURL)
 	if err != nil {
