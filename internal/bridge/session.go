@@ -44,16 +44,16 @@ var pcmuSilenceFrame = func() []byte {
 // Ownership: StartSession creates one instance; run() owns it for the call lifetime.
 type CallSession struct {
 	callID       string
-	callSidToken string        // CA-prefixed Twilio callSid token (distinct from SIP Call-ID)
+	callSidToken string   // CA-prefixed Twilio callSid token (distinct from SIP Call-ID)
 	streamSid    string
 	dlg          *sipgo.DialogServerSession
 	rtpPort      int
-	callerRTP    net.Addr      // *net.UDPAddr — caller's IP:port from SDP offer
-	dtmfPT       uint8         // telephone-event PT from SDP offer (sipgate: 113)
+	callerRTP    net.Addr // *net.UDPAddr — caller's IP:port from SDP offer
+	dtmfPT       uint8    // telephone-event PT from SDP offer (sipgate: 113)
 	cfg          config.Config
 	log          zerolog.Logger
 	cancel          context.CancelFunc
-	wg              sync.WaitGroup // tracks rtpReader + wsPacer + wsToRTP + rtpPacer goroutines
+	wg              sync.WaitGroup // tracks ONLY rtpReader + rtpPacer (persistent RTP goroutines)
 	packetQueue     chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer (WS→RTP)
 	rtpInboundQueue chan []byte     // buffered PCMU frames (160 bytes each) for wsPacer (RTP→WS)
 }
@@ -62,89 +62,118 @@ type CallSession struct {
 // Blocks until the call ends. All cleanup happens via defers.
 //
 // WRITE-SAFETY INVARIANTS:
-//   - rtpToWS is the ONLY goroutine that writes to wsConn during audio forwarding.
-//   - sendStop is written to wsConn ONLY after wg.Wait() confirms all goroutines have exited.
+//   - wsPacer is the ONLY goroutine that writes to wsConn during audio forwarding.
+//   - sendStop is written to wsConn ONLY after all WS goroutines have exited.
 //   - rtpPacer is the ONLY goroutine that writes to rtpConn (UDP → caller).
-func (s *CallSession) run(ctx context.Context, wsConn net.Conn) {
+//
+// RECONNECT MODEL:
+//   - rtpReader and rtpPacer run for the full call lifetime (tracked by s.wg).
+//   - wsPacer and wsToRTP are stopped and restarted around each new wsConn (tracked by local wsWg).
+//   - A wsSignal fires when either WS goroutine detects a write/read error.
+//   - run() reconnects using exponential backoff (1s/2s/4s, 30s budget).
+//   - After successful reconnect, connected+start are re-sent before WS goroutines restart.
+func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 	// Pitfall 6: if BYE arrived before session started, context is already done — exit immediately.
 	if ctx.Err() != nil {
 		s.log.Warn().Str("call_id", s.callID).Msg("session context already cancelled at entry — BYE arrived early")
-		_ = wsConn.Close()
+		_ = initialWsConn.Close()
 		return
 	}
-
-	defer wsConn.Close()
 
 	// Derive session context from dialog context so BYE cancels the session.
 	sessionCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 	defer cancel()
 
-	// Open RTP socket on the acquired port (CON-02: defer Close ensures FD cleanup on all paths).
+	// Open RTP socket on the acquired port.
 	rtpConn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: s.rtpPort})
 	if err != nil {
 		s.log.Error().Err(err).Int("rtp_port", s.rtpPort).Str("call_id", s.callID).Msg("ListenUDP failed — sending BYE")
+		_ = initialWsConn.Close()
 		_ = s.dlg.Bye(context.Background())
 		return
 	}
-	defer rtpConn.Close() // CON-02: FD cleanup
+	defer rtpConn.Close()
 
-	// sendConnected: Twilio Media Streams handshake step 1.
-	if err := sendConnected(wsConn); err != nil {
-		s.log.Error().Err(err).Str("call_id", s.callID).Msg("sendConnected failed")
-		return
-	}
-
-	// sendStart: Twilio Media Streams handshake step 2.
-	// callSidToken (CA-prefixed) is used as callSid; SIP Call-ID goes in customParameters.sipCallId.
-	if err := sendStart(wsConn, s.streamSid, s.callSidToken, s.callID, s.dlg.InviteRequest); err != nil {
-		s.log.Error().Err(err).Str("call_id", s.callID).Msg("sendStart failed")
-		return
-	}
-
-	// packetQueue carries decoded PCMU frames (160 bytes each) from wsToRTP to rtpPacer.
-	// wsToRTP decodes and chunks WS audio blobs; rtpPacer sends them at the RTP ptime rate.
+	// Initialize queues before launching goroutines (Pitfall 6 for DTMF in Phase 7-02).
 	s.packetQueue = make(chan []byte, packetQueueSize)
-
-	// rtpInboundQueue carries raw PCMU payloads from rtpReader to wsPacer.
-	// rtpReader enqueues packets as fast as they arrive (absorbing sender bursts);
-	// wsPacer drains exactly one packet per 20 ms tick, smoothing the stream for the WS consumer.
 	s.rtpInboundQueue = make(chan []byte, rtpInboundQueueSize)
 
-	// Launch goroutines:
-	//   rtpReader — reads inbound RTP from caller, enqueues PCMU payloads to rtpInboundQueue
-	//   wsPacer   — drains rtpInboundQueue at 20 ms intervals, writes media events to WS (sole WS writer)
-	//   wsToRTP   — reads media events from WS, queues PCMU frames (sole WS reader)
-	//   rtpPacer  — drains packetQueue at 20 ms intervals, writes RTP to caller (sole UDP writer)
-	s.wg.Add(4)
+	// Send initial handshake on the pre-dialed connection from StartSession.
+	wsConn := initialWsConn
+	if err := s.handshake(wsConn); err != nil {
+		s.log.Error().Err(err).Str("call_id", s.callID).Msg("initial handshake failed — sending BYE")
+		_ = wsConn.Close()
+		_ = s.dlg.Bye(context.Background())
+		return
+	}
+
+	// RTP goroutines: persistent for the full call lifetime, tracked by s.wg.
+	// rtpReader enqueues inbound PCMU to rtpInboundQueue; rtpPacer drains packetQueue to caller.
+	s.wg.Add(2)
 	go s.rtpReader(sessionCtx, rtpConn)
-	go s.wsPacer(sessionCtx, wsConn)
-	go s.wsToRTP(sessionCtx, wsConn)
 	go s.rtpPacer(sessionCtx, rtpConn)
 
-	// Block until the dialog context is cancelled (BYE from either side).
-	<-sessionCtx.Done()
+	// WS reconnect loop: stops/restarts only wsPacer + wsToRTP on each new connection.
+	// A fresh sig + wsWg is created for each connection iteration.
+	for {
+		sig := newWsSignal()
+		wsWg := &sync.WaitGroup{}
+		wsWg.Add(2)
+		go s.wsPacer(sessionCtx, wsConn, wsWg, sig)
+		go s.wsToRTP(sessionCtx, wsConn, wsWg, sig)
 
-	// Unblock rtpReader: closing rtpConn causes ReadFromUDP to return an error immediately;
-	// rtpReader then sees ctx.Err() != nil and returns silently.
-	// defer rtpConn.Close() also registered above — double-close is harmless.
-	rtpConn.Close()
+		select {
+		case <-sessionCtx.Done():
+			// Normal call end (BYE from either side).
+			// Shutdown sequence:
+			//   1. SetReadDeadline → unblocks wsToRTP's blocked readWSMessage call
+			//   2. wsWg.Wait()    → drains wsToRTP + wsPacer (wsPacer sees ctx.Done or write error)
+			//   3. rtpConn.Close() → unblocks rtpReader's blocking ReadFromUDP
+			//   4. s.wg.Wait()   → drains rtpReader + rtpPacer
+			//   5. sendStop      → sole writer now; best-effort teardown message
+			//   6. wsConn.Close() → explicit close of the current connection
+			_ = wsConn.SetReadDeadline(time.Now())
+			wsWg.Wait()
+			rtpConn.Close() // unblock rtpReader
+			s.wg.Wait()     // drain rtpReader + rtpPacer
+			_ = sendStop(wsConn, s.streamSid, s.callSidToken) // best-effort
+			wsConn.Close()
+			return
 
-	// Unblock wsToRTP: expiring the WS read deadline causes readWSMessage to return;
-	// wsToRTP then sees ctx.Err() != nil and returns silently.
-	// SetReadDeadline (not Close) preserves the write path so sendStop can be sent below.
-	_ = wsConn.SetReadDeadline(time.Now())
+		case <-sig.Done():
+			// WS layer failure — attempt reconnect (WSR-01).
+			// Drain the old WS goroutines before touching wsConn (Pitfall 2).
+			_ = wsConn.SetReadDeadline(time.Now())
+			wsConn.Close() // causes wsPacer's next writeJSON to fail → exits
+			wsWg.Wait()    // wait for BOTH WS goroutines to exit before reconnecting
 
-	// Drain all four goroutines before sending stop.
-	// rtpReader exits promptly (rtpConn closed → ReadFromUDP error → ctx check).
-	// wsPacer   exits on its next ticker tick via ctx.Done() (within 20 ms).
-	// wsToRTP   exits promptly (WS read deadline expired → ctx check).
-	// rtpPacer  exits on its next ticker tick via ctx.Done().
-	s.wg.Wait()
+			// Reconnect+handshake loop: both must succeed before relaunching audio.
+			var newConn net.Conn
+			for {
+				var ok bool
+				newConn, ok = s.reconnect(sessionCtx)
+				if !ok {
+					s.log.Error().Str("call_id", s.callID).Msg("WS reconnect budget exhausted — sending BYE")
+					_ = s.dlg.Bye(context.Background())
+					s.cancel()
+					rtpConn.Close()
+					s.wg.Wait()
+					return
+				}
 
-	// sendStop: Twilio Media Streams teardown — safe to write now (all goroutines done).
-	if err := sendStop(wsConn, s.streamSid, s.callSidToken); err != nil {
-		s.log.Warn().Err(err).Str("call_id", s.callID).Msg("sendStop failed (best effort)")
+				// WSR-02: re-send handshake on every reconnect before relaunching audio.
+				if err := s.handshake(newConn); err != nil {
+					s.log.Error().Err(err).Str("call_id", s.callID).Msg("reconnect handshake failed — retrying")
+					newConn.Close()
+					continue // retry reconnect from the top of this inner loop
+				}
+				break // handshake succeeded
+			}
+
+			wsConn = newConn
+			// Loop continues — new sig + wsWg created at top of for loop
+		}
 	}
 }
 
@@ -157,6 +186,43 @@ func (s *CallSession) handshake(wsConn net.Conn) error {
 		return fmt.Errorf("sendConnected: %w", err)
 	}
 	return sendStart(wsConn, s.streamSid, s.callSidToken, s.callID, s.dlg.InviteRequest)
+}
+
+// reconnect attempts to re-dial the target WebSocket with exponential backoff.
+// Backoff: 1s → 2s → 4s (cap), total budget 30s from WSR-01.
+// Returns (conn, true) on success; (nil, false) if budget exhausted or ctx cancelled.
+// The backoff sleep happens BEFORE each dial attempt.
+func (s *CallSession) reconnect(ctx context.Context) (net.Conn, bool) {
+	budget, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	backoff := time.Second
+	const maxBackoff = 4 * time.Second
+
+	for attempt := 1; ; attempt++ {
+		// Wait for backoff duration or budget expiry (Pitfall 7: context-aware select).
+		select {
+		case <-budget.Done():
+			s.log.Error().Str("call_id", s.callID).Int("attempt", attempt).Msg("WS reconnect budget exhausted")
+			return nil, false
+		case <-time.After(backoff):
+		}
+
+		dialCtx, dialCancel := context.WithTimeout(budget, 5*time.Second)
+		conn, err := dialWS(dialCtx, s.cfg.WSTargetURL)
+		dialCancel()
+		if err != nil {
+			s.log.Warn().Err(err).Str("call_id", s.callID).Int("attempt", attempt).Dur("backoff", backoff).Msg("WS reconnect dial failed")
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+
+		s.log.Info().Str("call_id", s.callID).Int("attempt", attempt).Msg("WebSocket reconnected")
+		return conn, true
+	}
 }
 
 // rtpReader reads RTP packets from the UDP socket and enqueues PCMU payloads to
@@ -222,8 +288,9 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 // continues to forward one packet every 20 ms — the WS consumer sees a smooth stream.
 //
 // wsPacer is the SOLE WS writer during audio forwarding — no other goroutine may write to wsConn.
-func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn) {
-	defer s.wg.Done()
+// wg is the per-connection WaitGroup (not s.wg); sig signals WS-layer failure to run().
+func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn, wg *sync.WaitGroup, sig *wsSignal) {
+	defer wg.Done()
 
 	var seqNo uint32 = 2 // sequence starts at 2 (connected=seq 0, start=seq 1)
 	startTimeMs := time.Now().UnixMilli()
@@ -263,6 +330,7 @@ func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn) {
 
 			if err := writeJSON(wsConn, event); err != nil {
 				s.log.Error().Err(err).Str("call_id", s.callID).Msg("wsPacer: writeJSON failed")
+				sig.Signal() // notify run() that the WS layer failed
 				return
 			}
 			seqNo++
@@ -279,10 +347,11 @@ func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn) {
 //   - rtpPacer drains at exactly 20 ms/frame, matching PCMU ptime — no jitter buffer overflow.
 //   - New WS messages (including "stop") are processed promptly even while frames are queued.
 //
-// "stop" events trigger dlg.Bye + cancel session (SIP-05).
-// wsToRTP is the SOLE WS reader — only this goroutine reads from wsConn.
-func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn) {
-	defer s.wg.Done()
+// "stop" events trigger dlg.Bye + cancel session (SIP-05) — this is a SIP-side teardown.
+// WS read errors (when ctx is still live) signal run() via sig for reconnect handling.
+// wg is the per-connection WaitGroup (not s.wg); sig signals WS-layer failure to run().
+func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, wg *sync.WaitGroup, sig *wsSignal) {
+	defer wg.Done()
 
 	for {
 		if ctx.Err() != nil {
@@ -294,9 +363,10 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn) {
 			if ctx.Err() != nil {
 				return // session ended normally — WS read deadline expired or conn closed
 			}
-			s.log.Error().Err(err).Str("call_id", s.callID).Msg("wsToRTP: WS read error — sending BYE")
-			_ = s.dlg.Bye(context.Background())
-			s.cancel()
+			// WS read error while session is still active — signal run() for reconnect.
+			// Do NOT send BYE here; run() decides whether to reconnect or give up.
+			s.log.Error().Err(err).Str("call_id", s.callID).Msg("wsToRTP: WS read error — signalling reconnect")
+			sig.Signal()
 			return
 		}
 
@@ -356,6 +426,8 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn) {
 			}
 
 		case "stop":
+			// "stop" is a SIP-side teardown signal from the WS consumer (SIP-05).
+			// Send BYE and cancel the session — this is not a WS-layer failure.
 			s.log.Info().Str("call_id", s.callID).Msg("wsToRTP: received stop event — sending BYE (SIP-05)")
 			_ = s.dlg.Bye(context.Background())
 			s.cancel()
