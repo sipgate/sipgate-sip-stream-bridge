@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/emiago/sipgo"
@@ -14,14 +15,22 @@ import (
 
 // Registrar manages SIP REGISTER lifecycle for a single AoR (SIP_USER@SIP_DOMAIN).
 type Registrar struct {
-	client    *sipgo.Client
-	registrar string // SIP_REGISTRAR — REGISTER Request-URI host
-	domain    string // SIP_DOMAIN — AoR domain in From/To headers
-	contactIP string // SDPContactIP — reachable IP for Contact header (where sipgate sends INVITEs)
-	user      string // SIP_USER
-	password  string // SIP_PASSWORD
-	expires   int    // SIP_EXPIRES default 120 — requested expiry; server may grant different value
-	log       zerolog.Logger
+	client     *sipgo.Client
+	registrar  string // SIP_REGISTRAR — REGISTER Request-URI host
+	domain     string // SIP_DOMAIN — AoR domain in From/To headers
+	contactIP  string // SDPContactIP — reachable IP for Contact header (where sipgate sends INVITEs)
+	user       string // SIP_USER
+	password   string // SIP_PASSWORD
+	expires    int    // SIP_EXPIRES default 120 — requested expiry; server may grant different value
+	log        zerolog.Logger
+	registered atomic.Bool // true after successful registration; false after unregister or failure
+}
+
+// IsRegistered returns the current SIP registration state.
+// Set true on successful doRegister; set false on doRegister failure or Unregister.
+// NOT cleared at the start of each re-register attempt to avoid false-negative during round-trip.
+func (r *Registrar) IsRegistered() bool {
+	return r.registered.Load()
 }
 
 // NewRegistrar constructs a Registrar. client comes from Agent.Client.
@@ -121,12 +130,12 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 			serverExpiry = time.Duration(val) * time.Second
 		}
 	}
+	r.registered.Store(true)
 	return serverExpiry, nil
 }
 
 // reregisterLoop re-registers at 75% of the server-granted interval (SIP-02).
 // 75% matches diago's calcRetry ratio (see RESEARCH.md source: diago register_transaction.go).
-// On ctx cancellation, sends UNREGISTER (Expires: 0) before returning.
 // Uses doRegister (not Register) to prevent goroutine nesting (Pitfall 6).
 func (r *Registrar) reregisterLoop(ctx context.Context, expiry time.Duration) {
 	retryIn := time.Duration(float64(expiry) * 0.75)
@@ -136,17 +145,12 @@ func (r *Registrar) reregisterLoop(ctx context.Context, expiry time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
-			r.log.Info().Msg("SIP re-register loop stopping — sending UNREGISTER")
-			unregCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := r.Unregister(unregCtx); err != nil {
-				r.log.Warn().Err(err).Msg("UNREGISTER failed during shutdown")
-			}
 			return
 		case <-ticker.C:
 			newExpiry, err := r.doRegister(ctx)
 			if err != nil {
 				r.log.Error().Err(err).Msg("SIP re-registration failed — will retry next tick")
+				r.registered.Store(false)
 				continue // keep ticker running; transient network error may recover
 			}
 			r.log.Info().
@@ -191,5 +195,6 @@ func (r *Registrar) Unregister(ctx context.Context) error {
 	if res.StatusCode != 200 {
 		return fmt.Errorf("UNREGISTER rejected %d", res.StatusCode)
 	}
+	r.registered.Store(false)
 	return nil
 }

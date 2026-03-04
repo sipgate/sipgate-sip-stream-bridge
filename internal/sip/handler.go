@@ -1,6 +1,8 @@
 package sip
 
 import (
+	"sync/atomic"
+
 	"github.com/emiago/sipgo"
 	siplib "github.com/emiago/sipgo/sip"
 	"github.com/rs/zerolog"
@@ -22,6 +24,12 @@ type Handler struct {
 	callManager CallManagerIface
 	cfg         config.Config
 	log         zerolog.Logger
+	shutdown    atomic.Bool
+}
+
+// SetShutdown marks the handler as shutting down. onInvite will reject new INVITEs with 503.
+func (h *Handler) SetShutdown() {
+	h.shutdown.Store(true)
 }
 
 // NewHandler creates the Handler, wires it to agent.Server, and returns the ready handler.
@@ -67,6 +75,12 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 		Str("from", req.From().Address.String()).
 		Str("to", req.To().Address.String()).
 		Logger()
+
+	// Reject new INVITEs during graceful shutdown (LCY-01 — RFC 3261 §21.5.4)
+	if h.shutdown.Load() {
+		_ = tx.Respond(siplib.NewResponseFromRequest(req, 503, "Service Unavailable", nil))
+		return
+	}
 
 	// ReadInvite MUST be called first — creates dialog context and To-tag.
 	// NOTE: do NOT defer dlg.Close() here — that removes the dialog from DialogServerCache
