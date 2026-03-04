@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/sipgate/audio-dock/internal/bridge"
@@ -82,7 +83,7 @@ func main() {
 
 	// Create SIP INVITE handler and register on agent.Server
 	// MUST be before registrar.Register() — handlers must be ready when INVITE arrives
-	sip.NewHandler(agent, callManager, cfg, logger)
+	handler := sip.NewHandler(agent, callManager, cfg, logger)
 
 	// Register with sipgate — blocking; exits if initial registration fails (SIP-01)
 	// Starts background re-register goroutine at 75% of server-granted Expires (SIP-02)
@@ -100,6 +101,26 @@ func main() {
 		Str("ws_target_url", cfg.WSTargetURL).
 		Msg("SIP registration active — ready to accept inbound calls")
 	<-ctx.Done()
+	logger.Info().Str("signal", ctx.Err().Error()).Msg("shutdown signal received — starting graceful drain")
 
-	logger.Info().Str("signal", ctx.Err().Error()).Msg("shutdown signal received")
+	// 1. Reject new INVITEs immediately (shutdownFlag set BEFORE drain to prevent race — Research Pitfall 2)
+	handler.SetShutdown()
+
+	// 2. BYE all active calls; wait up to 8s for sessions to self-exit (LCY-01)
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer drainCancel()
+	callManager.DrainAll(drainCtx)
+	logger.Info().Int("remaining_calls", callManager.ActiveCount()).Msg("BYE drain complete")
+
+	// 3. SIP UNREGISTER — send after all calls are drained to avoid sipgate routing confusion
+	unregCtx, unregCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer unregCancel()
+	if err := registrar.Unregister(unregCtx); err != nil {
+		logger.Warn().Err(err).Msg("UNREGISTER failed during shutdown")
+	} else {
+		logger.Info().Msg("SIP unregistered")
+	}
+
+	logger.Info().Msg("shutdown complete")
+	// defer agent.UA.Close() runs here — do NOT add another UA.Close() (Research Pitfall 3)
 }
