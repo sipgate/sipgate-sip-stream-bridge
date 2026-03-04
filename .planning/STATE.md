@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
-status: unknown
-last_updated: "2026-03-04T07:03:13.094Z"
+status: in_progress
+last_updated: "2026-03-04T07:07:46.000Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -18,23 +18,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 6 — Inbound Call RTP Bridge (06-01 complete)
+**Current focus:** Phase 6 — Inbound Call RTP Bridge (06-01 and 06-02 complete)
 
 ## Current Position
 
 Phase: 6 of 8 (Inbound Call RTP Bridge)
-Plan: 1 of 3 in current phase (06-01 complete)
+Plan: 2 of 3 in current phase (06-02 complete)
 Status: In progress
-Last activity: 2026-03-04 — 06-01 SDP parsing + SIP INVITE/ACK/BYE/OPTIONS handler complete
+Last activity: 2026-03-04 — 06-02 PortPool (TDD) + CallManager + CallSession lifecycle complete
 
-Progress: ████░░░░░░ 37%
+Progress: █████░░░░░ 44%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3 (v2.0); 10 (v1.0)
-- Average duration: ~3.3min (v2.0)
-- Total execution time: ~10min
+- Total plans completed: 4 (v2.0); 10 (v1.0)
+- Average duration: ~3min (v2.0)
+- Total execution time: ~13min
 
 **By Phase:**
 
@@ -42,7 +42,7 @@ Progress: ████░░░░░░ 37%
 |-------|-------|-------|----------|
 | 04-go-scaffold | 2/2 | ~7min | ~3.5min |
 | 05-sip-registration | 1/1 | ~3min | ~3min |
-| 06-inbound-call-rtp-bridge | 1/3 (in progress) | ~2min | ~2min |
+| 06-inbound-call-rtp-bridge | 2/3 (in progress) | ~5min | ~2.5min |
 
 *Updated after each plan completion*
 
@@ -75,6 +75,10 @@ v2.0 decisions:
 - [Phase 06-01]: CallManagerIface defined in sip package to avoid circular import with bridge package
 - [Phase 06-01]: StartSession launched as goroutine in onInvite to prevent blocking subsequent INVITE handling
 - [Phase 06-01]: DTMF PT always extracted from SDP offer (never hardcoded); fallback to 101 if telephone-event not found
+- [Phase 06-02]: PortPool uses buffered chan int for O(1) lock-free acquire/release; non-blocking select default on exhaustion
+- [Phase 06-02]: wsutil.ReadServerData returns ([]byte, ws.OpCode, error) — single frame per call, not slice; text-frame filter added
+- [Phase 06-02]: wg.Wait() called BEFORE sendStop in run() — rtpToWS sole WS writer during audio; sendStop only after drain; prevents gobwas/ws concurrent write race (RESEARCH Pitfall 5)
+- [Phase 06-02]: Pitfall-6 guard: ctx.Err() != nil check at run() entry handles race where BYE arrives before session goroutine starts
 
 ### Pending Todos
 
@@ -89,5 +93,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 06-01-PLAN.md — SDP parsing (ParseCallerSDP/BuildSDPAnswer) + SIP INVITE/ACK/BYE/OPTIONS handler with DialogServerCache and CallManagerIface. Phase 06 Plan 01 done. Next: Phase 06 Plan 02 (bridge.CallManager + CallSession).
+Stopped at: Completed 06-02-PLAN.md — PortPool (TDD, 5 tests, -race) + CallManager (sync.Map, satisfies CallManagerIface) + CallSession lifecycle (run(), rtpToWS, wsToRTP, write-safety via wg.Wait before sendStop) + ws.go stub. Phase 06 Plan 02 done. Next: Phase 06 Plan 03 (WebSocket bridge — gobwas/ws implementation replacing ws.go stubs).
 Resume file: None

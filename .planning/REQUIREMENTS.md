@@ -26,14 +26,14 @@
 
 ### WebSocket Resilience
 
-- [ ] **WSR-01**: If WebSocket disconnects during an active call, service reconnects with exponential backoff (1s/2s/4s cap, 30s budget)
+- [x] **WSR-01**: If WebSocket disconnects during an active call, service reconnects with exponential backoff (1s/2s/4s cap, 30s budget)
 - [ ] **WSR-02**: After WebSocket reconnect, service re-sends `connected` then `start` before forwarding audio
 - [ ] **WSR-03**: Audio arriving from RTP during WebSocket reconnect window is dropped (not buffered indefinitely)
 
 ### Concurrency
 
-- [ ] **CON-01**: Multiple simultaneous calls are supported, each with an independent WebSocket connection
-- [ ] **CON-02**: Per-call RTP sockets and goroutines are cleaned up after call ends (no goroutine or file descriptor leak)
+- [x] **CON-01**: Multiple simultaneous calls are supported, each with an independent WebSocket connection
+- [x] **CON-02**: Per-call RTP sockets and goroutines are cleaned up after call ends (no goroutine or file descriptor leak)
 
 ### Configuration
 
@@ -108,11 +108,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WSB-05 | Phase 6 | Pending |
 | WSB-06 | Phase 6 | Pending |
 | WSB-07 | Phase 7 | Pending |
-| WSR-01 | Phase 7 | Pending |
+| WSR-01 | Phase 7 | Complete |
 | WSR-02 | Phase 7 | Pending |
 | WSR-03 | Phase 7 | Pending |
-| CON-01 | Phase 6 | Pending |
-| CON-02 | Phase 6 | Pending |
+| CON-01 | Phase 6 | Complete |
+| CON-02 | Phase 6 | Complete |
 | CFG-01 | Phase 4 | Complete |
 | CFG-02 | Phase 4 | Complete |
 | CFG-03 | Phase 4 | Complete |
