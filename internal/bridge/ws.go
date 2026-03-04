@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"sync"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -138,6 +139,29 @@ func sendStop(conn net.Conn, streamSid, callSidToken string) error {
 		StreamSid: streamSid,
 		Stop:      StopBody{AccountSid: "", CallSid: callSidToken},
 	})
+}
+
+// wsSignal is a single-fire channel signal for WS goroutine failure notification.
+// Both wsPacer and wsToRTP call Signal() on error; sync.Once ensures the channel
+// is closed exactly once regardless of which goroutine fires first (prevents panic
+// on double-close — Research Pitfall 1).
+type wsSignal struct {
+	once sync.Once
+	ch   chan struct{}
+}
+
+func newWsSignal() *wsSignal {
+	return &wsSignal{ch: make(chan struct{})}
+}
+
+// Signal closes the done channel exactly once. Safe to call from multiple goroutines.
+func (w *wsSignal) Signal() {
+	w.once.Do(func() { close(w.ch) })
+}
+
+// Done returns the channel that is closed when Signal() is first called.
+func (w *wsSignal) Done() <-chan struct{} {
+	return w.ch
 }
 
 // writeJSON marshals v to JSON and writes it as a masked WebSocket text frame.

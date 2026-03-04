@@ -148,6 +148,17 @@ func (s *CallSession) run(ctx context.Context, wsConn net.Conn) {
 	}
 }
 
+// handshake sends connected + start events on a fresh wsConn.
+// Must be called before launching wsPacer/wsToRTP on each new connection.
+// Reuses the same streamSid and callSidToken across reconnects (WSR-02:
+// the WS consumer treats the reconnected stream as a continuation of the same call).
+func (s *CallSession) handshake(wsConn net.Conn) error {
+	if err := sendConnected(wsConn); err != nil {
+		return fmt.Errorf("sendConnected: %w", err)
+	}
+	return sendStart(wsConn, s.streamSid, s.callSidToken, s.callID, s.dlg.InviteRequest)
+}
+
 // rtpReader reads RTP packets from the UDP socket and enqueues PCMU payloads to
 // rtpInboundQueue for paced forwarding by wsPacer.
 // DTMF packets (PT == s.dtmfPT) and non-PCMU packets are dropped silently.
@@ -157,16 +168,10 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 
 	buf := make([]byte, 1500) // MTU-safe read buffer
 
-	// Jitter diagnostics: track last RTP sequence number to detect sender-side gaps.
-	var lastRTPSeq uint16
-	firstPkt := true
-
 	for {
 		// Blocking read — no deadline. run() calls rtpConn.Close() after sessionCtx is done,
 		// which causes ReadFromUDP to return an error; ctx.Err() != nil check below returns silently.
-		t0 := time.Now()
 		n, _, err := rtpConn.ReadFromUDP(buf)
-		recvMs := time.Since(t0).Milliseconds()
 
 		if err != nil {
 			if ctx.Err() != nil {
@@ -191,25 +196,6 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 		if pkt.PayloadType != 0 {
 			continue
 		}
-
-		// Diagnostic: log when ReadFromUDP blocks longer than one RTP frame (20 ms).
-		// recv_ms > 20 + seq_gap == 0 → sender batched packets (confirmed sipgate behaviour).
-		// recv_ms > 20 + seq_gap > 0  → packets were lost in transit.
-		if recvMs > 20 {
-			var seqGap uint16
-			if !firstPkt {
-				seqGap = pkt.Header.SequenceNumber - lastRTPSeq - 1
-			}
-			s.log.Warn().
-				Int64("recv_ms", recvMs).
-				Uint16("rtp_seq", pkt.Header.SequenceNumber).
-				Uint32("rtp_ts", pkt.Header.Timestamp).
-				Uint16("seq_gap", seqGap).
-				Str("call_id", s.callID).
-				Msg("rtpReader: slow recv")
-		}
-		lastRTPSeq = pkt.Header.SequenceNumber
-		firstPkt = false
 
 		// Copy payload — buf is reused on the next ReadFromUDP call.
 		payload := make([]byte, len(pkt.Payload))
