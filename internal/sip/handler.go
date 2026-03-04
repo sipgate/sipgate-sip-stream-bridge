@@ -95,13 +95,15 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	// headers from the INVITE into provisional responses. Record-Route in 180/100
 	// causes some SIP clients (softphones, mobile) to immediately send CANCEL.
 	trying := siplib.NewResponseFromRequest(req, 100, "Trying", nil)
-	trying.RemoveHeader("Record-Route")
+	for trying.RemoveHeader("Record-Route") {
+	} // RemoveHeader removes only one at a time; loop until all are gone
 	_ = tx.Respond(trying)
 
 	// 180 Ringing — signals caller that we are alerting before answer.
-	// Same: strip Record-Route and send without Contact (no early dialog).
+	// Same: strip ALL Record-Route headers and send without Contact (no early dialog).
 	ringing := siplib.NewResponseFromRequest(req, 180, "Ringing", nil)
-	ringing.RemoveHeader("Record-Route")
+	for ringing.RemoveHeader("Record-Route") {
+	}
 	_ = tx.Respond(ringing)
 
 	// Launch StartSession in goroutine — dials WS, builds SDP, sends 200 OK, then bridges.
