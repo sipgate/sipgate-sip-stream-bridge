@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/rs/zerolog"
+	"github.com/sipgate/audio-dock/internal/bridge"
 	"github.com/sipgate/audio-dock/internal/config"
 	"github.com/sipgate/audio-dock/internal/sip"
 )
@@ -67,6 +68,22 @@ func main() {
 		}
 	}()
 
+	// --- Phase 6: Inbound Call + RTP Bridge ---
+
+	// Create RTP port pool from config (CFG-03)
+	portPool, err := bridge.NewPortPool(cfg.RTPPortMin, cfg.RTPPortMax)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to create RTP port pool")
+		os.Exit(1)
+	}
+
+	// Create CallManager — tracks active sessions in sync.Map (CON-01)
+	callManager := bridge.NewCallManager(portPool, cfg, logger)
+
+	// Create SIP INVITE handler and register on agent.Server
+	// MUST be before registrar.Register() — handlers must be ready when INVITE arrives
+	sip.NewHandler(agent, callManager, cfg, logger)
+
 	// Register with sipgate — blocking; exits if initial registration fails (SIP-01)
 	// Starts background re-register goroutine at 75% of server-granted Expires (SIP-02)
 	registrar := sip.NewRegistrar(agent.Client, cfg, logger)
@@ -76,9 +93,12 @@ func main() {
 	}
 
 	// Wait for shutdown signal
-	// Phase 6 will add INVITE handler goroutines here
 	// Phase 8 will add graceful drain before <-ctx.Done()
-	logger.Info().Msg("SIP registration active — waiting for calls or shutdown signal")
+	logger.Info().
+		Int("rtp_port_min", cfg.RTPPortMin).
+		Int("rtp_port_max", cfg.RTPPortMax).
+		Str("ws_target_url", cfg.WSTargetURL).
+		Msg("SIP registration active — ready to accept inbound calls")
 	<-ctx.Done()
 
 	logger.Info().Str("signal", ctx.Err().Error()).Msg("shutdown signal received")
