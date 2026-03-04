@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
-status: in_progress
-last_updated: "2026-03-03T22:30:00Z"
+status: unknown
+last_updated: "2026-03-04T07:03:13.094Z"
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 4
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 5 — SIP Registration (05-01 complete)
+**Current focus:** Phase 6 — Inbound Call RTP Bridge (06-01 complete)
 
 ## Current Position
 
-Phase: 5 of 8 (SIP Registration)
-Plan: 1 of 1 in current phase (05-01 complete)
+Phase: 6 of 8 (Inbound Call RTP Bridge)
+Plan: 1 of 3 in current phase (06-01 complete)
 Status: In progress
-Last activity: 2026-03-03 — 05-01 SIP registration complete (sipgo Agent + Registrar + Digest Auth + re-register loop)
+Last activity: 2026-03-04 — 06-01 SDP parsing + SIP INVITE/ACK/BYE/OPTIONS handler complete
 
-Progress: ███░░░░░░░ 25%
+Progress: ████░░░░░░ 37%
 
 ## Performance Metrics
 
@@ -42,6 +42,7 @@ Progress: ███░░░░░░░ 25%
 |-------|-------|-------|----------|
 | 04-go-scaffold | 2/2 | ~7min | ~3.5min |
 | 05-sip-registration | 1/1 | ~3min | ~3min |
+| 06-inbound-call-rtp-bridge | 1/3 (in progress) | ~2min | ~2min |
 
 *Updated after each plan completion*
 
@@ -71,6 +72,9 @@ v2.0 decisions:
 - [05-01] Server.Close() not used — returns nil in sipgo v1.2.0; shutdown via ctx cancel + ua.Close()
 - [05-01] slog-zerolog bridge added — sipgo slog output flows as zerolog JSON; avoids fragmented log stream
 - [05-01] pion/sdp + pion/rtp added in Phase 5 — avoids go.mod changes mid Phase 6 sprint
+- [Phase 06-01]: CallManagerIface defined in sip package to avoid circular import with bridge package
+- [Phase 06-01]: StartSession launched as goroutine in onInvite to prevent blocking subsequent INVITE handling
+- [Phase 06-01]: DTMF PT always extracted from SDP offer (never hardcoded); fallback to 101 if telephone-event not found
 
 ### Pending Todos
 
@@ -84,6 +88,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Completed 05-01-PLAN.md — SIP Agent + Registrar + Digest Auth + re-register loop. Phase 05 Plan 01 done. Next: Phase 06 (Call Handling / INVITE handler).
+Last session: 2026-03-04
+Stopped at: Completed 06-01-PLAN.md — SDP parsing (ParseCallerSDP/BuildSDPAnswer) + SIP INVITE/ACK/BYE/OPTIONS handler with DialogServerCache and CallManagerIface. Phase 06 Plan 01 done. Next: Phase 06 Plan 02 (bridge.CallManager + CallSession).
 Resume file: None

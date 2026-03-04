@@ -10,9 +10,9 @@
 
 - [x] **SIP-01**: Service registers with sipgate SIP trunking on startup using configured credentials (Digest Auth via sipgo v1.2.0)
 - [x] **SIP-02**: Service automatically re-registers at 90% of server-granted Expires timer (re-register goroutine with `ClientRequestRegisterBuild`)
-- [ ] **SIP-03**: Service accepts inbound SIP INVITE and negotiates PCMU (G.711 mu-law 8kHz) codec
-- [ ] **SIP-04**: Service rejects inbound INVITE with 503 if the target WebSocket cannot be connected
-- [ ] **SIP-05**: Service sends SIP BYE when call ends from either side
+- [x] **SIP-03**: Service accepts inbound SIP INVITE and negotiates PCMU (G.711 mu-law 8kHz) codec
+- [x] **SIP-04**: Service rejects inbound INVITE with 503 if the target WebSocket cannot be connected
+- [x] **SIP-05**: Service sends SIP BYE when call ends from either side
 
 ### WebSocket Bridge
 
@@ -98,9 +98,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | SIP-01 | Phase 5 | Complete |
 | SIP-02 | Phase 5 | Complete |
-| SIP-03 | Phase 6 | Pending |
-| SIP-04 | Phase 6 | Pending |
-| SIP-05 | Phase 6 | Pending |
+| SIP-03 | Phase 6 | Complete |
+| SIP-04 | Phase 6 | Complete |
+| SIP-05 | Phase 6 | Complete |
 | WSB-01 | Phase 6 | Pending |
 | WSB-02 | Phase 6 | Pending |
 | WSB-03 | Phase 6 | Pending |
