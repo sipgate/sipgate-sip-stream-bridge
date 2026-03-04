@@ -27,8 +27,8 @@
 ### WebSocket Resilience
 
 - [x] **WSR-01**: If WebSocket disconnects during an active call, service reconnects with exponential backoff (1s/2s/4s cap, 30s budget)
-- [ ] **WSR-02**: After WebSocket reconnect, service re-sends `connected` then `start` before forwarding audio
-- [ ] **WSR-03**: Audio arriving from RTP during WebSocket reconnect window is dropped (not buffered indefinitely)
+- [x] **WSR-02**: After WebSocket reconnect, service re-sends `connected` then `start` before forwarding audio
+- [x] **WSR-03**: Audio arriving from RTP during WebSocket reconnect window is dropped (not buffered indefinitely)
 
 ### Concurrency
 
@@ -109,8 +109,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WSB-06 | Phase 6 | Pending |
 | WSB-07 | Phase 7 | Pending |
 | WSR-01 | Phase 7 | Complete |
-| WSR-02 | Phase 7 | Pending |
-| WSR-03 | Phase 7 | Pending |
+| WSR-02 | Phase 7 | Complete |
+| WSR-03 | Phase 7 | Complete |
 | CON-01 | Phase 6 | Complete |
 | CON-02 | Phase 6 | Complete |
 | CFG-01 | Phase 4 | Complete |

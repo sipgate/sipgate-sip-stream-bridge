@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
-status: in_progress
-last_updated: "2026-03-04T07:07:46.000Z"
+status: unknown
+last_updated: "2026-03-04T14:55:20.202Z"
 progress:
-  total_phases: 3
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 5
+  total_phases: 4
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 7
 ---
 
 # Project State
@@ -18,23 +18,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 6 — Inbound Call RTP Bridge (06-01 and 06-02 complete)
+**Current focus:** Phase 7 — WebSocket Resilience + DTMF
 
 ## Current Position
 
-Phase: 6 of 8 (Inbound Call RTP Bridge)
-Plan: 2 of 3 in current phase (06-02 complete)
-Status: In progress
-Last activity: 2026-03-04 — 06-02 PortPool (TDD) + CallManager + CallSession lifecycle complete
+Phase: 7 of 8 — IN PROGRESS
+Plan: 1 of 2 in phase 7
+Status: 07-01 complete (2026-03-04) — WS reconnect loop refactor done
+Last activity: 2026-03-04 — 07-01: wsSignal + handshake() + reconnect() + refactored run() with reconnect loop
 
-Progress: █████░░░░░ 44%
+Progress: ████████░░ 69%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4 (v2.0); 10 (v1.0)
-- Average duration: ~3min (v2.0)
-- Total execution time: ~13min
+- Total plans completed: 5 (v2.0); 10 (v1.0)
+- Average duration: ~3.4min (v2.0)
+- Total execution time: ~17min
 
 **By Phase:**
 
@@ -42,7 +42,8 @@ Progress: █████░░░░░ 44%
 |-------|-------|-------|----------|
 | 04-go-scaffold | 2/2 | ~7min | ~3.5min |
 | 05-sip-registration | 1/1 | ~3min | ~3min |
-| 06-inbound-call-rtp-bridge | 2/3 (in progress) | ~5min | ~2.5min |
+| 06-inbound-call-rtp-bridge | 3/3 ✓ | ~8min | ~2.7min |
+| 07-websocket-resilience-dtmf | 1/2 | ~4min | ~4min |
 
 *Updated after each plan completion*
 
@@ -79,6 +80,15 @@ v2.0 decisions:
 - [Phase 06-02]: wsutil.ReadServerData returns ([]byte, ws.OpCode, error) — single frame per call, not slice; text-frame filter added
 - [Phase 06-02]: wg.Wait() called BEFORE sendStop in run() — rtpToWS sole WS writer during audio; sendStop only after drain; prevents gobwas/ws concurrent write race (RESEARCH Pitfall 5)
 - [Phase 06-02]: Pitfall-6 guard: ctx.Err() != nil check at run() entry handles race where BYE arrives before session goroutine starts
+- [Phase 06-03]: sipgo.WithUserAgent(ua string) is the correct v1.2.0 API (not WithUserAgentName)
+- [Phase 06-03]: streamSid = MZ + 32 hex, callSidToken = CA + 32 hex; these are separate from SIP Call-ID
+- [Phase 06-03]: SIP Call-ID goes in customParameters.sipCallId; callSidToken goes in callSid field
+- [Phase 06-03]: WS dial + 200 OK belong in StartSession (not run()); run() accepts pre-dialed wsConn
+- [Phase 06-03]: rtpToWS uses plain blocking ReadFromUDP; run() calls rtpConn.Close() to unblock on shutdown
+- [Phase 07-01]: [07-01] wsSignal uses sync.Once to guard channel close — prevents double-close panic when both wsPacer and wsToRTP fail simultaneously
+- [Phase 07-01]: [07-01] s.wg now tracks ONLY rtpReader + rtpPacer; wsPacer + wsToRTP use per-connection local wsWg
+- [Phase 07-01]: [07-01] wsToRTP WS read error signals reconnect via sig.Signal() instead of dlg.Bye(); only stop event triggers BYE
+- [Phase 07-01]: [07-01] Shutdown sequence: SetReadDeadline → wsWg.Wait() → rtpConn.Close() → s.wg.Wait() → sendStop → wsConn.Close()
 
 ### Pending Todos
 
@@ -93,5 +103,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 06-02-PLAN.md — PortPool (TDD, 5 tests, -race) + CallManager (sync.Map, satisfies CallManagerIface) + CallSession lifecycle (run(), rtpToWS, wsToRTP, write-safety via wg.Wait before sendStop) + ws.go stub. Phase 06 Plan 02 done. Next: Phase 06 Plan 03 (WebSocket bridge — gobwas/ws implementation replacing ws.go stubs).
+Stopped at: Completed 07-01-PLAN.md (WS reconnect loop — wsSignal, handshake(), reconnect(), refactored run())
 Resume file: None

@@ -116,5 +116,5 @@ Plans:
 | 4. Go Scaffold | v2.0 | Complete    | 2026-03-03 | 2026-03-03 |
 | 5. SIP Registration | v2.0 | 1/1 | Complete | 2026-03-03 |
 | 6. Inbound Call + RTP Bridge | v2.0 | 3/3 | Complete | 2026-03-04 |
-| 7. WebSocket Resilience + DTMF | v2.0 | 0/2 | Not started | - |
+| 7. WebSocket Resilience + DTMF | 1/2 | In Progress|  | - |
 | 8. Lifecycle + Observability | v2.0 | 0/2 | Not started | - |
