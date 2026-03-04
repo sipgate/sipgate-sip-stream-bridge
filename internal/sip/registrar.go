@@ -17,6 +17,7 @@ type Registrar struct {
 	client    *sipgo.Client
 	registrar string // SIP_REGISTRAR — REGISTER Request-URI host
 	domain    string // SIP_DOMAIN — AoR domain in From/To headers
+	contactIP string // SDPContactIP — reachable IP for Contact header (where sipgate sends INVITEs)
 	user      string // SIP_USER
 	password  string // SIP_PASSWORD
 	expires   int    // SIP_EXPIRES default 120 — requested expiry; server may grant different value
@@ -29,6 +30,7 @@ func NewRegistrar(client *sipgo.Client, cfg config.Config, log zerolog.Logger) *
 		client:    client,
 		registrar: cfg.SIPRegistrar,
 		domain:    cfg.SIPDomain,
+		contactIP: cfg.SDPContactIP,
 		user:      cfg.SIPUser,
 		password:  cfg.SIPPassword,
 		expires:   cfg.SIPExpires,
@@ -81,6 +83,12 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 	fromH.Params.Add("tag", siplib.GenerateTagN(16))
 	req.AppendHeader(fromH)
 	req.AppendHeader(&siplib.ToHeader{Address: aor})
+
+	// Contact header tells sipgate where to deliver inbound INVITEs (sip:user@ourIP:5060).
+	// ClientRequestRegisterBuild does NOT add a Contact header — without it sipgate acknowledges
+	// the REGISTER with 200 OK but creates no binding, so inbound calls fail with 480.
+	req.AppendHeader(siplib.NewHeader("Contact",
+		fmt.Sprintf("<sip:%s@%s:5060>", r.user, r.contactIP)))
 
 	res, err := r.client.Do(ctx, req, sipgo.ClientRequestRegisterBuild)
 	if err != nil {
@@ -164,6 +172,7 @@ func (r *Registrar) Unregister(ctx context.Context) error {
 	fromH.Params.Add("tag", siplib.GenerateTagN(16))
 	req.AppendHeader(fromH)
 	req.AppendHeader(&siplib.ToHeader{Address: aor})
+	req.AppendHeader(siplib.NewHeader("Contact", "*")) // RFC 3261 §10.2.2 — remove all bindings
 
 	res, err := r.client.Do(ctx, req, sipgo.ClientRequestRegisterBuild)
 	if err != nil {
