@@ -78,9 +78,20 @@ type StopBody struct {
 // dialWS connects to the target WebSocket URL using gobwas/ws.
 // Handles both ws:// and wss:// (TLS via system roots — included in Docker image from Phase 4).
 // Returns a net.Conn that is safe to use with wsutil read/write helpers.
+//
+// TCP_NODELAY is set to disable Nagle's algorithm. ws.WriteFrame makes two separate
+// write() syscalls (header then payload). Without TCP_NODELAY, Nagle holds the payload
+// write until the header's ACK arrives (up to 40–200 ms on macOS), causing periodic
+// ~100 ms stalls every ~25 frames and bursts of 5 back-to-back frames at the listener.
 func dialWS(ctx context.Context, url string) (net.Conn, error) {
 	conn, _, _, err := ws.Dial(ctx, url)
-	return conn, err
+	if err != nil {
+		return nil, err
+	}
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
+	return conn, nil
 }
 
 // sendConnected sends the WSB-01 connected event to the WebSocket server.
