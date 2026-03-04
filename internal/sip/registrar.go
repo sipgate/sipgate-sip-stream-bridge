@@ -11,6 +11,7 @@ import (
 	siplib "github.com/emiago/sipgo/sip"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/audio-dock/internal/observability"
 )
 
 // Registrar manages SIP REGISTER lifecycle for a single AoR (SIP_USER@SIP_DOMAIN).
@@ -24,6 +25,7 @@ type Registrar struct {
 	expires    int    // SIP_EXPIRES default 120 — requested expiry; server may grant different value
 	log        zerolog.Logger
 	registered atomic.Bool // true after successful registration; false after unregister or failure
+	metrics    *observability.Metrics
 }
 
 // IsRegistered returns the current SIP registration state.
@@ -34,7 +36,7 @@ func (r *Registrar) IsRegistered() bool {
 }
 
 // NewRegistrar constructs a Registrar. client comes from Agent.Client.
-func NewRegistrar(client *sipgo.Client, cfg config.Config, log zerolog.Logger) *Registrar {
+func NewRegistrar(client *sipgo.Client, cfg config.Config, log zerolog.Logger, metrics *observability.Metrics) *Registrar {
 	return &Registrar{
 		client:    client,
 		registrar: cfg.SIPRegistrar,
@@ -44,6 +46,7 @@ func NewRegistrar(client *sipgo.Client, cfg config.Config, log zerolog.Logger) *
 		password:  cfg.SIPPassword,
 		expires:   cfg.SIPExpires,
 		log:       log,
+		metrics:   metrics,
 	}
 }
 
@@ -131,6 +134,9 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 		}
 	}
 	r.registered.Store(true)
+	if r.metrics != nil {
+		r.metrics.SIPRegStatus.Set(1)
+	}
 	return serverExpiry, nil
 }
 
@@ -151,6 +157,9 @@ func (r *Registrar) reregisterLoop(ctx context.Context, expiry time.Duration) {
 			if err != nil {
 				r.log.Error().Err(err).Msg("SIP re-registration failed — will retry next tick")
 				r.registered.Store(false)
+				if r.metrics != nil {
+					r.metrics.SIPRegStatus.Set(0)
+				}
 				continue // keep ticker running; transient network error may recover
 			}
 			r.log.Info().
@@ -196,5 +205,8 @@ func (r *Registrar) Unregister(ctx context.Context) error {
 		return fmt.Errorf("UNREGISTER rejected %d", res.StatusCode)
 	}
 	r.registered.Store(false)
+	if r.metrics != nil {
+		r.metrics.SIPRegStatus.Set(0)
+	}
 	return nil
 }

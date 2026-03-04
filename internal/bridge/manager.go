@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/audio-dock/internal/observability"
 	sip "github.com/sipgate/audio-dock/internal/sip"
 )
 
@@ -62,14 +63,16 @@ type CallManager struct {
 	portPool *PortPool
 	cfg      config.Config
 	log      zerolog.Logger
+	metrics  *observability.Metrics
 }
 
-// NewCallManager creates a CallManager with the given port pool, config, and logger.
-func NewCallManager(portPool *PortPool, cfg config.Config, log zerolog.Logger) *CallManager {
+// NewCallManager creates a CallManager with the given port pool, config, logger, and metrics.
+func NewCallManager(portPool *PortPool, cfg config.Config, log zerolog.Logger, metrics *observability.Metrics) *CallManager {
 	return &CallManager{
 		portPool: portPool,
 		cfg:      cfg,
 		log:      log,
+		metrics:  metrics,
 	}
 }
 
@@ -169,10 +172,19 @@ func (m *CallManager) StartSession(
 		dtmfPT:       callerSDP.DTMFPayloadType,
 		cfg:          m.cfg,
 		log:          log,
+		metrics:      m.metrics,
 	}
 
 	m.sessions.Store(callID, session)
-	defer m.sessions.Delete(callID)
+	if m.metrics != nil {
+		m.metrics.ActiveCalls.Inc()
+	}
+	defer func() {
+		m.sessions.Delete(callID)
+		if m.metrics != nil {
+			m.metrics.ActiveCalls.Dec()
+		}
+	}()
 
 	session.run(dlg.Context(), wsConn)
 }

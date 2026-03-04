@@ -24,7 +24,7 @@ func TestRegistrar_NilClientReturnsError(t *testing.T) {
 	}
 	log := zerolog.Nop()
 
-	r := NewRegistrar(nil, cfg, log)
+	r := NewRegistrar(nil, cfg, log, nil)
 
 	err := r.Register(context.Background())
 	if err == nil {
