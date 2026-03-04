@@ -98,11 +98,11 @@ Plans:
   1. On SIGTERM, the service sends SIP BYE to all active calls, sends SIP UNREGISTER, closes all WebSocket connections, and exits within 10 seconds
   2. `GET /health` returns HTTP 200 with JSON body `{"registered": true/false, "activeCalls": N}` reflecting the live state of the SIP registration and call map
   3. `GET /metrics` returns HTTP 200 with valid Prometheus exposition format including `active_calls_total`, `sip_registration_status`, `rtp_packets_received_total`, `rtp_packets_sent_total`, and `ws_reconnect_attempts_total`
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 08-01: SIGTERM/SIGINT handler — drain active calls with BYE, UNREGISTER, close UA; shutdownFlag to stop accepting new INVITEs during drain (LCY-01)
-- [ ] 08-02: net/http server on configurable port — GET /health JSON endpoint wired to CallManager and registration state; GET /metrics Prometheus exposition with all five counters/gauges (OBS-02, OBS-03)
+- [ ] 08-01-PLAN.md — Graceful drain: shutdownFlag in Handler, DrainAll+ActiveCount on CallManager, IsRegistered on Registrar, full drain sequence in main.go (LCY-01)
+- [ ] 08-02-PLAN.md — HTTP server: internal/observability package, /health + /metrics endpoints, metric wiring in bridge+registrar hot paths, HTTP graceful shutdown (OBS-02, OBS-03)
 
 ## Progress
 
