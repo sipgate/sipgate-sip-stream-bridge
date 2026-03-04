@@ -22,6 +22,12 @@ import (
 // When full, new frames are dropped and a warning is logged.
 const packetQueueSize = 500
 
+// rtpInboundQueueSize is the maximum number of 20 ms PCMU frames buffered between
+// rtpReader and wsPacer. 50 frames = 1 second — enough to absorb the periodic
+// ~400 ms sender-side RTP batching observed from sipgate without dropping packets.
+// When full, new frames are dropped and a warning is logged.
+const rtpInboundQueueSize = 50
+
 // pcmuSilenceFrame is a single 20 ms PCMU silence frame (160 bytes of μ-law zero = 0xFF).
 // rtpPacer sends this when no audio is queued so the RTP stream is continuous.
 // Continuous RTP is required for NAT traversal: the first outbound UDP packet punches the
@@ -46,9 +52,10 @@ type CallSession struct {
 	dtmfPT       uint8         // telephone-event PT from SDP offer (sipgate: 113)
 	cfg          config.Config
 	log          zerolog.Logger
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup // tracks rtpToWS + wsToRTP + rtpPacer goroutines
-	packetQueue  chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup // tracks rtpReader + wsPacer + wsToRTP + rtpPacer goroutines
+	packetQueue     chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer (WS→RTP)
+	rtpInboundQueue chan []byte     // buffered PCMU frames (160 bytes each) for wsPacer (RTP→WS)
 }
 
 // run is the full call session lifecycle. Called from StartSession (which runs in a goroutine).
@@ -99,20 +106,27 @@ func (s *CallSession) run(ctx context.Context, wsConn net.Conn) {
 	// wsToRTP decodes and chunks WS audio blobs; rtpPacer sends them at the RTP ptime rate.
 	s.packetQueue = make(chan []byte, packetQueueSize)
 
+	// rtpInboundQueue carries raw PCMU payloads from rtpReader to wsPacer.
+	// rtpReader enqueues packets as fast as they arrive (absorbing sender bursts);
+	// wsPacer drains exactly one packet per 20 ms tick, smoothing the stream for the WS consumer.
+	s.rtpInboundQueue = make(chan []byte, rtpInboundQueueSize)
+
 	// Launch goroutines:
-	//   rtpToWS  — reads inbound RTP from caller, writes media events to WS (sole WS writer)
-	//   wsToRTP  — reads media events from WS, queues PCMU frames (sole WS reader)
-	//   rtpPacer — drains packetQueue at 20 ms intervals, writes RTP to caller (sole UDP writer)
-	s.wg.Add(3)
-	go s.rtpToWS(sessionCtx, rtpConn, wsConn)
+	//   rtpReader — reads inbound RTP from caller, enqueues PCMU payloads to rtpInboundQueue
+	//   wsPacer   — drains rtpInboundQueue at 20 ms intervals, writes media events to WS (sole WS writer)
+	//   wsToRTP   — reads media events from WS, queues PCMU frames (sole WS reader)
+	//   rtpPacer  — drains packetQueue at 20 ms intervals, writes RTP to caller (sole UDP writer)
+	s.wg.Add(4)
+	go s.rtpReader(sessionCtx, rtpConn)
+	go s.wsPacer(sessionCtx, wsConn)
 	go s.wsToRTP(sessionCtx, wsConn)
 	go s.rtpPacer(sessionCtx, rtpConn)
 
 	// Block until the dialog context is cancelled (BYE from either side).
 	<-sessionCtx.Done()
 
-	// Unblock rtpToWS: closing rtpConn causes ReadFromUDP to return an error immediately;
-	// rtpToWS then sees ctx.Err() != nil and returns silently.
+	// Unblock rtpReader: closing rtpConn causes ReadFromUDP to return an error immediately;
+	// rtpReader then sees ctx.Err() != nil and returns silently.
 	// defer rtpConn.Close() also registered above — double-close is harmless.
 	rtpConn.Close()
 
@@ -121,10 +135,11 @@ func (s *CallSession) run(ctx context.Context, wsConn net.Conn) {
 	// SetReadDeadline (not Close) preserves the write path so sendStop can be sent below.
 	_ = wsConn.SetReadDeadline(time.Now())
 
-	// Drain all three goroutines before sending stop.
-	// rtpToWS exits promptly (rtpConn closed → ReadFromUDP error → ctx check).
-	// wsToRTP exits promptly (WS read deadline expired → ctx check).
-	// rtpPacer exits on its next ticker tick via ctx.Done().
+	// Drain all four goroutines before sending stop.
+	// rtpReader exits promptly (rtpConn closed → ReadFromUDP error → ctx check).
+	// wsPacer   exits on its next ticker tick via ctx.Done() (within 20 ms).
+	// wsToRTP   exits promptly (WS read deadline expired → ctx check).
+	// rtpPacer  exits on its next ticker tick via ctx.Done().
 	s.wg.Wait()
 
 	// sendStop: Twilio Media Streams teardown — safe to write now (all goroutines done).
@@ -133,35 +148,37 @@ func (s *CallSession) run(ctx context.Context, wsConn net.Conn) {
 	}
 }
 
-// rtpToWS reads RTP packets from the UDP socket and forwards PCMU audio to the WebSocket.
-// PCMU (PT 0) packets are base64-encoded and sent as Twilio "media" events.
-// DTMF packets (PT == s.dtmfPT) are dropped — handled in Phase 7.
-// Non-PCMU/non-DTMF packets are also dropped.
-// rtpToWS is the SOLE WS writer during audio forwarding — no other goroutine may write to wsConn.
-func (s *CallSession) rtpToWS(ctx context.Context, rtpConn *net.UDPConn, wsConn net.Conn) {
+// rtpReader reads RTP packets from the UDP socket and enqueues PCMU payloads to
+// rtpInboundQueue for paced forwarding by wsPacer.
+// DTMF packets (PT == s.dtmfPT) and non-PCMU packets are dropped silently.
+// Enqueuing is non-blocking: if rtpInboundQueue is full the packet is dropped with a warning.
+func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 	defer s.wg.Done()
 
 	buf := make([]byte, 1500) // MTU-safe read buffer
-	var seqNo uint32 = 2      // sequence starts at 2 (connected=implicit seq 0, start=seq 1)
-	startTimeMs := time.Now().UnixMilli()
+
+	// Jitter diagnostics: track last RTP sequence number to detect sender-side gaps.
+	var lastRTPSeq uint16
+	firstPkt := true
 
 	for {
 		// Blocking read — no deadline. run() calls rtpConn.Close() after sessionCtx is done,
 		// which causes ReadFromUDP to return an error; ctx.Err() != nil check below returns silently.
-		// This eliminates the 100 ms deadline poll that caused burst-jitter in rtpToWS.
+		t0 := time.Now()
 		n, _, err := rtpConn.ReadFromUDP(buf)
+		recvMs := time.Since(t0).Milliseconds()
+
 		if err != nil {
 			if ctx.Err() != nil {
 				return // rtpConn.Close() was called in run() after ctx cancelled — exit silently
 			}
-			s.log.Error().Err(err).Str("call_id", s.callID).Msg("rtpToWS: ReadFromUDP error")
+			s.log.Error().Err(err).Str("call_id", s.callID).Msg("rtpReader: ReadFromUDP error")
 			return
 		}
 
-		// Parse RTP packet header to check payload type.
 		var pkt rtp.Packet
 		if err := pkt.Unmarshal(buf[:n]); err != nil {
-			s.log.Warn().Err(err).Str("call_id", s.callID).Msg("rtpToWS: RTP unmarshal failed — skipping packet")
+			s.log.Warn().Err(err).Str("call_id", s.callID).Msg("rtpReader: RTP unmarshal failed — skipping packet")
 			continue
 		}
 
@@ -175,29 +192,95 @@ func (s *CallSession) rtpToWS(ctx context.Context, rtpConn *net.UDPConn, wsConn 
 			continue
 		}
 
-		// Base64-encode PCMU payload for Twilio Media Streams "media" event.
-		payload := base64.StdEncoding.EncodeToString(pkt.Payload)
-		timestamp := time.Now().UnixMilli() - startTimeMs
-
-		// Use MediaEvent struct to ensure correct JSON schema (string fields, not integers).
-		// Twilio Media Streams spec requires sequenceNumber, chunk, and timestamp as strings.
-		event := MediaEvent{
-			Event:          "media",
-			SequenceNumber: fmt.Sprintf("%d", seqNo),
-			StreamSid:      s.streamSid,
-			Media: MediaBody{
-				Track:     "inbound",
-				Chunk:     fmt.Sprintf("%d", seqNo),
-				Timestamp: fmt.Sprintf("%d", timestamp),
-				Payload:   payload,
-			},
+		// Diagnostic: log when ReadFromUDP blocks longer than one RTP frame (20 ms).
+		// recv_ms > 20 + seq_gap == 0 → sender batched packets (confirmed sipgate behaviour).
+		// recv_ms > 20 + seq_gap > 0  → packets were lost in transit.
+		if recvMs > 20 {
+			var seqGap uint16
+			if !firstPkt {
+				seqGap = pkt.Header.SequenceNumber - lastRTPSeq - 1
+			}
+			s.log.Warn().
+				Int64("recv_ms", recvMs).
+				Uint16("rtp_seq", pkt.Header.SequenceNumber).
+				Uint32("rtp_ts", pkt.Header.Timestamp).
+				Uint16("seq_gap", seqGap).
+				Str("call_id", s.callID).
+				Msg("rtpReader: slow recv")
 		}
+		lastRTPSeq = pkt.Header.SequenceNumber
+		firstPkt = false
 
-		if err := writeJSON(wsConn, event); err != nil {
-			s.log.Error().Err(err).Str("call_id", s.callID).Msg("rtpToWS: writeJSON failed")
+		// Copy payload — buf is reused on the next ReadFromUDP call.
+		payload := make([]byte, len(pkt.Payload))
+		copy(payload, pkt.Payload)
+
+		// Non-blocking enqueue: burst packets are queued for paced forwarding by wsPacer.
+		// If the queue is full (>1 s backlog) the frame is dropped rather than blocking the read loop.
+		select {
+		case s.rtpInboundQueue <- payload:
+		case <-ctx.Done():
 			return
+		default:
+			s.log.Warn().Str("call_id", s.callID).Msg("rtpReader: inbound queue full — dropping PCMU packet")
 		}
-		seqNo++
+	}
+}
+
+// wsPacer drains rtpInboundQueue at a constant 20 ms rate and forwards each PCMU frame
+// to the WebSocket as a Twilio Media Streams "media" event.
+//
+// Decoupling receipt (rtpReader) from forwarding (wsPacer) absorbs the periodic sender-side
+// RTP bursts observed from sipgate: when the sender holds back N packets for ~100 ms and
+// then releases them all at once, rtpReader enqueues the burst instantly while wsPacer
+// continues to forward one packet every 20 ms — the WS consumer sees a smooth stream.
+//
+// wsPacer is the SOLE WS writer during audio forwarding — no other goroutine may write to wsConn.
+func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn) {
+	defer s.wg.Done()
+
+	var seqNo uint32 = 2 // sequence starts at 2 (connected=seq 0, start=seq 1)
+	startTimeMs := time.Now().UnixMilli()
+
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Dequeue one PCMU frame. If none is available, skip this tick silently —
+			// the WS consumer is expected to handle gaps (the inbound stream is voice,
+			// not continuous audio, and the consumer has its own jitter buffer).
+			var payload []byte
+			select {
+			case payload = <-s.rtpInboundQueue:
+			default:
+				continue
+			}
+
+			encoded := base64.StdEncoding.EncodeToString(payload)
+			timestamp := time.Now().UnixMilli() - startTimeMs
+
+			event := MediaEvent{
+				Event:          "media",
+				SequenceNumber: fmt.Sprintf("%d", seqNo),
+				StreamSid:      s.streamSid,
+				Media: MediaBody{
+					Track:     "inbound",
+					Chunk:     fmt.Sprintf("%d", seqNo),
+					Timestamp: fmt.Sprintf("%d", timestamp),
+					Payload:   encoded,
+				},
+			}
+
+			if err := writeJSON(wsConn, event); err != nil {
+				s.log.Error().Err(err).Str("call_id", s.callID).Msg("wsPacer: writeJSON failed")
+				return
+			}
+			seqNo++
+		}
 	}
 }
 
