@@ -120,6 +120,13 @@ func (m *CallManager) StartSession(
 		return
 	}
 
+	// Check if CANCEL arrived while WS was connecting (sipgo auto-handles 200/487).
+	if dlg.Context().Err() != nil {
+		log.Info().Str("call_id", callID).Msg("CANCEL received during WS dial — call aborted before answer")
+		_ = wsConn.Close()
+		return
+	}
+
 	// Build SDP answer: our contact IP + acquired RTP port + mirrored DTMF PT (never hardcoded).
 	sdpAnswer := sip.BuildSDPAnswer(m.cfg.SDPContactIP, rtpPort, callerSDP.DTMFPayloadType)
 
