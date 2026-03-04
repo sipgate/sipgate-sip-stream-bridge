@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
 status: unknown
-last_updated: "2026-03-04T15:00:16.855Z"
+last_updated: "2026-03-04T15:22:13Z"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
 ---
 
 # Project State
@@ -22,19 +22,19 @@ See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
 
 ## Current Position
 
-Phase: 7 of 8 — COMPLETE
-Plan: 2 of 2 in phase 7
-Status: 07-02 complete (2026-03-04) — RFC 4733 DTMF pipeline implemented
-Last activity: 2026-03-04 — 07-02: parseTelephoneEvent + sendDTMF + dtmfQueue wired in rtpReader+wsPacer
+Phase: 8 of 8 — IN PROGRESS
+Plan: 1 of 2 in phase 8 — COMPLETE
+Status: 08-01 complete (2026-03-04) — graceful SIGTERM drain implemented
+Last activity: 2026-03-04 — 08-01: SetShutdown + DrainAll(8s) + IsRegistered + drain sequence in main.go
 
-Progress: █████████░ 88%
+Progress: █████████░ 90%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5 (v2.0); 10 (v1.0)
-- Average duration: ~3.4min (v2.0)
-- Total execution time: ~17min
+- Total plans completed: 6 (v2.0); 10 (v1.0)
+- Average duration: ~3.1min (v2.0)
+- Total execution time: ~19min
 
 **By Phase:**
 
@@ -44,6 +44,7 @@ Progress: █████████░ 88%
 | 05-sip-registration | 1/1 | ~3min | ~3min |
 | 06-inbound-call-rtp-bridge | 3/3 ✓ | ~8min | ~2.7min |
 | 07-websocket-resilience-dtmf | 2/2 ✓ | ~6min | ~3min |
+| 08-lifecycle-observability | 1/2 | ~2min | ~2min |
 
 *Updated after each plan completion*
 
@@ -90,6 +91,10 @@ v2.0 decisions:
 - [Phase 07-01]: [07-01] wsToRTP WS read error signals reconnect via sig.Signal() instead of dlg.Bye(); only stop event triggers BYE
 - [Phase 07-01]: [07-01] Shutdown sequence: SetReadDeadline → wsWg.Wait() → rtpConn.Close() → s.wg.Wait() → sendStop → wsConn.Close()
 - [Phase 07-02]: parseTelephoneEvent+sendDTMF in ws.go: RFC 4733 4-byte parser + Twilio dtmf event writer; dtmfQueue size 10 non-blocking send; dtmfQueue case before ticker.C in wsPacer for DTMF priority over audio; no new dependencies
+- [08-01] 503 (not 480) for INVITE reject during shutdown — RFC 3261 §21.5.4 defines 503 for server-draining
+- [08-01] DrainAll uses 50ms polling on sync.Map — avoids adding WaitGroup to session close path
+- [08-01] registered.Store(false) only on reregisterLoop failure, NOT before doRegister attempt — avoids false-negative during ~200ms round-trip
+- [08-01] Drain budget: 8s for calls + 5s for unregister; SIGTERM kill timeout should be >=15s in prod
 
 ### Pending Todos
 
@@ -97,12 +102,12 @@ None.
 
 ### Blockers/Concerns
 
-- [Phase 6] sipgo graceful shutdown (#116) not built-in — requires manual BYE drain loop in CallManager (LCY-01 mitigation already planned in Phase 8)
+- [Phase 6] sipgo graceful shutdown (#116) not built-in — RESOLVED in 08-01 with DrainAll BYE loop (LCY-01 satisfied)
 - [Phase 6] DTMF PT mismatch risk: sipgate uses PT 113; must extract PT from SDP offer, never hardcode
 - [Phase 5 validation] Verify sipgate server-granted Expires value — log it on first live registration to confirm re-register timer interval (server_expires_s field logged)
 
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 07-02-PLAN.md (DTMF pipeline — parseTelephoneEvent, sendDTMF, dtmfQueue in session.go)
+Stopped at: Completed 08-01-PLAN.md (graceful SIGTERM drain — SetShutdown, DrainAll, IsRegistered, drain sequence in main.go)
 Resume file: None
