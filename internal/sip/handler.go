@@ -61,14 +61,16 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 		Str("to", req.To().Address.String()).
 		Logger()
 
-	// ReadInvite MUST be called first — creates dialog context and To-tag
+	// ReadInvite MUST be called first — creates dialog context and To-tag.
+	// NOTE: do NOT defer dlg.Close() here — that removes the dialog from DialogServerCache
+	// immediately when onInvite returns, making MatchDialogRequest fail for ACK and BYE.
+	// ReadBye already calls dlg.Close() internally via its own defer.
 	dlg, err := h.dialogSrv.ReadInvite(req, tx)
 	if err != nil {
 		log.Error().Err(err).Msg("ReadInvite failed")
 		_ = tx.Respond(siplib.NewResponseFromRequest(req, 500, "Server Error", nil))
 		return
 	}
-	defer dlg.Close() // always cleanup from DialogServerCache
 
 	// Parse caller's SDP offer to extract RTP addr/port and DTMF PT
 	callerSDP, err := ParseCallerSDP(req.Body())
