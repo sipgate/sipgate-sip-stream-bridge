@@ -47,6 +47,7 @@ func NewHandler(agent *Agent, callManager CallManagerIface, cfg config.Config, l
 	agent.Server.OnInvite(h.onInvite)
 	agent.Server.OnAck(h.onAck)
 	agent.Server.OnBye(h.onBye)
+	agent.Server.OnCancel(h.onCancel)
 	agent.Server.OnOptions(h.onOptions)
 
 	return h
@@ -114,6 +115,14 @@ func (h *Handler) onBye(req *siplib.Request, tx siplib.ServerTransaction) {
 	if err := h.dialogSrv.ReadBye(req, tx); err != nil {
 		h.log.Error().Err(err).Str("call_id", req.CallID().Value()).Msg("ReadBye failed")
 	}
+}
+
+// onCancel handles CANCEL requests. sipgo automatically sends 200 OK to CANCEL and 487 to
+// the matching INVITE at the transaction layer — so this handler only needs to log.
+// Without a registered handler sipgo logs "SIP request handler not found" on every CANCEL,
+// including retransmissions, which pollutes the log stream.
+func (h *Handler) onCancel(req *siplib.Request, tx siplib.ServerTransaction) {
+	h.log.Info().Str("call_id", req.CallID().Value()).Msg("CANCEL received — call aborted before answer")
 }
 
 // onOptions sends a 200 OK for SIP OPTIONS keepalive probes (no dialog needed).
