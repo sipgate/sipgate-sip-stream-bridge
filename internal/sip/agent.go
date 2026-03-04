@@ -25,7 +25,7 @@ type Agent struct {
 func NewAgent(cfg config.Config, log zerolog.Logger) (*Agent, error) {
 	ua, err := sipgo.NewUA(
 		sipgo.WithUserAgentHostname(cfg.SIPDomain),
-		sipgo.WithUserAgentName("audio-dock/2.0"),
+		sipgo.WithUserAgent("audio-dock/2.0"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create sipgo UserAgent: %w", err)

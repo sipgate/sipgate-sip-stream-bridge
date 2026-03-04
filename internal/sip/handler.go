@@ -53,7 +53,8 @@ func NewHandler(agent *Agent, callManager CallManagerIface, cfg config.Config, l
 }
 
 // onInvite handles inbound INVITE requests following the UAS dialog flow:
-// ReadInvite → ParseCallerSDP → AcquirePort → 100 Trying → 200 OK+SDP → StartSession goroutine.
+// ReadInvite → ParseCallerSDP → AcquirePort → 100 Trying → 180 Ringing → StartSession goroutine.
+// StartSession dials WS, builds SDP answer, sends 200 OK, then runs the bridge.
 func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	log := h.log.With().
 		Str("call_id", req.CallID().Value()).
@@ -91,17 +92,10 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	// 100 Trying — suppresses INVITE retransmissions from the proxy
 	_ = dlg.Respond(100, "Trying", nil)
 
-	// Build SDP answer: our contact IP + acquired RTP port + mirrored DTMF PT (never hardcoded)
-	sdpAnswer := BuildSDPAnswer(h.cfg.SDPContactIP, rtpPort, callerSDP.DTMFPayloadType)
+	// 180 Ringing — signals caller that we are alerting before WS dial + answer
+	_ = dlg.Respond(180, "Ringing", nil)
 
-	// 200 OK with SDP body — establishes the dialog (caller will send ACK)
-	if err := dlg.RespondSDP(sdpAnswer); err != nil {
-		log.Error().Err(err).Msg("RespondSDP 200 OK failed")
-		h.callManager.ReleasePort(rtpPort) // return port to pool on error path (Pitfall 4)
-		return
-	}
-
-	// Launch call session in goroutine so onInvite returns and does not block the next INVITE.
+	// Launch StartSession in goroutine — dials WS, builds SDP, sends 200 OK, then bridges.
 	// dlg.Context() is cancelled when: (a) caller sends BYE → onBye/ReadBye, (b) we call dlg.Bye().
 	// Port release and all other cleanup happen inside StartSession (via bridge.CallManager).
 	go h.callManager.StartSession(dlg, req, callerSDP, rtpPort, log)

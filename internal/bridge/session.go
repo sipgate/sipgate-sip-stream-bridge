@@ -37,17 +37,18 @@ var pcmuSilenceFrame = func() []byte {
 // CallSession holds all per-call state: RTP socket, WS connection, goroutine lifecycle.
 // Ownership: StartSession creates one instance; run() owns it for the call lifetime.
 type CallSession struct {
-	callID      string
-	streamSid   string
-	dlg         *sipgo.DialogServerSession
-	rtpPort     int
-	callerRTP   net.Addr      // *net.UDPAddr — caller's IP:port from SDP offer
-	dtmfPT      uint8         // telephone-event PT from SDP offer (sipgate: 113)
-	cfg         config.Config
-	log         zerolog.Logger
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup // tracks rtpToWS + wsToRTP + rtpPacer goroutines
-	packetQueue chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer
+	callID       string
+	callSidToken string        // CA-prefixed Twilio callSid token (distinct from SIP Call-ID)
+	streamSid    string
+	dlg          *sipgo.DialogServerSession
+	rtpPort      int
+	callerRTP    net.Addr      // *net.UDPAddr — caller's IP:port from SDP offer
+	dtmfPT       uint8         // telephone-event PT from SDP offer (sipgate: 113)
+	cfg          config.Config
+	log          zerolog.Logger
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup // tracks rtpToWS + wsToRTP + rtpPacer goroutines
+	packetQueue  chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer
 }
 
 // run is the full call session lifecycle. Called from StartSession (which runs in a goroutine).
@@ -57,12 +58,15 @@ type CallSession struct {
 //   - rtpToWS is the ONLY goroutine that writes to wsConn during audio forwarding.
 //   - sendStop is written to wsConn ONLY after wg.Wait() confirms all goroutines have exited.
 //   - rtpPacer is the ONLY goroutine that writes to rtpConn (UDP → caller).
-func (s *CallSession) run(ctx context.Context) {
+func (s *CallSession) run(ctx context.Context, wsConn net.Conn) {
 	// Pitfall 6: if BYE arrived before session started, context is already done — exit immediately.
 	if ctx.Err() != nil {
 		s.log.Warn().Str("call_id", s.callID).Msg("session context already cancelled at entry — BYE arrived early")
+		_ = wsConn.Close()
 		return
 	}
+
+	defer wsConn.Close()
 
 	// Derive session context from dialog context so BYE cancels the session.
 	sessionCtx, cancel := context.WithCancel(ctx)
@@ -78,15 +82,6 @@ func (s *CallSession) run(ctx context.Context) {
 	}
 	defer rtpConn.Close() // CON-02: FD cleanup
 
-	// Dial WebSocket to the media stream target.
-	wsConn, err := dialWS(sessionCtx, s.cfg.WSTargetURL)
-	if err != nil {
-		s.log.Error().Err(err).Str("call_id", s.callID).Msg("dialWS failed — sending BYE (WSR-01)")
-		_ = s.dlg.Bye(context.Background())
-		return
-	}
-	defer wsConn.Close()
-
 	// sendConnected: Twilio Media Streams handshake step 1.
 	if err := sendConnected(wsConn); err != nil {
 		s.log.Error().Err(err).Str("call_id", s.callID).Msg("sendConnected failed")
@@ -94,7 +89,8 @@ func (s *CallSession) run(ctx context.Context) {
 	}
 
 	// sendStart: Twilio Media Streams handshake step 2.
-	if err := sendStart(wsConn, s.streamSid, s.callID, s.dlg.InviteRequest); err != nil {
+	// callSidToken (CA-prefixed) is used as callSid; SIP Call-ID goes in customParameters.sipCallId.
+	if err := sendStart(wsConn, s.streamSid, s.callSidToken, s.callID, s.dlg.InviteRequest); err != nil {
 		s.log.Error().Err(err).Str("call_id", s.callID).Msg("sendStart failed")
 		return
 	}
@@ -115,20 +111,24 @@ func (s *CallSession) run(ctx context.Context) {
 	// Block until the dialog context is cancelled (BYE from either side).
 	<-sessionCtx.Done()
 
-	// Expire the WS read deadline so wsToRTP (which may be blocked in readWSMessage)
-	// wakes up and can check ctx.Err(). Without this, wsToRTP blocks until a TCP idle
-	// timeout fires (30+ s), producing a spurious "WS read error — sending BYE" log.
-	// Using SetReadDeadline (not Close) preserves the write path so sendStop can be sent.
+	// Unblock rtpToWS: closing rtpConn causes ReadFromUDP to return an error immediately;
+	// rtpToWS then sees ctx.Err() != nil and returns silently.
+	// defer rtpConn.Close() also registered above — double-close is harmless.
+	rtpConn.Close()
+
+	// Unblock wsToRTP: expiring the WS read deadline causes readWSMessage to return;
+	// wsToRTP then sees ctx.Err() != nil and returns silently.
+	// SetReadDeadline (not Close) preserves the write path so sendStop can be sent below.
 	_ = wsConn.SetReadDeadline(time.Now())
 
 	// Drain all three goroutines before sending stop.
-	// rtpToWS exits within 100 ms (UDP read deadline → ctx check).
-	// wsToRTP exits promptly (WS read deadline just expired → ctx check).
+	// rtpToWS exits promptly (rtpConn closed → ReadFromUDP error → ctx check).
+	// wsToRTP exits promptly (WS read deadline expired → ctx check).
 	// rtpPacer exits on its next ticker tick via ctx.Done().
 	s.wg.Wait()
 
 	// sendStop: Twilio Media Streams teardown — safe to write now (all goroutines done).
-	if err := sendStop(wsConn, s.streamSid, s.callID); err != nil {
+	if err := sendStop(wsConn, s.streamSid, s.callSidToken); err != nil {
 		s.log.Warn().Err(err).Str("call_id", s.callID).Msg("sendStop failed (best effort)")
 	}
 }
@@ -146,18 +146,13 @@ func (s *CallSession) rtpToWS(ctx context.Context, rtpConn *net.UDPConn, wsConn 
 	startTimeMs := time.Now().UnixMilli()
 
 	for {
-		// Check for cancellation before blocking on read.
-		if ctx.Err() != nil {
-			return
-		}
-
-		// 100ms read deadline — allows ctx cancellation to be detected promptly.
-		_ = rtpConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-
+		// Blocking read — no deadline. run() calls rtpConn.Close() after sessionCtx is done,
+		// which causes ReadFromUDP to return an error; ctx.Err() != nil check below returns silently.
+		// This eliminates the 100 ms deadline poll that caused burst-jitter in rtpToWS.
 		n, _, err := rtpConn.ReadFromUDP(buf)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				continue // deadline expired — re-check ctx, then re-read
+			if ctx.Err() != nil {
+				return // rtpConn.Close() was called in run() after ctx cancelled — exit silently
 			}
 			s.log.Error().Err(err).Str("call_id", s.callID).Msg("rtpToWS: ReadFromUDP error")
 			return

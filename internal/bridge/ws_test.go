@@ -76,7 +76,7 @@ func TestSendConnected_JSONSchema(t *testing.T) {
 // Test 2 — sendStart marshals correct JSON schema (WSB-02 + WSB-06).
 // Verifies: event="start", sequenceNumber="1", tracks=["inbound","outbound"],
 // mediaFormat.encoding="audio/x-mulaw", mediaFormat.sampleRate=8000,
-// customParameters.CallSid=callID, customParameters.From contains "a@b.com".
+// callSid=callSidToken (CA-prefixed), customParameters.sipCallId=sipCallID.
 func TestSendStart_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
 	defer client.Close()
@@ -84,11 +84,12 @@ func TestSendStart_JSONSchema(t *testing.T) {
 
 	req := mockSIPRequest("a", "b.com", "c", "d.com")
 	streamSid := "MZabc"
-	callID := "test-call-id"
+	callSidToken := "CAtest123"
+	sipCallID := "test-sip-call-id"
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- sendStart(client, streamSid, callID, req)
+		errCh <- sendStart(client, streamSid, callSidToken, sipCallID, req)
 	}()
 
 	data, _, err := wsutil.ReadClientData(server)
@@ -118,8 +119,8 @@ func TestSendStart_JSONSchema(t *testing.T) {
 	if body.StreamSid != streamSid {
 		t.Errorf("Start.StreamSid: expected %q, got %q", streamSid, body.StreamSid)
 	}
-	if body.CallSid != callID {
-		t.Errorf("Start.CallSid: expected %q, got %q", callID, body.CallSid)
+	if body.CallSid != callSidToken {
+		t.Errorf("Start.CallSid: expected %q, got %q", callSidToken, body.CallSid)
 	}
 	if body.AccountSid != "" {
 		t.Errorf("Start.AccountSid: expected empty string, got %q", body.AccountSid)
@@ -139,8 +140,8 @@ func TestSendStart_JSONSchema(t *testing.T) {
 		t.Errorf("MediaFormat.Channels: expected 1, got %d", body.MediaFormat.Channels)
 	}
 
-	if body.CustomParameters["CallSid"] != callID {
-		t.Errorf("CustomParameters.CallSid: expected %q, got %q", callID, body.CustomParameters["CallSid"])
+	if body.CustomParameters["sipCallId"] != sipCallID {
+		t.Errorf("CustomParameters.sipCallId: expected %q, got %q", sipCallID, body.CustomParameters["sipCallId"])
 	}
 	// siplib.Uri.String() produces "sip:user@host"
 	if from := body.CustomParameters["From"]; !strings.Contains(from, "a@b.com") {

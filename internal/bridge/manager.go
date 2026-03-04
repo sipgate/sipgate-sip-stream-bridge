@@ -1,9 +1,12 @@
 package bridge
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/emiago/sipgo"
 	siplib "github.com/emiago/sipgo/sip"
@@ -80,9 +83,9 @@ func (m *CallManager) ReleasePort(port int) {
 	m.portPool.Release(port)
 }
 
-// StartSession creates a CallSession and runs it synchronously.
-// Must be called in a goroutine (launched by onInvite). Blocks until the call ends.
-// All cleanup (port release, FD close, session delete) happens via defers in session.run().
+// StartSession dials WS, negotiates the SIP dialog (180 Ringing → 200 OK+SDP), creates a
+// CallSession, and runs it synchronously. Must be called in a goroutine (launched by onInvite).
+// Blocks until the call ends. Port is released on all exit paths via defer.
 func (m *CallManager) StartSession(
 	dlg *sipgo.DialogServerSession,
 	req *siplib.Request,
@@ -91,26 +94,54 @@ func (m *CallManager) StartSession(
 	log zerolog.Logger,
 ) {
 	callID := req.CallID().Value()
-	streamSid := "MZ" + uuid.New().String()
+	// CON-02: always release port — covers WS dial failure, RespondSDP failure, and call end.
+	defer m.portPool.Release(rtpPort)
+
+	// streamSid: MZ + 32 hex chars (Twilio Media Streams convention)
+	// callSidToken: CA + 32 hex chars (Twilio callSid convention, distinct from SIP Call-ID)
+	streamSid := "MZ" + strings.ReplaceAll(uuid.New().String(), "-", "")
+	callSidToken := "CA" + strings.ReplaceAll(uuid.New().String(), "-", "")
+
 	callerRTPAddr := &net.UDPAddr{
 		IP:   net.ParseIP(callerSDP.RTPAddr),
 		Port: callerSDP.RTPPort,
 	}
 
+	// Dial WS before answering — reject with 503 if WS is unavailable (WSR-01).
+	// Use a 10 s timeout derived from dlg.Context() so the call isn't left hanging.
+	wsCtx, wsCancel := context.WithTimeout(dlg.Context(), 10*time.Second)
+	defer wsCancel()
+	wsConn, err := dialWS(wsCtx, m.cfg.WSTargetURL)
+	if err != nil {
+		log.Error().Err(err).Str("call_id", callID).Msg("dialWS failed — sending 503 (WSR-01)")
+		_ = dlg.Respond(503, "Service Unavailable", nil)
+		return
+	}
+
+	// Build SDP answer: our contact IP + acquired RTP port + mirrored DTMF PT (never hardcoded).
+	sdpAnswer := sip.BuildSDPAnswer(m.cfg.SDPContactIP, rtpPort, callerSDP.DTMFPayloadType)
+
+	// 200 OK with SDP — answers the call (caller will send ACK).
+	if err := dlg.RespondSDP(sdpAnswer); err != nil {
+		log.Error().Err(err).Str("call_id", callID).Msg("RespondSDP 200 OK failed")
+		_ = wsConn.Close()
+		return
+	}
+
 	session := &CallSession{
-		callID:    callID,
-		streamSid: streamSid,
-		dlg:       dlg,
-		rtpPort:   rtpPort,
-		callerRTP: callerRTPAddr,
-		dtmfPT:    callerSDP.DTMFPayloadType,
-		cfg:       m.cfg,
-		log:       log,
+		callID:       callID,
+		callSidToken: callSidToken,
+		streamSid:    streamSid,
+		dlg:          dlg,
+		rtpPort:      rtpPort,
+		callerRTP:    callerRTPAddr,
+		dtmfPT:       callerSDP.DTMFPayloadType,
+		cfg:          m.cfg,
+		log:          log,
 	}
 
 	m.sessions.Store(callID, session)
 	defer m.sessions.Delete(callID)
-	defer m.portPool.Release(rtpPort) // CON-02: port returned to pool when call ends
 
-	session.run(dlg.Context())
+	session.run(dlg.Context(), wsConn)
 }
