@@ -12,10 +12,11 @@ import (
 	"github.com/sipgate/audio-dock/internal/config"
 )
 
-// Registrar manages SIP REGISTER lifecycle for a single AoR (SIP_USER@SIP_REGISTRAR).
+// Registrar manages SIP REGISTER lifecycle for a single AoR (SIP_USER@SIP_DOMAIN).
 type Registrar struct {
 	client    *sipgo.Client
 	registrar string // SIP_REGISTRAR — REGISTER Request-URI host
+	domain    string // SIP_DOMAIN — AoR domain in From/To headers
 	user      string // SIP_USER
 	password  string // SIP_PASSWORD
 	expires   int    // SIP_EXPIRES default 120 — requested expiry; server may grant different value
@@ -27,11 +28,19 @@ func NewRegistrar(client *sipgo.Client, cfg config.Config, log zerolog.Logger) *
 	return &Registrar{
 		client:    client,
 		registrar: cfg.SIPRegistrar,
+		domain:    cfg.SIPDomain,
 		user:      cfg.SIPUser,
 		password:  cfg.SIPPassword,
 		expires:   cfg.SIPExpires,
 		log:       log,
 	}
+}
+
+// aorURI returns sip:user@domain — the Address-of-Record for From/To headers.
+// sipgo's ClientRequestRegisterBuild derives From.User from the UA name (not the SIP user),
+// so we pre-set From and To on every request to ensure the correct identity.
+func (r *Registrar) aorURI() siplib.Uri {
+	return siplib.Uri{Scheme: "sip", User: r.user, Host: r.domain}
 }
 
 // Register performs the initial REGISTER + Digest Auth, logs the server-granted Expires,
@@ -62,6 +71,16 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 	registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
 	req := siplib.NewRequest(siplib.REGISTER, registrarURI)
 	req.AppendHeader(siplib.NewHeader("Expires", strconv.Itoa(r.expires)))
+
+	// Pre-set From and To with the correct AoR (sip:user@domain).
+	// ClientRequestRegisterBuild skips From/To when already present, but if we don't set them
+	// it derives From.User from the UA name string (not the SIP user) and To.User from the
+	// Request-URI (empty for a registrar URI) — both wrong for sipgate's auth check.
+	aor := r.aorURI()
+	fromH := &siplib.FromHeader{Address: aor, Params: siplib.NewParams()}
+	fromH.Params.Add("tag", siplib.GenerateTagN(16))
+	req.AppendHeader(fromH)
+	req.AppendHeader(&siplib.ToHeader{Address: aor})
 
 	res, err := r.client.Do(ctx, req, sipgo.ClientRequestRegisterBuild)
 	if err != nil {
@@ -139,6 +158,12 @@ func (r *Registrar) Unregister(ctx context.Context) error {
 	registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
 	req := siplib.NewRequest(siplib.REGISTER, registrarURI)
 	req.AppendHeader(siplib.NewHeader("Expires", "0"))
+
+	aor := r.aorURI()
+	fromH := &siplib.FromHeader{Address: aor, Params: siplib.NewParams()}
+	fromH.Params.Add("tag", siplib.GenerateTagN(16))
+	req.AppendHeader(fromH)
+	req.AppendHeader(&siplib.ToHeader{Address: aor})
 
 	res, err := r.client.Do(ctx, req, sipgo.ClientRequestRegisterBuild)
 	if err != nil {
