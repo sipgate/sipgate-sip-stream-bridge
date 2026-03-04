@@ -89,12 +89,14 @@ func sendConnected(conn net.Conn) error {
 }
 
 // sendStart sends the WSB-02 + WSB-06 start event with full call metadata.
+// callSidToken is a CA-prefixed token (Twilio callSid convention).
+// callID is the SIP Call-ID, forwarded in customParameters.sipCallId for consumer use.
 // req.From().Address.String() and req.To().Address.String() provide SIP URI strings.
-func sendStart(conn net.Conn, streamSid, callID string, req *siplib.Request) error {
+func sendStart(conn net.Conn, streamSid, callSidToken, callID string, req *siplib.Request) error {
 	customParams := map[string]string{
-		"CallSid": callID,
-		"From":    req.From().Address.String(),
-		"To":      req.To().Address.String(),
+		"sipCallId": callID,
+		"From":      req.From().Address.String(),
+		"To":        req.To().Address.String(),
 	}
 	return writeJSON(conn, StartEvent{
 		Event:          "start",
@@ -103,7 +105,7 @@ func sendStart(conn net.Conn, streamSid, callID string, req *siplib.Request) err
 		Start: StartEventBody{
 			StreamSid:        streamSid,
 			AccountSid:       "",
-			CallSid:          callID,
+			CallSid:          callSidToken,
 			Tracks:           []string{"inbound", "outbound"},
 			CustomParameters: customParams,
 			MediaFormat:      MediaFormat{Encoding: "audio/x-mulaw", SampleRate: 8000, Channels: 1},
@@ -119,11 +121,11 @@ func sendStart(conn net.Conn, streamSid, callID string, req *siplib.Request) err
 // per-session sequence counter is deferred to Phase 7 if needed.
 // Per-session seqNo lives in rtpToWS; passing it through to sendStop would require
 // an out-of-band channel — unnecessary complexity for Phase 6.
-func sendStop(conn net.Conn, streamSid, callID string) error {
+func sendStop(conn net.Conn, streamSid, callSidToken string) error {
 	return writeJSON(conn, StopEvent{
 		Event:     "stop",
 		StreamSid: streamSid,
-		Stop:      StopBody{AccountSid: "", CallSid: callID},
+		Stop:      StopBody{AccountSid: "", CallSid: callSidToken},
 	})
 }
 
