@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"net"
 	"sync"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/emiago/sipgo"
 	"github.com/gobwas/ws"
-	"github.com/gobwas/ws/wsutil"
 	"github.com/pion/rtp"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/audio-dock/internal/config"
@@ -150,15 +150,17 @@ func (s *CallSession) rtpToWS(ctx context.Context, rtpConn *net.UDPConn, wsConn 
 		payload := base64.StdEncoding.EncodeToString(pkt.Payload)
 		timestamp := time.Now().UnixMilli() - startTimeMs
 
-		event := map[string]interface{}{
-			"event":     "media",
-			"sequenceNumber": seqNo,
-			"streamSid": s.streamSid,
-			"media": map[string]interface{}{
-				"track":     "inbound",
-				"chunk":     seqNo,
-				"timestamp": timestamp,
-				"payload":   payload,
+		// Use MediaEvent struct to ensure correct JSON schema (string fields, not integers).
+		// Twilio Media Streams spec requires sequenceNumber, chunk, and timestamp as strings.
+		event := MediaEvent{
+			Event:          "media",
+			SequenceNumber: fmt.Sprintf("%d", seqNo),
+			StreamSid:      s.streamSid,
+			Media: MediaBody{
+				Track:     "inbound",
+				Chunk:     fmt.Sprintf("%d", seqNo),
+				Timestamp: fmt.Sprintf("%d", timestamp),
+				Payload:   payload,
 			},
 		}
 
@@ -186,7 +188,7 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, rtpConn *net
 			return
 		}
 
-		msgData, op, err := wsutil.ReadServerData(wsConn)
+		msgData, op, err := readWSMessage(wsConn)
 		if err != nil {
 			s.log.Error().Err(err).Str("call_id", s.callID).Msg("wsToRTP: WS read error — sending BYE")
 			_ = s.dlg.Bye(context.Background())

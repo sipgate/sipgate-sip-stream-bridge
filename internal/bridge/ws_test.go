@@ -6,12 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gobwas/ws/wsutil"
 	siplib "github.com/emiago/sipgo/sip"
 )
 
 // mockSIPRequest creates a minimal *siplib.Request with From and To headers set.
 // Used to test sendStart's customParameters extraction.
-// URI fields are set directly: scheme "sip", user and host parsed from "user@host" form.
+// URI fields are set directly using siplib.Uri struct literals.
 func mockSIPRequest(fromUser, fromHost, toUser, toHost string) *siplib.Request {
 	req := siplib.NewRequest(siplib.INVITE, siplib.Uri{})
 	fromHdr := &siplib.FromHeader{
@@ -25,33 +26,40 @@ func mockSIPRequest(fromUser, fromHost, toUser, toHost string) *siplib.Request {
 	return req
 }
 
-// bufConn wraps a strings.Builder as a net.Conn for write-only testing.
-// Only Write is used; all other methods return zero values.
-type bufConn struct {
-	net.Conn
-	buf *strings.Builder
+// newPipe returns a synchronous in-process net.Conn pair using net.Pipe().
+// The caller is responsible for closing both ends.
+func newPipe(t *testing.T) (client, server net.Conn) {
+	t.Helper()
+	c, s := net.Pipe()
+	return c, s
 }
-
-func (b *bufConn) Write(p []byte) (int, error) {
-	return b.buf.Write(p)
-}
-
-func (b *bufConn) Close() error { return nil }
 
 // Test 1 — sendConnected marshals correct JSON schema (WSB-01).
-// Expected: {"event":"connected","protocol":"Call","version":"1.0.0"}
+// Expected JSON: {"event":"connected","protocol":"Call","version":"1.0.0"}
+//
+// writeJSON uses wsutil.WriteClientText (adds RFC 6455 client-side masking).
+// wsutil.ReadClientData strips the WS frame on the server end, returning raw JSON.
 func TestSendConnected_JSONSchema(t *testing.T) {
-	var sb strings.Builder
-	conn := &bufConn{buf: &sb}
+	client, server := newPipe(t)
+	defer client.Close()
+	defer server.Close()
 
-	if err := sendConnected(conn); err != nil {
-		t.Fatalf("sendConnected: unexpected error: %v", err)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- sendConnected(client)
+	}()
+
+	data, _, err := wsutil.ReadClientData(server)
+	if err != nil {
+		t.Fatalf("ReadClientData: unexpected error: %v", err)
+	}
+	if writeErr := <-errCh; writeErr != nil {
+		t.Fatalf("sendConnected: unexpected error: %v", writeErr)
 	}
 
-	written := sb.String()
 	var got ConnectedEvent
-	if err := json.Unmarshal([]byte(written), &got); err != nil {
-		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, written)
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, string(data))
 	}
 
 	if got.Event != "connected" {
@@ -68,23 +76,32 @@ func TestSendConnected_JSONSchema(t *testing.T) {
 // Test 2 — sendStart marshals correct JSON schema (WSB-02 + WSB-06).
 // Verifies: event="start", sequenceNumber="1", tracks=["inbound","outbound"],
 // mediaFormat.encoding="audio/x-mulaw", mediaFormat.sampleRate=8000,
-// customParameters.CallSid=callID, customParameters.From=from URI.
+// customParameters.CallSid=callID, customParameters.From contains "a@b.com".
 func TestSendStart_JSONSchema(t *testing.T) {
-	var sb strings.Builder
-	conn := &bufConn{buf: &sb}
+	client, server := newPipe(t)
+	defer client.Close()
+	defer server.Close()
 
 	req := mockSIPRequest("a", "b.com", "c", "d.com")
 	streamSid := "MZabc"
 	callID := "test-call-id"
 
-	if err := sendStart(conn, streamSid, callID, req); err != nil {
-		t.Fatalf("sendStart: unexpected error: %v", err)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- sendStart(client, streamSid, callID, req)
+	}()
+
+	data, _, err := wsutil.ReadClientData(server)
+	if err != nil {
+		t.Fatalf("ReadClientData: unexpected error: %v", err)
+	}
+	if writeErr := <-errCh; writeErr != nil {
+		t.Fatalf("sendStart: unexpected error: %v", writeErr)
 	}
 
-	written := sb.String()
 	var got StartEvent
-	if err := json.Unmarshal([]byte(written), &got); err != nil {
-		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, written)
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, string(data))
 	}
 
 	if got.Event != "start" {
@@ -97,7 +114,6 @@ func TestSendStart_JSONSchema(t *testing.T) {
 		t.Errorf("StreamSid: expected %q, got %q", streamSid, got.StreamSid)
 	}
 
-	// Start body
 	body := got.Start
 	if body.StreamSid != streamSid {
 		t.Errorf("Start.StreamSid: expected %q, got %q", streamSid, body.StreamSid)
@@ -109,12 +125,10 @@ func TestSendStart_JSONSchema(t *testing.T) {
 		t.Errorf("Start.AccountSid: expected empty string, got %q", body.AccountSid)
 	}
 
-	// Tracks
 	if len(body.Tracks) != 2 || body.Tracks[0] != "inbound" || body.Tracks[1] != "outbound" {
 		t.Errorf("Tracks: expected [inbound outbound], got %v", body.Tracks)
 	}
 
-	// MediaFormat
 	if body.MediaFormat.Encoding != "audio/x-mulaw" {
 		t.Errorf("MediaFormat.Encoding: expected %q, got %q", "audio/x-mulaw", body.MediaFormat.Encoding)
 	}
@@ -125,33 +139,41 @@ func TestSendStart_JSONSchema(t *testing.T) {
 		t.Errorf("MediaFormat.Channels: expected 1, got %d", body.MediaFormat.Channels)
 	}
 
-	// CustomParameters
 	if body.CustomParameters["CallSid"] != callID {
 		t.Errorf("CustomParameters.CallSid: expected %q, got %q", callID, body.CustomParameters["CallSid"])
 	}
-	// From address string should contain "a@b.com" (siplib.Uri.String() format is "sip:user@host")
+	// siplib.Uri.String() produces "sip:user@host"
 	if from := body.CustomParameters["From"]; !strings.Contains(from, "a@b.com") {
 		t.Errorf("CustomParameters.From: expected to contain %q, got %q", "a@b.com", from)
 	}
 }
 
 // Test 3 — sendStop marshals correct JSON schema (WSB-04).
-// sequenceNumber is intentionally empty in Phase 6.
+// sequenceNumber is intentionally empty ("") in Phase 6 — see sendStop comment in ws.go.
 func TestSendStop_JSONSchema(t *testing.T) {
-	var sb strings.Builder
-	conn := &bufConn{buf: &sb}
+	client, server := newPipe(t)
+	defer client.Close()
+	defer server.Close()
 
 	streamSid := "MZabc"
 	callID := "test-call-id"
 
-	if err := sendStop(conn, streamSid, callID); err != nil {
-		t.Fatalf("sendStop: unexpected error: %v", err)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- sendStop(client, streamSid, callID)
+	}()
+
+	data, _, err := wsutil.ReadClientData(server)
+	if err != nil {
+		t.Fatalf("ReadClientData: unexpected error: %v", err)
+	}
+	if writeErr := <-errCh; writeErr != nil {
+		t.Fatalf("sendStop: unexpected error: %v", writeErr)
 	}
 
-	written := sb.String()
 	var got StopEvent
-	if err := json.Unmarshal([]byte(written), &got); err != nil {
-		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, written)
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, string(data))
 	}
 
 	if got.Event != "stop" {
@@ -173,17 +195,13 @@ func TestSendStop_JSONSchema(t *testing.T) {
 }
 
 // Test 4 — writeJSON + readWSMessage round-trip using net.Pipe().
-// net.Pipe() does not do WebSocket framing — this tests the JSON layer only.
-// writeJSON uses plain JSON marshal (the bufConn.Write path); readWSMessage
-// wraps wsutil.ReadServerData for use in production. For the pipe round-trip,
-// we write and read raw JSON bytes directly to verify struct equality.
+// The server end writes a ConnectedEvent as a server text frame (wsutil.WriteServerText).
+// The client end reads it via readWSMessage (wraps wsutil.ReadServerData).
+// This verifies the JSON layer and the readWSMessage wrapper exercise the same path used in production.
 func TestWriteJSON_RoundTrip(t *testing.T) {
-	// Write side: marshal to JSON and verify unmarshal equality.
-	// We use a bufConn (write-only mock) because net.Pipe would require
-	// WebSocket framing. The round-trip test verifies the JSON marshal/unmarshal
-	// contract — that ConnectedEvent fields survive the encoding cycle.
-	var sb strings.Builder
-	conn := &bufConn{buf: &sb}
+	server, client := newPipe(t)
+	defer server.Close()
+	defer client.Close()
 
 	original := ConnectedEvent{
 		Event:    "connected",
@@ -191,13 +209,28 @@ func TestWriteJSON_RoundTrip(t *testing.T) {
 		Version:  "1.0.0",
 	}
 
-	if err := writeJSON(conn, original); err != nil {
-		t.Fatalf("writeJSON: unexpected error: %v", err)
+	errCh := make(chan error, 1)
+	go func() {
+		data, err := json.Marshal(original)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- wsutil.WriteServerText(server, data)
+	}()
+
+	// readWSMessage wraps wsutil.ReadServerData — reads a server-sent frame.
+	data, _, err := readWSMessage(client)
+	if err != nil {
+		t.Fatalf("readWSMessage: unexpected error: %v", err)
+	}
+	if writeErr := <-errCh; writeErr != nil {
+		t.Fatalf("WriteServerText: unexpected error: %v", writeErr)
 	}
 
 	var roundTripped ConnectedEvent
-	if err := json.Unmarshal([]byte(sb.String()), &roundTripped); err != nil {
-		t.Fatalf("json.Unmarshal: unexpected error: %v\nRaw: %s", err, sb.String())
+	if err := json.Unmarshal(data, &roundTripped); err != nil {
+		t.Fatalf("json.Unmarshal: unexpected error: %v\nRaw: %s", err, string(data))
 	}
 
 	if roundTripped.Event != original.Event {
