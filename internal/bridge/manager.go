@@ -83,8 +83,8 @@ func (m *CallManager) ReleasePort(port int) {
 	m.portPool.Release(port)
 }
 
-// StartSession dials WS, negotiates the SIP dialog (180 Ringing → 200 OK+SDP), creates a
-// CallSession, and runs it synchronously. Must be called in a goroutine (launched by onInvite).
+// StartSession dials WS and runs the RTP bridge. Called in a goroutine by onInvite AFTER
+// the 200 OK has been sent and ACK received (RespondSDP is handled synchronously in onInvite).
 // Blocks until the call ends. Port is released on all exit paths via defer.
 func (m *CallManager) StartSession(
 	dlg *sipgo.DialogServerSession,
@@ -94,7 +94,7 @@ func (m *CallManager) StartSession(
 	log zerolog.Logger,
 ) {
 	callID := req.CallID().Value()
-	// CON-02: always release port — covers WS dial failure, RespondSDP failure, and call end.
+	// CON-02: always release port — covers WS dial failure and call end.
 	defer m.portPool.Release(rtpPort)
 
 	// streamSid: MZ + 32 hex chars (Twilio Media Streams convention)
@@ -107,29 +107,13 @@ func (m *CallManager) StartSession(
 		Port: callerSDP.RTPPort,
 	}
 
-	// Answer the call BEFORE dialing WS — eliminates the CANCEL race window.
-	//
-	// Previously we dialed WS first (~1-5ms TCP+HTTP handshake on localhost), giving
-	// sipgo's CANCEL goroutine time to win the fsmMu race and terminate the INVITE
-	// transaction before our RespondSDP could run.  By answering first, the race window
-	// shrinks to goroutine-scheduling overhead only (μs).
-	//
-	// If CANCEL has already been processed when RespondSDP runs, sipgo returns
-	// ErrTransactionCanceled (FSM already in Completed state) and we exit cleanly.
-	// If we win the race, the call is answered and we proceed to dial WS.
-	// If WS later fails we send BYE instead of 503 (can't reject after 200 OK).
-	sdpAnswer := sip.BuildSDPAnswer(m.cfg.SDPContactIP, rtpPort, callerSDP.DTMFPayloadType)
-	if err := dlg.RespondSDP(sdpAnswer); err != nil {
-		log.Info().Err(err).Str("call_id", callID).Msg("RespondSDP 200 OK failed — CANCEL arrived before answer")
-		return
-	}
-
-	// Dial WS now that the call is answered (ACK received by RespondSDP above).
+	// Call is already answered (200 OK sent + ACK received in onInvite). Dial WS now.
+	// If WS fails we send BYE (can't reject after 200 OK).
 	wsCtx, wsCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer wsCancel()
 	wsConn, err := dialWS(wsCtx, m.cfg.WSTargetURL)
 	if err != nil {
-		log.Error().Err(err).Str("call_id", callID).Msg("dialWS failed after answer — sending BYE")
+		log.Error().Err(err).Str("call_id", callID).Msg("dialWS failed — sending BYE")
 		_ = dlg.Bye(context.Background())
 		return
 	}

@@ -54,8 +54,13 @@ func NewHandler(agent *Agent, callManager CallManagerIface, cfg config.Config, l
 }
 
 // onInvite handles inbound INVITE requests following the UAS dialog flow:
-// ReadInvite → ParseCallerSDP → AcquirePort → 100 Trying → 180 Ringing → StartSession goroutine.
-// StartSession dials WS, builds SDP answer, sends 200 OK, then runs the bridge.
+// ReadInvite → ParseCallerSDP → AcquirePort → 100 Trying → 180 Ringing → 200 OK+SDP → StartSession goroutine.
+// The 200 OK is sent synchronously here (before onInvite returns) because sipgo calls
+// tx.TerminateGracefully() immediately after the handler returns. If only provisional
+// responses were sent, TerminateGracefully calls tx.Terminate() which closes tx.Done()
+// — making any subsequent RespondSDP in a goroutine fail with "transaction terminated".
+// Each INVITE is handled in its own goroutine by sipgo's transaction layer, so blocking
+// here until ACK is received is safe. StartSession then runs the WS dial + bridge.
 func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	log := h.log.With().
 		Str("call_id", req.CallID().Value()).
@@ -106,9 +111,18 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	}
 	_ = tx.Respond(ringing)
 
-	// Launch StartSession in goroutine — dials WS, builds SDP, sends 200 OK, then bridges.
-	// dlg.Context() is cancelled when: (a) caller sends BYE → onBye/ReadBye, (b) we call dlg.Bye().
-	// Port release and all other cleanup happen inside StartSession (via bridge.CallManager).
+	// Send 200 OK+SDP synchronously — must complete before onInvite returns.
+	// See package-level comment on onInvite for why this cannot be done in a goroutine.
+	sdp := BuildSDPAnswer(h.cfg.SDPContactIP, rtpPort, callerSDP.DTMFPayloadType)
+	if err := dlg.RespondSDP(sdp); err != nil {
+		log.Info().Err(err).Msg("RespondSDP 200 OK failed — releasing port")
+		h.callManager.ReleasePort(rtpPort)
+		return
+	}
+
+	// ACK received. Launch post-answer session goroutine (WS dial + bridge).
+	// dlg.Context() is cancelled when caller sends BYE → onBye/ReadBye.
+	// Port release happens inside StartSession via defer.
 	go h.callManager.StartSession(dlg, req, callerSDP, rtpPort, log)
 }
 
