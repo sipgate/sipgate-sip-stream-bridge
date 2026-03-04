@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/audio-dock/internal/bridge"
 	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/audio-dock/internal/observability"
 	"github.com/sipgate/audio-dock/internal/sip"
 )
 
@@ -39,8 +43,10 @@ func main() {
 		Int("sip_expires", cfg.SIPExpires).
 		Msg("audio-dock starting")
 
+	// Create Prometheus metrics registry (OBS-02, OBS-03)
+	metrics := observability.NewMetrics()
+
 	// Signal handling for graceful shutdown
-	// Phase 8 (LCY-01) will expand the shutdown loop
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
@@ -79,7 +85,7 @@ func main() {
 	}
 
 	// Create CallManager — tracks active sessions in sync.Map (CON-01)
-	callManager := bridge.NewCallManager(portPool, cfg, logger)
+	callManager := bridge.NewCallManager(portPool, cfg, logger, metrics)
 
 	// Create SIP INVITE handler and register on agent.Server
 	// MUST be before registrar.Register() — handlers must be ready when INVITE arrives
@@ -87,14 +93,42 @@ func main() {
 
 	// Register with sipgate — blocking; exits if initial registration fails (SIP-01)
 	// Starts background re-register goroutine at 75% of server-granted Expires (SIP-02)
-	registrar := sip.NewRegistrar(agent.Client, cfg, logger)
+	registrar := sip.NewRegistrar(agent.Client, cfg, logger, metrics)
 	if err := registrar.Register(ctx); err != nil {
 		logger.Fatal().Err(err).Msg("SIP registration failed")
 		os.Exit(1)
 	}
 
+	// HTTP server: /health and /metrics (OBS-02, OBS-03)
+	httpMux := http.NewServeMux()
+
+	httpMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		type healthResp struct {
+			Registered  bool `json:"registered"`
+			ActiveCalls int  `json:"activeCalls"`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(healthResp{
+			Registered:  registrar.IsRegistered(),
+			ActiveCalls: callManager.ActiveCount(),
+		})
+	})
+
+	httpMux.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
+
+	httpServer := &http.Server{
+		Addr:    ":" + cfg.HTTPPort,
+		Handler: httpMux,
+	}
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error().Err(err).Msg("HTTP server error")
+		}
+	}()
+	logger.Info().Str("http_port", cfg.HTTPPort).Msg("HTTP server listening — /health and /metrics ready")
+
 	// Wait for shutdown signal
-	// Phase 8 will add graceful drain before <-ctx.Done()
 	logger.Info().
 		Int("rtp_port_min", cfg.RTPPortMin).
 		Int("rtp_port_max", cfg.RTPPortMax).
@@ -119,6 +153,13 @@ func main() {
 		logger.Warn().Err(err).Msg("UNREGISTER failed during shutdown")
 	} else {
 		logger.Info().Msg("SIP unregistered")
+	}
+
+	// 4. Graceful HTTP server drain (allows in-flight scrapes to complete)
+	httpShutCtx, httpShutCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer httpShutCancel()
+	if err := httpServer.Shutdown(httpShutCtx); err != nil {
+		logger.Warn().Err(err).Msg("HTTP server shutdown error")
 	}
 
 	logger.Info().Msg("shutdown complete")
