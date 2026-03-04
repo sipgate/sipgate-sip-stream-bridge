@@ -195,6 +195,110 @@ func TestSendStop_JSONSchema(t *testing.T) {
 	}
 }
 
+// Test 5 — wsSignal.Signal() is idempotent: calling it N times never panics.
+// Verifies the sync.Once guard prevents double-close of the underlying channel.
+func TestWsSignal_MultipleSignalsNoPanic(t *testing.T) {
+	sig := newWsSignal()
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func() {
+			sig.Signal()
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}()
+	}
+	// Drain all 10 goroutines (or wait a short time for them to complete)
+	sig.Signal() // also call from test goroutine — total 11 calls
+	<-sig.Done() // must be readable after at least one Signal()
+}
+
+// Test 6 — wsSignal.Done() channel is closed after Signal() is called.
+func TestWsSignal_DoneClosedAfterSignal(t *testing.T) {
+	sig := newWsSignal()
+
+	// Before Signal: channel should be open (not readable)
+	select {
+	case <-sig.Done():
+		t.Fatal("Done() channel was closed before Signal()")
+	default:
+	}
+
+	sig.Signal()
+
+	// After Signal: channel must be closed (readable immediately)
+	select {
+	case <-sig.Done():
+		// expected
+	default:
+		t.Fatal("Done() channel is not closed after Signal()")
+	}
+}
+
+// Test 7 — handshake sends connected event then start event in order.
+// Uses net.Pipe() as a synchronous in-process net.Conn pair.
+// Reads two WS frames from the server side and verifies their event fields.
+func TestHandshake_SendsConnectedThenStart(t *testing.T) {
+	clientConn, serverConn := newPipe(t)
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	req := mockSIPRequest("caller", "sip.example.com", "callee", "sip.example.com")
+	s := &CallSession{
+		callID:       "test-call-id",
+		callSidToken: "CAtest",
+		streamSid:    "MZtest",
+		dlg:          nil, // dlg not needed for handshake — sendStart uses s.dlg.InviteRequest
+	}
+	// We cannot use a real dlg here, so we test via the handshake helper by calling
+	// sendConnected + sendStart directly as handshake() does.
+	// handshake(wsConn) calls sendConnected(wsConn) then sendStart(wsConn, streamSid, callSidToken, callID, dlg.InviteRequest).
+	// Since dlg is nil we exercise the helper indirectly by reading two frames.
+	_ = s
+	_ = req
+
+	errCh := make(chan error, 1)
+	go func() {
+		// Call sendConnected + sendStart directly, mirroring what handshake() does.
+		if err := sendConnected(clientConn); err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- sendStart(clientConn, "MZtest", "CAtest", "call-1", req)
+	}()
+
+	// Read frame 1: connected
+	frame1, _, err := wsutil.ReadClientData(serverConn)
+	if err != nil {
+		t.Fatalf("ReadClientData frame1: %v", err)
+	}
+	var ev1 map[string]interface{}
+	if err := json.Unmarshal(frame1, &ev1); err != nil {
+		t.Fatalf("unmarshal frame1: %v", err)
+	}
+	if ev1["event"] != "connected" {
+		t.Errorf("frame1 event: expected %q got %q", "connected", ev1["event"])
+	}
+
+	// Read frame 2: start
+	frame2, _, err := wsutil.ReadClientData(serverConn)
+	if err != nil {
+		t.Fatalf("ReadClientData frame2: %v", err)
+	}
+	var ev2 map[string]interface{}
+	if err := json.Unmarshal(frame2, &ev2); err != nil {
+		t.Fatalf("unmarshal frame2: %v", err)
+	}
+	if ev2["event"] != "start" {
+		t.Errorf("frame2 event: expected %q got %q", "start", ev2["event"])
+	}
+
+	if writeErr := <-errCh; writeErr != nil {
+		t.Fatalf("handshake writes: %v", writeErr)
+	}
+}
+
 // Test 4 — writeJSON + readWSMessage round-trip using net.Pipe().
 // The server end writes a ConnectedEvent as a server text frame (wsutil.WriteServerText).
 // The client end reads it via readWSMessage (wraps wsutil.ReadServerData).
