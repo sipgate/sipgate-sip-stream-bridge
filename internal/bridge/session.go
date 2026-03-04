@@ -17,28 +17,46 @@ import (
 	"github.com/sipgate/audio-dock/internal/config"
 )
 
+// packetQueueSize is the maximum number of 20 ms PCMU frames buffered for the RTP pacer.
+// 500 frames = 10 seconds; large enough for any realistic TTS response blob.
+// When full, new frames are dropped and a warning is logged.
+const packetQueueSize = 500
+
+// pcmuSilenceFrame is a single 20 ms PCMU silence frame (160 bytes of μ-law zero = 0xFF).
+// rtpPacer sends this when no audio is queued so the RTP stream is continuous.
+// Continuous RTP is required for NAT traversal: the first outbound UDP packet punches the
+// NAT hole so the caller's media server can reach our private address.
+var pcmuSilenceFrame = func() []byte {
+	b := make([]byte, 160)
+	for i := range b {
+		b[i] = 0xFF // 0xFF = μ-law encoding of linear PCM zero (silence)
+	}
+	return b
+}()
+
 // CallSession holds all per-call state: RTP socket, WS connection, goroutine lifecycle.
 // Ownership: StartSession creates one instance; run() owns it for the call lifetime.
 type CallSession struct {
-	callID    string
-	streamSid string
-	dlg       *sipgo.DialogServerSession
-	rtpPort   int
-	callerRTP net.Addr      // *net.UDPAddr — caller's IP:port from SDP offer
-	dtmfPT    uint8         // telephone-event PT from SDP offer (sipgate: 113)
-	cfg       config.Config
-	log       zerolog.Logger
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup // tracks rtpToWS + wsToRTP goroutines for CON-02
+	callID      string
+	streamSid   string
+	dlg         *sipgo.DialogServerSession
+	rtpPort     int
+	callerRTP   net.Addr      // *net.UDPAddr — caller's IP:port from SDP offer
+	dtmfPT      uint8         // telephone-event PT from SDP offer (sipgate: 113)
+	cfg         config.Config
+	log         zerolog.Logger
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup // tracks rtpToWS + wsToRTP + rtpPacer goroutines
+	packetQueue chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer
 }
 
 // run is the full call session lifecycle. Called from StartSession (which runs in a goroutine).
 // Blocks until the call ends. All cleanup happens via defers.
 //
-// WRITE-SAFETY INVARIANT:
+// WRITE-SAFETY INVARIANTS:
 //   - rtpToWS is the ONLY goroutine that writes to wsConn during audio forwarding.
-//   - sendStop is written to wsConn ONLY after wg.Wait() confirms rtpToWS has exited.
-//   - This makes run() the exclusive wsConn writer for sendStop — no concurrent write race.
+//   - sendStop is written to wsConn ONLY after wg.Wait() confirms all goroutines have exited.
+//   - rtpPacer is the ONLY goroutine that writes to rtpConn (UDP → caller).
 func (s *CallSession) run(ctx context.Context) {
 	// Pitfall 6: if BYE arrived before session started, context is already done — exit immediately.
 	if ctx.Err() != nil {
@@ -81,19 +99,35 @@ func (s *CallSession) run(ctx context.Context) {
 		return
 	}
 
-	// Launch bidirectional audio goroutines.
-	s.wg.Add(2)
+	// packetQueue carries decoded PCMU frames (160 bytes each) from wsToRTP to rtpPacer.
+	// wsToRTP decodes and chunks WS audio blobs; rtpPacer sends them at the RTP ptime rate.
+	s.packetQueue = make(chan []byte, packetQueueSize)
+
+	// Launch goroutines:
+	//   rtpToWS  — reads inbound RTP from caller, writes media events to WS (sole WS writer)
+	//   wsToRTP  — reads media events from WS, queues PCMU frames (sole WS reader)
+	//   rtpPacer — drains packetQueue at 20 ms intervals, writes RTP to caller (sole UDP writer)
+	s.wg.Add(3)
 	go s.rtpToWS(sessionCtx, rtpConn, wsConn)
-	go s.wsToRTP(sessionCtx, wsConn, rtpConn)
+	go s.wsToRTP(sessionCtx, wsConn)
+	go s.rtpPacer(sessionCtx, rtpConn)
 
 	// Block until the dialog context is cancelled (BYE from either side).
 	<-sessionCtx.Done()
 
-	// CRITICAL: drain rtpToWS goroutine BEFORE calling sendStop.
-	// rtpToWS is the sole WS writer during audio forwarding; sendStop must not race with it.
+	// Expire the WS read deadline so wsToRTP (which may be blocked in readWSMessage)
+	// wakes up and can check ctx.Err(). Without this, wsToRTP blocks until a TCP idle
+	// timeout fires (30+ s), producing a spurious "WS read error — sending BYE" log.
+	// Using SetReadDeadline (not Close) preserves the write path so sendStop can be sent.
+	_ = wsConn.SetReadDeadline(time.Now())
+
+	// Drain all three goroutines before sending stop.
+	// rtpToWS exits within 100 ms (UDP read deadline → ctx check).
+	// wsToRTP exits promptly (WS read deadline just expired → ctx check).
+	// rtpPacer exits on its next ticker tick via ctx.Done().
 	s.wg.Wait()
 
-	// sendStop: Twilio Media Streams teardown — safe to write now (rtpToWS is done).
+	// sendStop: Twilio Media Streams teardown — safe to write now (all goroutines done).
 	if err := sendStop(wsConn, s.streamSid, s.callID); err != nil {
 		s.log.Warn().Err(err).Str("call_id", s.callID).Msg("sendStop failed (best effort)")
 	}
@@ -172,16 +206,19 @@ func (s *CallSession) rtpToWS(ctx context.Context, rtpConn *net.UDPConn, wsConn 
 	}
 }
 
-// wsToRTP reads Twilio Media Streams events from the WebSocket and forwards PCMU audio to the caller via RTP.
-// "media" events: base64 payload decoded → RTP packet → sent to callerRTP.
-// "stop" events: trigger dlg.Bye + cancel session (SIP-05).
+// wsToRTP reads Twilio Media Streams events from the WebSocket, decodes PCMU audio, and
+// queues 160-byte frames into packetQueue for rtpPacer to transmit at the correct RTP rate.
+//
+// Separating decode/queue (wsToRTP) from pacing/send (rtpPacer) means:
+//   - WS messages of any size (up to ~1 MB per Twilio spec) are handled correctly.
+//   - Large blobs are chunked into 160-byte frames immediately on receipt.
+//   - rtpPacer drains at exactly 20 ms/frame, matching PCMU ptime — no jitter buffer overflow.
+//   - New WS messages (including "stop") are processed promptly even while frames are queued.
+//
+// "stop" events trigger dlg.Bye + cancel session (SIP-05).
 // wsToRTP is the SOLE WS reader — only this goroutine reads from wsConn.
-func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, rtpConn *net.UDPConn) {
+func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn) {
 	defer s.wg.Done()
-
-	ssrc := rand.Uint32()
-	var seqNo uint16
-	var timestamp uint32
 
 	for {
 		if ctx.Err() != nil {
@@ -190,6 +227,9 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, rtpConn *net
 
 		msgData, op, err := readWSMessage(wsConn)
 		if err != nil {
+			if ctx.Err() != nil {
+				return // session ended normally — WS read deadline expired or conn closed
+			}
 			s.log.Error().Err(err).Str("call_id", s.callID).Msg("wsToRTP: WS read error — sending BYE")
 			_ = s.dlg.Bye(context.Background())
 			s.cancel()
@@ -201,72 +241,126 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, rtpConn *net
 			continue
 		}
 
-		{
-			var envelope map[string]json.RawMessage
-			if err := json.Unmarshal(msgData, &envelope); err != nil {
-				s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: JSON unmarshal failed — skipping")
+		var envelope map[string]json.RawMessage
+		if err := json.Unmarshal(msgData, &envelope); err != nil {
+			s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: JSON unmarshal failed — skipping")
+			continue
+		}
+
+		var eventType string
+		if raw, ok := envelope["event"]; ok {
+			_ = json.Unmarshal(raw, &eventType)
+		}
+
+		switch eventType {
+		case "media":
+			var mediaObj struct {
+				Payload string `json:"payload"`
+			}
+			if raw, ok := envelope["media"]; ok {
+				if err := json.Unmarshal(raw, &mediaObj); err != nil {
+					s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: media decode failed — skipping")
+					continue
+				}
+			}
+
+			pcmuPayload, err := base64.StdEncoding.DecodeString(mediaObj.Payload)
+			if err != nil {
+				s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: base64 decode failed — skipping")
 				continue
 			}
 
-			var eventType string
-			if raw, ok := envelope["event"]; ok {
-				_ = json.Unmarshal(raw, &eventType)
+			// Chunk into 160-byte (20 ms @ 8 kHz PCMU) frames and enqueue for rtpPacer.
+			// WS servers may send arbitrarily large blobs (Twilio allows up to ~1 MB).
+			// rtpPacer sends one frame every 20 ms, matching the RTP ptime.
+			const rtpFrameSize = 160
+			for len(pcmuPayload) > 0 {
+				chunk := pcmuPayload
+				if len(chunk) > rtpFrameSize {
+					chunk = pcmuPayload[:rtpFrameSize]
+				}
+				pcmuPayload = pcmuPayload[len(chunk):]
+
+				select {
+				case s.packetQueue <- chunk:
+				case <-ctx.Done():
+					return
+				default:
+					// Queue full — drop frame rather than block WS reading.
+					s.log.Warn().Str("call_id", s.callID).Msg("wsToRTP: packet queue full — dropping PCMU frame")
+				}
 			}
 
-			switch eventType {
-			case "media":
-				// Decode media sub-object to extract base64 payload.
-				var mediaObj struct {
-					Payload string `json:"payload"`
-				}
-				if raw, ok := envelope["media"]; ok {
-					if err := json.Unmarshal(raw, &mediaObj); err != nil {
-						s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: media decode failed — skipping")
-						continue
-					}
-				}
+		case "stop":
+			s.log.Info().Str("call_id", s.callID).Msg("wsToRTP: received stop event — sending BYE (SIP-05)")
+			_ = s.dlg.Bye(context.Background())
+			s.cancel()
+			return
 
-				pcmuPayload, err := base64.StdEncoding.DecodeString(mediaObj.Payload)
-				if err != nil {
-					s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: base64 decode failed — skipping")
-					continue
-				}
+		default:
+			// Unknown event types (e.g. "connected", "start" echo) — ignore.
+			s.log.Debug().Str("event", eventType).Str("call_id", s.callID).Msg("wsToRTP: unknown WS event — skipping")
+		}
+	}
+}
 
-				pkt := &rtp.Packet{
-					Header: rtp.Header{
-						Version:        2,
-						PayloadType:    0, // PCMU
-						SequenceNumber: seqNo,
-						Timestamp:      timestamp,
-						SSRC:           ssrc,
-					},
-					Payload: pcmuPayload,
-				}
+// rtpPacer drains packetQueue at the RTP ptime rate (one 160-byte frame every 20 ms)
+// and sends each frame as a PCMU RTP packet to the caller.
+//
+// Pacing at 20 ms/frame ensures the phone's jitter buffer (typically 40–200 ms) is not
+// flooded. Without pacing, a single large WS blob would arrive as a burst of hundreds
+// of back-to-back UDP datagrams, causing most to be dropped by the jitter buffer.
+//
+// rtpPacer is the SOLE UDP writer during a session — no other goroutine writes to rtpConn.
+func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
+	defer s.wg.Done()
 
-				encoded, err := pkt.Marshal()
-				if err != nil {
-					s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: RTP marshal failed — skipping")
-					continue
-				}
+	ssrc := rand.Uint32()
+	var seqNo uint16
+	var timestamp uint32
 
-				if _, err := rtpConn.WriteTo(encoded, s.callerRTP); err != nil {
-					s.log.Error().Err(err).Str("call_id", s.callID).Msg("wsToRTP: WriteTo caller failed")
-					return
-				}
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
 
-				seqNo++
-				timestamp += 160 // 20ms @ 8kHz PCMU
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Dequeue next audio frame, or fall back to silence.
+			// Sending on every tick (even silence) is required for NAT traversal:
+			// the first outbound UDP packet establishes the NAT mapping so the caller's
+			// media server can reach our private address. It also keeps the mapping
+			// alive for the duration of the call.
+			var chunk []byte
+			select {
+			case chunk = <-s.packetQueue:
+			default:
+				chunk = pcmuSilenceFrame
+			}
 
-			case "stop":
-				s.log.Info().Str("call_id", s.callID).Msg("wsToRTP: received stop event — sending BYE (SIP-05)")
-				_ = s.dlg.Bye(context.Background())
+			pkt := &rtp.Packet{
+				Header: rtp.Header{
+					Version:        2,
+					PayloadType:    0, // PCMU
+					SequenceNumber: seqNo,
+					Timestamp:      timestamp,
+					SSRC:           ssrc,
+				},
+				Payload: chunk,
+			}
+			encoded, err := pkt.Marshal()
+			if err != nil {
+				s.log.Warn().Err(err).Str("call_id", s.callID).Msg("rtpPacer: RTP marshal failed — skipping frame")
+				continue
+			}
+			if _, err := rtpConn.WriteTo(encoded, s.callerRTP); err != nil {
+				s.log.Error().Err(err).Str("call_id", s.callID).Msg("rtpPacer: WriteTo caller failed")
 				s.cancel()
 				return
-
-			default:
-				// Unknown event types (e.g. "connected", "start" echo) — ignore.
-				s.log.Debug().Str("event", eventType).Str("call_id", s.callID).Msg("wsToRTP: unknown WS event — skipping")
 			}
+			seqNo++
+			timestamp += 160 // 20 ms @ 8 kHz PCMU
 		}
 	}
 }
