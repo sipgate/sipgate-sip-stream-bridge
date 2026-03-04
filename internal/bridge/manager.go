@@ -73,6 +73,47 @@ func NewCallManager(portPool *PortPool, cfg config.Config, log zerolog.Logger) *
 	}
 }
 
+// ActiveCount returns the number of currently active call sessions.
+// Used by Phase 8 /health endpoint and DrainAll polling loop.
+func (m *CallManager) ActiveCount() int {
+	count := 0
+	m.sessions.Range(func(_, _ any) bool { count++; return true })
+	return count
+}
+
+// DrainAll sends SIP BYE to every active call and waits until all sessions self-exit.
+// Sessions call m.sessions.Delete(callID) via defer in StartSession when their goroutine exits.
+// Uses polling (50ms tick) rather than a drain WaitGroup to avoid modifying the session close path.
+// CRITICAL: call handler.SetShutdown() BEFORE DrainAll to prevent new sessions during drain.
+func (m *CallManager) DrainAll(ctx context.Context) {
+	// BYE every active session
+	m.sessions.Range(func(key, value any) bool {
+		s := value.(*CallSession)
+		m.log.Info().Str("call_id", s.callID).Msg("shutdown: sending BYE to active call")
+		_ = s.dlg.Bye(context.Background())
+		return true
+	})
+
+	// Wait until sessions map is empty (sessions self-delete on goroutine exit)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		count := 0
+		m.sessions.Range(func(_, _ any) bool { count++; return true })
+		if count == 0 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			remaining := 0
+			m.sessions.Range(func(_, _ any) bool { remaining++; return true })
+			m.log.Warn().Int("remaining", remaining).Msg("shutdown: drain timeout — abandoning active sessions")
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 // AcquirePort delegates to portPool.Acquire().
 func (m *CallManager) AcquirePort() (int, error) {
 	return m.portPool.Acquire()
