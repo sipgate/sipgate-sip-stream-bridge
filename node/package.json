@@ -10,7 +10,8 @@
     "dev": "tsx --env-file=.env --watch src/index.ts",
     "build": "tsup src/index.ts --format esm --out-dir dist",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "pino": "^10.3.1",
@@ -22,6 +23,7 @@
     "@types/ws": "^8.18.1",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }
