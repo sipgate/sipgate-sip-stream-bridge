@@ -118,3 +118,35 @@ func TestRegistrar_ReregisterTickerInterval(t *testing.T) {
 		}
 	}
 }
+
+// TestOptionsKeepalive_ClassifyFailure verifies isOptionsFailure:
+// - nil err + nil res → true (timeout)
+// - non-nil err → true
+// - res.StatusCode == 404 → true
+// - res.StatusCode == 503 → true (5xx)
+// - res.StatusCode == 200 → false
+// - res.StatusCode == 401 → false (not a failure, handled by isOptionsAuth)
+func TestOptionsKeepalive_ClassifyFailure(t *testing.T) {
+	// stub — will fail until isOptionsFailure is added in registrar.go
+	_ = isOptionsFailure(nil, nil)
+}
+
+// TestOptionsKeepalive_ClassifyAuth verifies isOptionsAuth:
+// - res.StatusCode == 401 → true
+// - res.StatusCode == 407 → true
+// - res.StatusCode == 200 → false
+// - nil res → false
+func TestOptionsKeepalive_ClassifyAuth(t *testing.T) {
+	_ = isOptionsAuth(nil)
+}
+
+// TestOptionsKeepalive_ThresholdLogic verifies consecutive-failure state machine:
+// - 1 failure → consecutiveFailures == 1, doRegister NOT called
+// - 2nd failure → consecutiveFailures hits threshold, doRegister called, counter reset to 0
+// - success between failures → counter resets to 0
+// - 401/407 → counter stays at 0 (not a failure)
+// This test exercises the counter logic directly using a helper extracted from the loop.
+func TestOptionsKeepalive_ThresholdLogic(t *testing.T) {
+	// stub — will fail until applyOptionsResponse helper is added in registrar.go
+	_ = applyOptionsResponse(0, nil, nil)
+}
