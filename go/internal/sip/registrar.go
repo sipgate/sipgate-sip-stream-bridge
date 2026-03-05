@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,8 @@ type Registrar struct {
 	log        zerolog.Logger
 	registered atomic.Bool // true after successful registration; false after unregister or failure
 	metrics    *observability.Metrics
+	mu              sync.Mutex    // serializes concurrent doRegister calls (OPTS-04)
+	optionsInterval time.Duration // SIPOptionsInterval from config
 }
 
 // IsRegistered returns the current SIP registration state.
@@ -38,15 +41,16 @@ func (r *Registrar) IsRegistered() bool {
 // NewRegistrar constructs a Registrar. client comes from Agent.Client.
 func NewRegistrar(client *sipgo.Client, cfg config.Config, log zerolog.Logger, metrics *observability.Metrics) *Registrar {
 	return &Registrar{
-		client:    client,
-		registrar: cfg.SIPRegistrar,
-		domain:    cfg.SIPDomain,
-		contactIP: cfg.SDPContactIP,
-		user:      cfg.SIPUser,
-		password:  cfg.SIPPassword,
-		expires:   cfg.SIPExpires,
-		log:       log,
-		metrics:   metrics,
+		client:          client,
+		registrar:       cfg.SIPRegistrar,
+		domain:          cfg.SIPDomain,
+		contactIP:       cfg.SDPContactIP,
+		user:            cfg.SIPUser,
+		password:        cfg.SIPPassword,
+		expires:         cfg.SIPExpires,
+		log:             log,
+		metrics:         metrics,
+		optionsInterval: cfg.SIPOptionsInterval,
 	}
 }
 
@@ -71,6 +75,7 @@ func (r *Registrar) Register(ctx context.Context) error {
 		Int("server_expires_s", int(expiry.Seconds())).
 		Msg("SIP registration successful")
 	go r.reregisterLoop(ctx, expiry)
+	go r.optionsKeepaliveLoop(ctx, r.optionsInterval)
 	return nil
 }
 
@@ -153,7 +158,9 @@ func (r *Registrar) reregisterLoop(ctx context.Context, expiry time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			r.mu.Lock()
 			newExpiry, err := r.doRegister(ctx)
+			r.mu.Unlock()
 			if err != nil {
 				r.log.Error().Err(err).Msg("SIP re-registration failed — will retry next tick")
 				r.registered.Store(false)
@@ -169,6 +176,109 @@ func (r *Registrar) reregisterLoop(ctx context.Context, expiry time.Duration) {
 			if newRetry := time.Duration(float64(newExpiry) * 0.75); newRetry != retryIn {
 				retryIn = newRetry
 				ticker.Reset(retryIn)
+			}
+		}
+	}
+}
+
+// isOptionsFailure returns true for timeout (err != nil or res nil), 5xx, or 404.
+// 401 and 407 are NOT failures — they indicate the server is reachable.
+func isOptionsFailure(res *siplib.Response, err error) bool {
+	if err != nil || res == nil {
+		return true
+	}
+	return res.StatusCode == 404 || res.StatusCode >= 500
+}
+
+// isOptionsAuth returns true for 401/407 — server reachable, auth issue only.
+func isOptionsAuth(res *siplib.Response) bool {
+	return res != nil && (res.StatusCode == 401 || res.StatusCode == 407)
+}
+
+// applyOptionsResponse computes the new consecutiveFailures count and whether doRegister
+// should be triggered, given the current count and OPTIONS response. Pure function — no side effects.
+// threshold is hardcoded to 2 per CONTEXT.md locked decision.
+func applyOptionsResponse(consecutiveFailures int, res *siplib.Response, err error) (newCount int, triggerRegister bool) {
+	const threshold = 2
+	if isOptionsFailure(res, err) {
+		consecutiveFailures++
+		if consecutiveFailures >= threshold {
+			return 0, true // reset counter unconditionally after triggering
+		}
+		return consecutiveFailures, false
+	}
+	if isOptionsAuth(res) {
+		// Server alive; auth issue only. Reset counter, no re-registration.
+		return 0, false
+	}
+	// Success (2xx other than auth)
+	return 0, false
+}
+
+// sendOptions sends an out-of-dialog SIP OPTIONS to the registrar with a 10s per-request timeout.
+// From and To headers are set explicitly to the AoR (avoids sipgo UA-name substitution pitfall).
+func (r *Registrar) sendOptions(ctx context.Context) (*siplib.Response, error) {
+	ctx10s, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
+	req := siplib.NewRequest(siplib.OPTIONS, registrarURI)
+	req.AppendHeader(siplib.NewHeader("User-Agent", "audio-dock/2.0"))
+	req.AppendHeader(siplib.NewHeader("Max-Forwards", "70"))
+
+	aor := r.aorURI()
+	fromH := &siplib.FromHeader{Address: aor, Params: siplib.NewParams()}
+	fromH.Params.Add("tag", siplib.GenerateTagN(16))
+	req.AppendHeader(fromH)
+	req.AppendHeader(&siplib.ToHeader{Address: aor})
+
+	return r.client.Do(ctx10s, req, sipgo.ClientRequestBuild)
+}
+
+// optionsKeepaliveLoop sends periodic SIP OPTIONS to sipgate for liveness detection (OPTS-01).
+// On 2 consecutive failures (timeout, 5xx, 404) it calls doRegister immediately (OPTS-02).
+// 401/407 responses do not count as failures — server is reachable (OPTS-03).
+// Goroutine is bound to ctx — stops cleanly on SIGTERM (OPTS-04).
+func (r *Registrar) optionsKeepaliveLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	consecutiveFailures := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			res, err := r.sendOptions(ctx)
+			newCount, triggerRegister := applyOptionsResponse(consecutiveFailures, res, err)
+			consecutiveFailures = newCount
+
+			failure := isOptionsFailure(res, err)
+			auth := isOptionsAuth(res)
+
+			// Always increment metric for failures (CONTEXT.md: increment on every failure)
+			if failure && r.metrics != nil {
+				r.metrics.SIPOptionsFailures.Inc()
+			}
+
+			if triggerRegister {
+				r.log.Warn().Msg("OPTIONS keepalive: 2 consecutive failures — triggering re-registration")
+				r.mu.Lock()
+				_, rerr := r.doRegister(ctx)
+				r.mu.Unlock()
+				if rerr != nil {
+					r.log.Error().Err(rerr).Msg("OPTIONS-triggered re-registration failed")
+					r.registered.Store(false)
+					if r.metrics != nil {
+						r.metrics.SIPRegStatus.Set(0)
+					}
+				}
+			} else if failure {
+				r.log.Warn().Int("consecutive_failures", consecutiveFailures).Msg("OPTIONS keepalive: failure")
+			} else if auth {
+				r.log.Debug().Int("status", int(res.StatusCode)).Msg("OPTIONS keepalive: 401/407 — server reachable, no re-registration")
+			} else {
+				r.log.Debug().Msg("OPTIONS keepalive: success")
 			}
 		}
 	}

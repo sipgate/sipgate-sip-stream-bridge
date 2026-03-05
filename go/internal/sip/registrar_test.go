@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	siplib "github.com/emiago/sipgo/sip"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/audio-dock/internal/config"
 )
@@ -119,34 +120,166 @@ func TestRegistrar_ReregisterTickerInterval(t *testing.T) {
 	}
 }
 
-// TestOptionsKeepalive_ClassifyFailure verifies isOptionsFailure:
-// - nil err + nil res → true (timeout)
-// - non-nil err → true
-// - res.StatusCode == 404 → true
-// - res.StatusCode == 503 → true (5xx)
-// - res.StatusCode == 200 → false
-// - res.StatusCode == 401 → false (not a failure, handled by isOptionsAuth)
+// TestOptionsKeepalive_ClassifyFailure verifies isOptionsFailure covers all OPTS-02/OPTS-03 cases.
 func TestOptionsKeepalive_ClassifyFailure(t *testing.T) {
-	// stub — will fail until isOptionsFailure is added in registrar.go
-	_ = isOptionsFailure(nil, nil)
+	tests := []struct {
+		name    string
+		res     *siplib.Response
+		err     error
+		wantFail bool
+	}{
+		{"nil res nil err = timeout", nil, nil, true},
+		{"non-nil err = transport error", nil, errors.New("timeout"), true},
+		{"404 Not Found", &siplib.Response{StatusCode: 404}, nil, true},
+		{"503 Service Unavailable (5xx)", &siplib.Response{StatusCode: 503}, nil, true},
+		{"500 Internal Server Error (5xx)", &siplib.Response{StatusCode: 500}, nil, true},
+		{"200 OK = success, not failure", &siplib.Response{StatusCode: 200}, nil, false},
+		{"401 Unauthorized = auth, not failure", &siplib.Response{StatusCode: 401}, nil, false},
+		{"407 Proxy Auth = auth, not failure", &siplib.Response{StatusCode: 407}, nil, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isOptionsFailure(tt.res, tt.err)
+			if got != tt.wantFail {
+				t.Errorf("isOptionsFailure() = %v, want %v", got, tt.wantFail)
+			}
+		})
+	}
 }
 
-// TestOptionsKeepalive_ClassifyAuth verifies isOptionsAuth:
-// - res.StatusCode == 401 → true
-// - res.StatusCode == 407 → true
-// - res.StatusCode == 200 → false
-// - nil res → false
+// TestOptionsKeepalive_ClassifyAuth verifies isOptionsAuth covers OPTS-03 auth handling.
 func TestOptionsKeepalive_ClassifyAuth(t *testing.T) {
-	_ = isOptionsAuth(nil)
+	tests := []struct {
+		name     string
+		res      *siplib.Response
+		wantAuth bool
+	}{
+		{"401 Unauthorized", &siplib.Response{StatusCode: 401}, true},
+		{"407 Proxy Auth Required", &siplib.Response{StatusCode: 407}, true},
+		{"200 OK = not auth", &siplib.Response{StatusCode: 200}, false},
+		{"nil response = not auth", nil, false},
+		{"404 Not Found = not auth", &siplib.Response{StatusCode: 404}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isOptionsAuth(tt.res)
+			if got != tt.wantAuth {
+				t.Errorf("isOptionsAuth() = %v, want %v", got, tt.wantAuth)
+			}
+		})
+	}
 }
 
-// TestOptionsKeepalive_ThresholdLogic verifies consecutive-failure state machine:
-// - 1 failure → consecutiveFailures == 1, doRegister NOT called
-// - 2nd failure → consecutiveFailures hits threshold, doRegister called, counter reset to 0
-// - success between failures → counter resets to 0
-// - 401/407 → counter stays at 0 (not a failure)
-// This test exercises the counter logic directly using a helper extracted from the loop.
+// TestOptionsKeepalive_ThresholdLogic verifies the consecutive-failure state machine (OPTS-02).
 func TestOptionsKeepalive_ThresholdLogic(t *testing.T) {
-	// stub — will fail until applyOptionsResponse helper is added in registrar.go
-	_ = applyOptionsResponse(0, nil, nil)
+	tests := []struct {
+		name              string
+		consecutiveIn     int
+		res               *siplib.Response
+		err               error
+		wantCount         int
+		wantTrigger       bool
+	}{
+		{
+			name:          "1st failure: count increments to 1, no trigger",
+			consecutiveIn: 0,
+			res:           nil,
+			err:           nil,
+			wantCount:     1,
+			wantTrigger:   false,
+		},
+		{
+			name:          "2nd failure: hits threshold 2, trigger=true, count resets to 0",
+			consecutiveIn: 1,
+			res:           nil,
+			err:           nil,
+			wantCount:     0,
+			wantTrigger:   true,
+		},
+		{
+			name:          "success resets counter to 0",
+			consecutiveIn: 1,
+			res:           &siplib.Response{StatusCode: 200},
+			err:           nil,
+			wantCount:     0,
+			wantTrigger:   false,
+		},
+		{
+			name:          "401 auth does not increment counter, resets to 0",
+			consecutiveIn: 1,
+			res:           &siplib.Response{StatusCode: 401},
+			err:           nil,
+			wantCount:     0,
+			wantTrigger:   false,
+		},
+		{
+			name:          "407 auth does not increment counter, resets to 0",
+			consecutiveIn: 0,
+			res:           &siplib.Response{StatusCode: 407},
+			err:           nil,
+			wantCount:     0,
+			wantTrigger:   false,
+		},
+		{
+			name:          "404 failure increments counter",
+			consecutiveIn: 0,
+			res:           &siplib.Response{StatusCode: 404},
+			err:           nil,
+			wantCount:     1,
+			wantTrigger:   false,
+		},
+		{
+			name:          "5xx failure at count 1 triggers register",
+			consecutiveIn: 1,
+			res:           &siplib.Response{StatusCode: 503},
+			err:           nil,
+			wantCount:     0,
+			wantTrigger:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotCount, gotTrigger := applyOptionsResponse(tt.consecutiveIn, tt.res, tt.err)
+			if gotCount != tt.wantCount {
+				t.Errorf("applyOptionsResponse() count = %d, want %d", gotCount, tt.wantCount)
+			}
+			if gotTrigger != tt.wantTrigger {
+				t.Errorf("applyOptionsResponse() triggerRegister = %v, want %v", gotTrigger, tt.wantTrigger)
+			}
+		})
+	}
+}
+
+// TestOptionsKeepalive_ContextCancel verifies the goroutine stops when ctx is cancelled (OPTS-04).
+// Uses a 500ms ticker and cancels after 50ms — well before the first tick — so sendOptions
+// (which would panic on nil client) is never called.
+func TestOptionsKeepalive_ContextCancel(t *testing.T) {
+	cfg := config.Config{
+		SIPUser:            "u",
+		SIPDomain:          "d",
+		SIPRegistrar:       "r",
+		SIPOptionsInterval: 500 * time.Millisecond,
+	}
+	log := zerolog.Nop()
+	reg := NewRegistrar(nil, cfg, log, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		reg.optionsKeepaliveLoop(ctx, 500*time.Millisecond)
+	}()
+
+	// Cancel well before the first tick so sendOptions (nil client) is never reached
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+		// goroutine exited cleanly
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("optionsKeepaliveLoop did not stop within 500ms after ctx cancel")
+	}
 }
