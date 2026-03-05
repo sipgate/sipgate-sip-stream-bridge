@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Twilio Media Streams - Complete Protocol
 status: executing
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-03-05T10:58:33.040Z"
-last_activity: "2026-03-05 — Completed 09-01: outboundFrame type foundation (chan outboundFrame, markEchoQueue, clearSignal, MarkEchoed, ClearReceived counters)"
+stopped_at: "Completed 10-01: SIPOptionsInterval config field and SIPOptionsFailures counter scaffold"
+last_updated: "2026-03-05T13:17:49Z"
+last_activity: "2026-03-05 — Completed 10-01: SIPOptionsInterval time.Duration (default 30s) and sip_options_failures_total counter added as compile-safe scaffold for Plan 02"
 progress:
   total_phases: 3
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05 — v2.1 roadmap defined)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 9 — Go Bridge mark/clear
+**Current focus:** Phase 10 — Go SIP OPTIONS keepalive
 
 ## Current Position
 
-Phase: 9 of 11 (Go Bridge mark/clear)
-Plan: 1 of 3 complete (09-01 done; 09-02 next)
+Phase: 10 of 11 (Go SIP OPTIONS keepalive)
+Plan: 1 of 3 complete (10-01 done; 10-02 next)
 Status: In progress
-Last activity: 2026-03-05 — Completed 09-01: outboundFrame type foundation (chan outboundFrame, markEchoQueue, clearSignal, MarkEchoed, ClearReceived counters)
+Last activity: 2026-03-05 — Completed 10-01: SIPOptionsInterval time.Duration (default 30s) and sip_options_failures_total counter added as compile-safe scaffold for Plan 02
 
 Progress: [#░░░░░░░░░] 11%
 
@@ -52,6 +52,7 @@ Progress: [#░░░░░░░░░] 11%
 *v2.1 metrics tracked from Phase 9 onward*
 | Phase 09 P02 | 2 | 2 tasks | 2 files |
 | Phase 09-go-bridge-mark-clear P03 | 2 | 2 tasks | 2 files |
+| Phase 10-go-sip-options-keepalive P01 | 2 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,11 @@ From 09-01 execution (2026-03-05):
 - [Phase 09-go-bridge-mark-clear]: Channel-logic tests run synchronously without goroutines — fast and race-detector-clean by construction
 - [Phase 09-go-bridge-mark-clear]: session_mark_test.go uses package bridge (not bridge_test) to access unexported outboundFrame type and pcmuSilenceFrame variable
 
+From 10-01 execution (2026-03-05):
+- **SIPOptionsInterval scaffold**: Pure addition — field + counter defined without wiring to registrar.go; Plan 02 does the wiring. Codebase always compiles between plan commits.
+- **time.Duration env field**: go-simpler.org/env v0.12.0 parses default string "30s" natively to time.Duration — no custom parser needed
+- [Phase 10]: SIPOptionsFailures placed after ClearReceived in Metrics struct following existing counter ordering convention
+
 ### Pending Todos
 
 None.
@@ -87,6 +93,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-05T10:58:33.037Z
-Stopped at: Completed 09-03-PLAN.md
-Resume file: None
+Last session: 2026-03-05T13:17:49Z
+Stopped at: Completed 10-01: SIPOptionsInterval config field and SIPOptionsFailures counter scaffold
+Resume file: .planning/phases/10-go-sip-options-keepalive/10-02-PLAN.md
