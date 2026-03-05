@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"go-simpler.org/env"
 )
@@ -29,6 +30,9 @@ type Config struct {
 
 	// SIP registration expiry (optional — used in Phase 5)
 	SIPExpires int `env:"SIP_EXPIRES" default:"120" usage:"SIP registration expiry in seconds"`
+
+	// SIP OPTIONS keepalive interval (Phase 10)
+	SIPOptionsInterval time.Duration `env:"SIP_OPTIONS_INTERVAL" default:"30s" usage:"Interval between SIP OPTIONS keepalive pings (e.g. 30s, 1m)"`
 
 	// Log level (optional)
 	LogLevel string `env:"LOG_LEVEL" default:"info" usage:"Log level: trace, debug, info, warn, error"`
