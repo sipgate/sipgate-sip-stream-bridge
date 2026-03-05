@@ -69,7 +69,11 @@ Plans:
   3. When sipgate returns 401 or 407, no re-registration is triggered (server is reachable; auth issue only)
   4. The OPTIONS keepalive goroutine stops cleanly on SIGTERM — no goroutine leak
   5. Concurrent re-registration calls from both the keepalive loop and the existing re-register loop do not race
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — SIPOptionsInterval config field + SIPOptionsFailures Prometheus counter (scaffold)
+- [ ] 10-02-PLAN.md — optionsKeepaliveLoop implementation + sync.Mutex + sendOptions + tests
 
 ### Phase 11: Node.js Equivalents
 **Goal**: The Node.js reference implementation has full parity with Go for mark/clear events and SIP OPTIONS keepalive
@@ -98,6 +102,6 @@ Phases execute in numeric order: 9 → 10 → 11
 | 6. Inbound Call + RTP Bridge | v2.0 | 3/3 | Complete | 2026-03-04 |
 | 7. WebSocket Resilience + DTMF | v2.0 | 2/2 | Complete | 2026-03-04 |
 | 8. Lifecycle + Observability | v2.0 | 2/2 | Complete | 2026-03-04 |
-| 9. Go Bridge mark/clear | 3/3 | Complete   | 2026-03-05 | - |
-| 10. Go SIP OPTIONS Keepalive | v2.1 | 0/TBD | Not started | - |
+| 9. Go Bridge mark/clear | v2.1 | 3/3 | Complete | 2026-03-05 |
+| 10. Go SIP OPTIONS Keepalive | v2.1 | 0/2 | Not started | - |
 | 11. Node.js Equivalents | v2.1 | 0/TBD | Not started | - |
