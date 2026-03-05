@@ -490,6 +490,11 @@ export class CallManager {
       this.metrics?.incRtpTx();
       rtp.sendAudio(payload);
     });
+    // Mark events from outbound drain → echo back to WS backend
+    // Routed via session.ws so post-reconnect the handler picks up the new WsClient
+    ws.onMark((markName) => {
+      session.ws.sendMark(markName);
+    });
     // WS disconnect → start reconnect loop (keeps SIP call alive during transient WS drops)
     // Capture params here so the reconnect loop can re-call createWsClient with same identifiers (WSR-02)
     const wsParams: WsCallParams = {
@@ -686,6 +691,11 @@ export class CallManager {
         newWs.onAudio((payload) => {
           this.metrics?.incRtpTx();
           session.rtp.sendAudio(payload);
+        });
+
+        // Re-wire mark handler on reconnect — session.ws is already updated to newWs above
+        newWs.onMark((markName) => {
+          session.ws.sendMark(markName);
         });
 
         // Re-wire disconnect handler recursively so future drops are also handled
