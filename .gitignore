@@ -1,4 +1,6 @@
-node_modules/
-dist/
+node/node_modules/
+node/dist/
 .env
 *.local
+*.log
+audio-dock
