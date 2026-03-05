@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Twilio Media Streams - Complete Protocol
 status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-05T10:54:57.663Z"
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-03-05T10:58:33.040Z"
 last_activity: "2026-03-05 — Completed 09-01: outboundFrame type foundation (chan outboundFrame, markEchoQueue, clearSignal, MarkEchoed, ClearReceived counters)"
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 11
 ---
 
@@ -51,6 +51,7 @@ Progress: [#░░░░░░░░░] 11%
 
 *v2.1 metrics tracked from Phase 9 onward*
 | Phase 09 P02 | 2 | 2 tasks | 2 files |
+| Phase 09-go-bridge-mark-clear P03 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ From 09-01 execution (2026-03-05):
 - [Phase 09]: All mark/clear log calls use Debug level (protocol noise, not error signal)
 - [Phase 09]: wsPacer is sole WS writer for mark echoes — markEchoQueue routes from rtpPacer/wsToRTP to wsPacer
 - [Phase 09]: rtpPacer never stops during clear — only packetQueue is drained; seqNo and timestamp advance on sentinel frames to prevent RTP gaps
+- [Phase 09-go-bridge-mark-clear]: Channel-logic tests run synchronously without goroutines — fast and race-detector-clean by construction
+- [Phase 09-go-bridge-mark-clear]: session_mark_test.go uses package bridge (not bridge_test) to access unexported outboundFrame type and pcmuSilenceFrame variable
 
 ### Pending Todos
 
@@ -84,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-05T10:54:57.660Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-03-05T10:58:33.037Z
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
