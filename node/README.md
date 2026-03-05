@@ -81,11 +81,11 @@ The service validates all variables at startup using Zod and exits immediately w
 
 ```bash
 cd node
-cp ../.env.example ../.env   # fill in SIP credentials
+cp ../.env.example ../.env   # fill in SIP credentials (shared with Go)
 pnpm install
-pnpm dev                     # TypeScript dev server with auto-reload
+pnpm dev                     # TypeScript dev server with auto-reload (reads ../.env)
 pnpm build                   # compile to dist/
-pnpm start                   # run compiled build
+pnpm start                   # run compiled build (reads ../.env)
 pnpm typecheck               # type-check without emitting
 ```
 
