@@ -114,7 +114,18 @@ Then call your sipgate number. The listener logs `connected`, `start`, and `medi
 
 ## Docker
 
-### Build
+### Published image
+
+Pre-built images are published to the GitHub Container Registry on every push to `main`:
+
+```bash
+docker pull ghcr.io/sipgate/sipgate-sip-stream-bridge-node:latest
+docker run --env-file ../.env --network host ghcr.io/sipgate/sipgate-sip-stream-bridge-node:latest
+```
+
+Available tags: `latest`, `main`, `sha-<commit>`, `v<semver>`.
+
+### Build locally
 
 ```bash
 cd node

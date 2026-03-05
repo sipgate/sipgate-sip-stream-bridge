@@ -49,6 +49,25 @@ Two implementations are available in this repository:
 
 ---
 
+## Docker Images
+
+Pre-built images are published to the GitHub Container Registry on every push to `main`:
+
+| Implementation | Image |
+|---|---|
+| Go (current) | `ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest` |
+| Node.js (reference) | `ghcr.io/sipgate/sipgate-sip-stream-bridge-node:latest` |
+
+```bash
+# Pull and run the Go image
+docker pull ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest
+docker run --env-file .env --network host ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest
+```
+
+Available tags: `latest`, `main`, `sha-<commit>`, `v<semver>` (when a version tag is pushed).
+
+---
+
 ## Quick Start
 
 ### Go (recommended)
