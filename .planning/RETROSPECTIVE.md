@@ -110,6 +110,58 @@
 
 ---
 
+## Milestone: v2.1 — Twilio Media Streams: Complete Protocol
+
+**Shipped:** 2026-03-05
+**Phases:** 3 (9–11) | **Plans:** 8 | **Timeline:** 1 day (2026-03-05)
+
+### What Was Built
+
+- Go `outboundFrame` tagged union replacing bare `chan []byte` packetQueue — mark/audio discrimination at consumer
+- Mark/clear barge-in protocol across wsToRTP, rtpPacer, wsPacer: sentinel ordering, immediate fast-path, drain-on-clear
+- `mark_echoed_total`, `clear_received_total`, `sip_options_failures_total` Prometheus counters
+- Go `optionsKeepaliveLoop` with 2-failure threshold state machine + `sync.Mutex` on all `doRegister` call sites
+- Pure helper functions (`applyOptionsResponse`, `isOptionsFailure`, `isOptionsAuth`) enabling table-driven unit tests without a live SIP server
+- Vitest 4.0.18 installed in Node.js reference implementation; 12/12 tests passing
+- Node.js `DrainItem` tagged-union queue + extended `WsClient` interface (`onMark`/`sendMark`/`sendClear`)
+- Node.js `applyOptionsResponse` exported pure function with CSeq routing to avoid OPTIONS corrupting REGISTER state machine
+
+### What Worked
+
+- **Incremental scaffold-then-wire pattern**: Plan 01 adds types/fields (always compiles), Plan 02 adds behavior — codebase never breaks between commits. Zero build failures across all 8 plans.
+- **Pure state machine functions**: extracting `applyOptionsResponse` (both Go and Node.js) as side-effect-free functions enabled exhaustive table-driven tests without goroutines or UDP sockets. Very fast, very clean.
+- **Channel-logic tests without goroutines**: MARK-01 through MARK-04 verified by directly simulating channel operations inline. Race-detector-clean by construction. Mirrors the DTMFDeduplication pattern already established in v2.0.
+- **Go behavioral reference for Node.js**: implementing Go first then using it as a spec for Node.js meant no ambiguity in Node.js requirements. Behavioral parity was explicit and verifiable.
+- **Sole-writer invariant (wsPacer)**: locked decision before Phase 9 started prevented any temptation to write mark echoes from multiple goroutines. No WS write races.
+
+### What Was Inefficient
+
+- **VALIDATION.md frontmatter never updated from draft**: all 3 phases have `nyquist_compliant: false` / `wave_0_complete: false` because the draft frontmatter was never updated after execution. Should update immediately after each plan's test run confirms green.
+- **gsd-tools milestone complete created stub entry**: same issue as v2.0 — accomplishments show "(none recorded)" because the tool can't extract `provides` fields from SUMMARY.md. Manual enrichment still required.
+- **SUMMARY.md `provides` vs `requirements_completed` key**: using a non-standard frontmatter key means cross-reference tools return N/A for all plans. Should use `requirements_completed` going forward.
+
+### Patterns Established
+
+- **Increment-always pattern**: type/counter scaffolding in Plan N, behavioral wiring in Plan N+1 — codebase always compiles between plan commits
+- **Tagged-union channel entry**: `outboundFrame{audio []byte, mark string}` in Go / `DrainItem = Buffer | {markName: string}` in Node.js — discriminate at consumer with nil/isBuffer check
+- **CSeq response routing (Node.js)**: dispatch SIP responses by method in CSeq header before state-machine handling — prevents OPTIONS/REGISTER response cross-contamination
+- **Dual-timer keepalive**: `setInterval` for periodic send + per-send `setTimeout` for timeout detection — avoids timer leak if interval fires before previous ping resolves
+
+### Key Lessons
+
+1. **Lock concurrency decisions before implementation starts**: the sole-writer invariant and doRegister mutex were locked decisions in CONTEXT.md before a line of implementation was written. This prevented mid-implementation re-architecture.
+2. **Pure function extraction is worth the extra line**: `applyOptionsResponse` as a pure function in both Go and Node.js gave free exhaustive test coverage without any mock infrastructure. Always extract state machine logic to pure functions.
+3. **Channel-logic tests scale well**: synchronous channel simulation (no goroutines) tests concurrent correctness cheaply. For any goroutine protocol with channels, consider this pattern first before reaching for goroutine harnesses.
+4. **VALIDATION.md frontmatter should be a checklist item in every plan's docs commit**: not a separate step after the fact.
+
+### Cost Observations
+
+- Model mix: claude-sonnet-4-6 throughout
+- Sessions: 1 day, 8 plans (avg ~10 min/plan)
+- Notable: Go + Node.js dual-language implementation in parallel with full test coverage in a single day
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -118,6 +170,7 @@
 |-----------|--------|-------|------------|
 | v1.0 MVP | 3 | 10 | Initial project — established all patterns |
 | v2.0 Go Rewrite | 5 | 9 | Language rewrite — same external interface, faster execution per plan |
+| v2.1 Protocol | 3 | 8 | Dual-language feature addition — pure function pattern, channel-logic tests |
 
 ### Cumulative Quality
 
@@ -125,6 +178,7 @@
 |-----------|-------------|----------|-------|
 | v1.0 | 27/27 | Automated + 11 human-needed | FD leak: verified |
 | v2.0 | 29/29 | Automated + human-needed | WSB-01..06 docs gap; all implemented |
+| v2.1 | 15/15 | Automated + human-needed | VALIDATION.md frontmatter gap (cosmetic) |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -132,3 +186,5 @@
 2. Per-call factory pattern (createRtpHandler / CallSession) makes concurrent isolation trivially correct
 3. Drop RTP during reconnect (not buffer) — bounded memory, acceptable audio gap, simpler code
 4. Update REQUIREMENTS.md checkboxes at plan-completion time, not milestone-completion time
+5. Lock concurrency decisions (sole-writer invariants, mutexes) in CONTEXT.md before implementation begins
+6. Pure state machine functions (applyOptionsResponse pattern) give free table-driven test coverage — always extract

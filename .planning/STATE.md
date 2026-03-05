@@ -2,99 +2,40 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Twilio Media Streams - Complete Protocol
-status: executing
-stopped_at: Completed 11-03-PLAN.md
-last_updated: "2026-03-05T16:04:43.481Z"
-last_activity: "2026-03-05 — Completed 10-01: SIPOptionsInterval time.Duration (default 30s) and sip_options_failures_total counter added as compile-safe scaffold for Plan 02"
+status: complete
+stopped_at: Milestone v2.1 archived
+last_updated: "2026-03-05T20:45:00.000Z"
+last_activity: "2026-03-05 — Milestone v2.1 complete. All 3 phases (9–11), 8 plans, 15 requirements shipped."
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 8
   completed_plans: 8
-  percent: 11
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-05 — v2.1 roadmap defined)
+See: .planning/PROJECT.md (updated 2026-03-05 after v2.1 milestone)
 
-**Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 10 — Go SIP OPTIONS keepalive
+**Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers including barge-in via mark/clear events.
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 10 of 11 (Go SIP OPTIONS keepalive)
-Plan: 1 of 3 complete (10-01 done; 10-02 next)
-Status: In progress
-Last activity: 2026-03-05 — Completed 10-01: SIPOptionsInterval time.Duration (default 30s) and sip_options_failures_total counter added as compile-safe scaffold for Plan 02
+Milestone v2.1 shipped 2026-03-05.
 
-Progress: [#░░░░░░░░░] 11%
+All 11 phases across 3 milestones (v1.0, v2.0, v2.1) complete.
 
-## Performance Metrics
-
-**Velocity (v2.0 baseline):**
-- Total plans completed (v2.0): 11
-- Average duration: ~30 min
-- Total execution time (v2.0): ~5.5 hours
-
-**By Phase (v2.0):**
-
-| Phase | Plans | Status |
-|-------|-------|--------|
-| 4. Go Scaffold | 2/2 | Complete |
-| 5. SIP Registration | 1/1 | Complete |
-| 6. Inbound Call + RTP Bridge | 3/3 | Complete |
-| 7. WebSocket Resilience + DTMF | 2/2 | Complete |
-| 8. Lifecycle + Observability | 2/2 | Complete |
-
-*v2.1 metrics tracked from Phase 9 onward*
-| Phase 09 P02 | 2 | 2 tasks | 2 files |
-| Phase 09-go-bridge-mark-clear P03 | 2 | 2 tasks | 2 files |
-| Phase 10-go-sip-options-keepalive P01 | 2 | 2 tasks | 4 files |
-| Phase 10-go-sip-options-keepalive P02 | 3 | 2 tasks | 2 files |
-| Phase 11-node.js-equivalents P01 | 1 | 2 tasks | 4 files |
-| Phase 11-node.js-equivalents P02 | 3min | 2 tasks | 3 files |
-| Phase 11-node.js-equivalents P03 | 2min | 2 tasks | 3 files |
+Protocol completeness: full Twilio Media Streams inbound-call event set now implemented (connected/start/media/stop/dtmf/mark/clear).
 
 ## Accumulated Context
 
 ### Decisions
 
-Key decisions from v2.0 logged in PROJECT.md Key Decisions table.
-
-Recent decisions affecting v2.1 work:
-- **v2.1 Phase ordering**: Go bridge first (most disruptive change — packetQueue type change), then Go SIP layer (independent), then Node.js (uses Go as behavioral reference)
-- **sole-writer invariant**: wsPacer is the ONLY goroutine allowed to write to wsConn — mark echoes must route through markEchoQueue channel to wsPacer, never dispatched directly from wsToRTP
-- **RTP pacer never stopped on clear**: drain packetQueue only; pacer keeps running at 20ms intervals with silence fallback — stopping causes RTP timestamp discontinuity
-- **OPTIONS 401/407 not a failure**: treat 401/407 as "server alive, auth issue" — only timeout/5xx/404 trigger re-registration
-- **doRegister mutex mandatory**: sipgo concurrent client.Do() thread-safety is undocumented; mutex on Registrar serializes doRegister calls from both reregisterLoop and optionsKeepaliveLoop
-
-From 09-01 execution (2026-03-05):
-- **outboundFrame tagged union**: separate audio/mark fields preferred over magic byte sentinel — idiomatic nil check for silence fallback, no encoding coupling
-- **Incremental plan strategy**: Plan 01 leaves mark routing unimplemented so codebase always compiles between plan commits — Plan 02 adds routing without ever breaking build
-- **clearSignal buffered(1)**: single-slot prevents wsToRTP from blocking if rtpPacer has not consumed the previous signal
-- [Phase 09]: All mark/clear log calls use Debug level (protocol noise, not error signal)
-- [Phase 09]: wsPacer is sole WS writer for mark echoes — markEchoQueue routes from rtpPacer/wsToRTP to wsPacer
-- [Phase 09]: rtpPacer never stops during clear — only packetQueue is drained; seqNo and timestamp advance on sentinel frames to prevent RTP gaps
-- [Phase 09-go-bridge-mark-clear]: Channel-logic tests run synchronously without goroutines — fast and race-detector-clean by construction
-- [Phase 09-go-bridge-mark-clear]: session_mark_test.go uses package bridge (not bridge_test) to access unexported outboundFrame type and pcmuSilenceFrame variable
-
-From 10-01 execution (2026-03-05):
-- **SIPOptionsInterval scaffold**: Pure addition — field + counter defined without wiring to registrar.go; Plan 02 does the wiring. Codebase always compiles between plan commits.
-- **time.Duration env field**: go-simpler.org/env v0.12.0 parses default string "30s" natively to time.Duration — no custom parser needed
-- [Phase 10]: SIPOptionsFailures placed after ClearReceived in Metrics struct following existing counter ordering convention
-- [Phase 10]: applyOptionsResponse is a pure function enabling table-driven unit tests for the OPTIONS state machine without a live SIP server
-- [Phase 10]: SIPOptionsFailures.Inc() fires on every failure including threshold-triggering one — placed before triggerRegister branch
-- [Phase 11-node.js-equivalents]: it.todo stubs chosen over failing expect() — pnpm test exits 0 (green pending) so Wave 1 CI stays green
-- [Phase 11-node.js-equivalents]: No vitest.config.ts needed — Vitest auto-discovers node/test/**/*.test.ts in type:module pnpm project
-- [Phase 11-node.js-equivalents]: makeDrainForTest export: exposes internal makeDrain for unit tests without moving it to a separate module
-- [Phase 11-node.js-equivalents]: Mark sentinel no 20ms wait: after echoing a mark sentinel the next item is scheduled at delay=0 — marks are protocol signals not audio frames
-- [Phase 11-node.js-equivalents]: sendClear delegates to outboundDrain.stop(): reuses existing flush+echo-marks behavior rather than duplicating logic
-- [Phase 11-node.js-equivalents]: CSeq header routing dispatches OPTIONS responses before REGISTER state machine — prevents 401/407 OPTIONS from triggering REGISTER auth challenge
-- [Phase 11-node.js-equivalents]: applyOptionsResponse at module level (not closure) enables unit testing without UDP socket
-- [Phase 11-node.js-equivalents]: pingTimer is per-send (created after each OPTIONS send, cleared on response) — avoids timer leak across interval fires
+All key decisions logged in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
@@ -102,11 +43,11 @@ None.
 
 ### Blockers/Concerns
 
-- **sipgo concurrent client.Do() thread-safety**: Not documented. Mitigation: sync.Mutex on Registrar.doRegister is mandatory (not optional).
+- **sipgo concurrent client.Do() thread-safety**: Not documented. Mitigation: sync.Mutex on Registrar.doRegister is mandatory (not optional). Monitor in production.
 - **sipgate OPTIONS auth behavior**: Unknown if sipgate requires digest auth on out-of-dialog OPTIONS. Current response-code table handles this safely (401 = server alive). Monitor in production.
 
 ## Session Continuity
 
-Last session: 2026-03-05T16:04:43.478Z
-Stopped at: Completed 11-03-PLAN.md
+Last session: 2026-03-05
+Stopped at: Milestone v2.1 complete
 Resume file: None

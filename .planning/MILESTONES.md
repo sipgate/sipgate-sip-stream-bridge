@@ -1,5 +1,28 @@
 # Milestones
 
+## v2.1 Twilio Media Streams - Complete Protocol (Shipped: 2026-03-05)
+
+**Phases completed:** 3 phases (Go Bridge mark/clear · Go SIP OPTIONS Keepalive · Node.js Equivalents), 8 plans
+**Files:** 40 files changed, +4,195 / -159 lines
+**Git range:** `1001803` (feat(09-01)) → `fef8fe9` (fix(node))
+**Timeline:** 2026-03-05 (1 day)
+
+**Delivered:** Both Go and Node.js implementations now handle the full Twilio Media Streams protocol including barge-in mark/clear events and SIP OPTIONS keepalive for silent registration-loss detection.
+
+**Key accomplishments:**
+1. Go mark/clear barge-in: `outboundFrame` tagged union, `markEchoQueue`/`clearSignal` channels, `mark_echoed_total`/`clear_received_total` counters — RTP pacer continuity preserved through clear events
+2. Five mark/clear tests under `go test -race` (zero data races) — channel-logic tests verify MARK-01 through MARK-04 synchronously without goroutines
+3. Go SIP OPTIONS keepalive: `optionsKeepaliveLoop` with 2-failure threshold, pure `applyOptionsResponse` state machine, `sync.Mutex` serializing concurrent `doRegister` calls
+4. Node.js mark/clear parity: `DrainItem` tagged-union queue, extended `WsClient` interface (`onMark`/`sendMark`/`sendClear`), reconnect wiring in `callManager`
+5. Node.js SIP OPTIONS keepalive: exported `applyOptionsResponse` pure function, CSeq routing preventing 401/407 OPTIONS from corrupting REGISTER state machine, dual-timer teardown
+
+**Tech Debt (no blockers):**
+- VALIDATION.md frontmatter not updated from draft status in all 3 phases — tests ran and passed; run `/gsd:validate-phase` retroactively
+- OPTIONS timeout asymmetry: Go=10s, Node.js=5s — both below 30s interval, both correct
+- Human verification items pending: live sipgate OPTIONS classification; SIGTERM goroutine-leak check under real signal
+
+---
+
 ## v2.0 Go Rewrite (Shipped: 2026-03-05)
 
 **Phases completed:** 5 phases (Go Scaffold · SIP Registration · Inbound Call + RTP Bridge · WebSocket Resilience + DTMF · Lifecycle + Observability), 9 plans
