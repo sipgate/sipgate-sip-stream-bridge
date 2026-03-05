@@ -31,6 +31,9 @@ sipgate SIP trunk  ←───────────────────�
 - Opens one WebSocket connection per call to the configured backend URL
 - Bridges audio bidirectionally: RTP ↔ base64 mulaw `media` events
 - Forwards DTMF digits as `dtmf` events (RFC 4733, End-bit deduplication by RTP timestamp)
+- Forwards `mark` events from the backend to the caller — echoes the mark name after all preceding audio frames have been sent; immediate echo when the outbound queue is idle
+- Handles `clear` events from the backend — discards buffered outbound audio and echoes all pending mark names immediately
+- SIP OPTIONS keepalive: probes the registrar every `SIP_OPTIONS_INTERVAL` seconds; triggers re-registration after 2 consecutive failures (401/407 responses count as success — server is reachable)
 - Survives transient WebSocket drops: exponential backoff reconnect (1 s → 2 s → 4 s, 30 s budget); call stays up, inbound RTP is dropped (not buffered) during reconnect
 - After reconnect: backend receives fresh `connected` + `start` before any `media` events
 - Inbound RTP playout buffer smooths sipgate sender bursts (50-frame queue, paced output at 20 ms)
@@ -65,6 +68,7 @@ All configuration is via environment variables. Copy `../.env.example` to `../.e
 | `RTP_PORT_MIN` | `10000` | Start of UDP port range for RTP media sockets |
 | `RTP_PORT_MAX` | `10099` | End of UDP port range (100 ports ≈ 50 concurrent calls) |
 | `SIP_EXPIRES` | `120` | Requested registration expiry in seconds (re-registers at 75%) |
+| `SIP_OPTIONS_INTERVAL` | `30` | Interval in seconds between SIP OPTIONS keepalive pings; 2 consecutive failures trigger re-registration |
 | `LOG_LEVEL` | `info` | zerolog level: `trace` `debug` `info` `warn` `error` |
 | `HTTP_PORT` | `8080` | Port for `/health` and `/metrics` HTTP endpoints |
 
@@ -234,6 +238,18 @@ audio-dock implements the [Twilio Media Streams WebSocket protocol](https://www.
 }
 ```
 
+#### `mark` (echo)
+```json
+{
+  "event": "mark",
+  "sequenceNumber": "99",
+  "mark": {"name": "my-label"},
+  "streamSid": "MZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+Sent after all preceding outbound audio frames have been delivered to the caller, confirming the audio up to this point has played out.
+
 #### `stop`
 ```json
 {
@@ -254,6 +270,27 @@ audio-dock implements the [Twilio Media Streams WebSocket protocol](https://www.
   "media": {"payload": "<base64 mulaw 160 bytes>"}
 }
 ```
+
+#### `mark`
+```json
+{
+  "event": "mark",
+  "streamSid": "MZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "mark": {"name": "my-label"}
+}
+```
+
+Requests a mark echo. audio-dock places a mark sentinel in the outbound audio queue. When all preceding audio frames have been sent to the caller, audio-dock sends a `mark` event back to the backend with the same name. If the queue is idle at the moment the mark arrives, the echo is sent immediately (fast-path, no enqueue).
+
+#### `clear`
+```json
+{
+  "event": "clear",
+  "streamSid": "MZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+Instructs audio-dock to discard all buffered outbound audio immediately. Any pending mark sentinels in the queue are echoed back to the backend before the queue is flushed. The outbound RTP pacer continues running — silence is sent to the caller during the gap.
 
 ### WebSocket reconnect behaviour
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	"go-simpler.org/env"
 )
 
@@ -45,6 +46,10 @@ type Config struct {
 // Errors are printed as minimal JSON to stderr so they are parseable before zerolog is initialized.
 // Never returns on error — always exits non-zero.
 func Load() Config {
+	// Load .env file if present — silently ignored in production where vars are set directly.
+	// Does not override variables already set in the process environment.
+	_ = godotenv.Load("../.env", ".env")
+
 	var cfg Config
 	if err := env.Load(&cfg, nil); err != nil {
 		// env error format: "env: VAR_NAME is required but not set"
