@@ -95,6 +95,25 @@ function getHeader(raw: string, name: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+// ── pure helper — exported for unit tests ─────────────────────────────────────
+
+export function applyOptionsResponse(
+  consecutiveFailures: number,
+  status: number,
+  isError: boolean,
+): { newCount: number; triggerRegister: boolean } {
+  const threshold = 2;
+  const isAuth = status === 401 || status === 407;
+  const isFailure = isError || status === 404 || status >= 500;
+  if (isAuth) return { newCount: 0, triggerRegister: false };
+  if (isFailure) {
+    const next = consecutiveFailures + 1;
+    if (next >= threshold) return { newCount: 0, triggerRegister: true };
+    return { newCount: next, triggerRegister: false };
+  }
+  return { newCount: 0, triggerRegister: false };
+}
+
 // ── main export ───────────────────────────────────────────────────────────────
 
 export async function createSipUserAgent(
@@ -112,6 +131,9 @@ export async function createSipUserAgent(
   const fromTag = randomHex(6);
   let cseq = 1;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let consecutiveFailures = 0;
+  let pingTimer: ReturnType<typeof setTimeout> | null = null;
+  let optionsTimer: ReturnType<typeof setInterval> | null = null;
   let settled = false;
 
   const socket = dgram.createSocket('udp4');
@@ -137,6 +159,39 @@ export async function createSipUserAgent(
     });
   }
 
+  function buildOptions(seq: number, branch: string): string {
+    const sipUri = `sip:${config.SIP_USER}@${config.SIP_DOMAIN}`;
+    const registrarUri = `sip:${registrar}`;
+    const lines = [
+      `OPTIONS ${registrarUri} SIP/2.0`,
+      `Via: SIP/2.0/UDP ${localIp}:${localPort};branch=${branch};rport`,
+      'Max-Forwards: 70',
+      `From: <${sipUri}>;tag=${fromTag}`,
+      `To: <${sipUri}>`,
+      `Call-ID: ${callId}`,
+      `CSeq: ${seq} OPTIONS`,
+      `User-Agent: ${USER_AGENT}`,
+      'Content-Length: 0',
+      '',
+    ];
+    return lines.join('\r\n') + '\r\n';
+  }
+
+  function handleOptionsResponse(status: number, err: Error | null): void {
+    const result = applyOptionsResponse(consecutiveFailures, status, err !== null);
+    consecutiveFailures = result.newCount;
+    if (result.triggerRegister) {
+      log.warn({ event: 'options_reregister' }, 'OPTIONS keepalive: 2 consecutive failures — re-registering');
+      sendRegister();
+    } else if (err !== null || status === 404 || status >= 500) {
+      log.warn({ event: 'options_failure', consecutiveFailures }, 'OPTIONS keepalive failure');
+    } else if (status === 401 || status === 407) {
+      log.debug({ event: 'options_auth', status }, 'OPTIONS 401/407 — server reachable');
+    } else {
+      log.debug({ event: 'options_ok' }, 'OPTIONS keepalive success');
+    }
+  }
+
   log.info({ event: 'ua_starting', registrar, localIp, localPort }, 'Starting SIP registrar (UDP)');
 
   return new Promise<SipHandle>((resolve, reject) => {
@@ -153,7 +208,15 @@ export async function createSipUserAgent(
       const firstLine = raw.split('\r\n')[0];
 
       if (firstLine.startsWith('SIP/2.0')) {
-        // ---- existing REGISTER response handling (UNCHANGED) ----
+        // ---- CSeq routing: OPTIONS responses go to handleOptionsResponse ----
+        const cseqVal = getHeader(raw, 'CSeq') ?? '';
+        if (cseqVal.includes('OPTIONS')) {
+          if (pingTimer !== null) { clearTimeout(pingTimer); pingTimer = null; }
+          const { status } = parseStatusLine(raw);
+          handleOptionsResponse(status, null);
+          return;
+        }
+        // else: fall through to existing REGISTER response handling
         const { status, reason } = parseStatusLine(raw);
 
         if (status === 401 || status === 407) {
@@ -182,11 +245,28 @@ export async function createSipUserAgent(
             log.debug({ event: 'sip_reregister' }, 'Re-registering before expiry');
             sendRegister();
           }, refreshMs);
+          if (optionsTimer) clearInterval(optionsTimer);
+          optionsTimer = setInterval(() => {
+            const branch = `z9hG4bK${randomHex(6)}`;
+            const optBuf = Buffer.from(buildOptions(cseq++, branch));
+            socket.send(optBuf, registrarPort, registrarIp, (err) => {
+              if (err) {
+                handleOptionsResponse(0, err);
+              }
+              // else: wait for response via socket.on('message')
+            });
+            pingTimer = setTimeout(() => {
+              pingTimer = null;
+              handleOptionsResponse(0, new Error('OPTIONS timeout'));
+            }, 5000);
+          }, config.SIP_OPTIONS_INTERVAL * 1000);
           if (!settled) {
             settled = true;
             resolve({
               stop() {
                 if (refreshTimer) clearTimeout(refreshTimer);
+                if (optionsTimer) clearInterval(optionsTimer);
+                if (pingTimer) clearTimeout(pingTimer);
                 socket.close();
               },
               sendRaw(sendBuf: Buffer, port: number, host: string): void {
