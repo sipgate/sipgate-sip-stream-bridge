@@ -492,6 +492,50 @@ func TestDTMFForwarding_NewTimestamp(t *testing.T) {
 	}
 }
 
+// TestSendMarkEcho_JSONSchema: sendMarkEcho writes a correct Twilio mark JSON schema.
+// Verifies event="mark", streamSid, sequenceNumber="7", mark.name="greeting-end".
+// Uses net.Pipe() round-trip via wsutil.WriteClientText / wsutil.ReadClientData.
+func TestSendMarkEcho_JSONSchema(t *testing.T) {
+	client, server := newPipe(t)
+	defer client.Close()
+	defer server.Close()
+
+	streamSid := "MZtest123"
+	markName := "greeting-end"
+	var seqNo uint32 = 7
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- sendMarkEcho(client, streamSid, markName, seqNo)
+	}()
+
+	data, _, err := wsutil.ReadClientData(server)
+	if err != nil {
+		t.Fatalf("ReadClientData: unexpected error: %v", err)
+	}
+	if writeErr := <-errCh; writeErr != nil {
+		t.Fatalf("sendMarkEcho: unexpected error: %v", writeErr)
+	}
+
+	var got MarkEvent
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("JSON unmarshal failed: %v\nRaw: %s", err, string(data))
+	}
+
+	if got.Event != "mark" {
+		t.Errorf("Event: expected %q, got %q", "mark", got.Event)
+	}
+	if got.StreamSid != streamSid {
+		t.Errorf("StreamSid: expected %q, got %q", streamSid, got.StreamSid)
+	}
+	if got.SequenceNumber != "7" {
+		t.Errorf("SequenceNumber: expected %q, got %q", "7", got.SequenceNumber)
+	}
+	if got.Mark.Name != markName {
+		t.Errorf("Mark.Name: expected %q, got %q", markName, got.Mark.Name)
+	}
+}
+
 // Test 4 — writeJSON + readWSMessage round-trip using net.Pipe().
 // The server end writes a ConnectedEvent as a server text frame (wsutil.WriteServerText).
 // The client end reads it via readWSMessage (wraps wsutil.ReadServerData).
