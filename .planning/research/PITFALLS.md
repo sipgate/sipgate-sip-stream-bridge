@@ -1,405 +1,365 @@
 # Pitfalls Research
 
-**Domain:** Go SIP/RTP/WebSocket audio bridge (v2.0 Go rewrite of audio-dock)
-**Researched:** 2026-03-03
-**Confidence:** MEDIUM-HIGH — sipgo library pitfalls verified via GitHub issues, official docs, and release notes; Go UDP/GC/CGO patterns verified via official Go docs and multiple community sources; WebSocket concurrency verified via gorilla/websocket official docs
+**Domain:** Adding mark/clear Twilio Media Streams events + SIP OPTIONS keepalive to existing Go (sipgo) + Node.js (SIP.js) SIP↔WebSocket bridge
+**Researched:** 2026-03-05
+**Confidence:** HIGH for protocol pitfalls (verified against Twilio official docs + RFC 3261); MEDIUM for sipgo-specific OPTIONS send path (library docs are sparse; patterns inferred from sipgo client.go source + analogous REGISTER implementation already in codebase)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: sipgo Dialog Termination at 64*T1 (~32s) Without Explicit `defer dlg.Close()`
+### Pitfall 1: mark Echo Arrives on a Different WS Write Path — Violates Sole-Writer Invariant
 
 **What goes wrong:**
-SIP dialogs in sipgo silently terminate after approximately 32 seconds (64 × T1 = 64 × 500ms) even during active calls. The call appears to be live — RTP is flowing, no BYE was received — but the dialog object is cleaned up internally by the transaction timeout mechanism. The call goroutine then leaks or accesses a dead dialog state.
+The `mark` echo (incoming from the WS server) arrives in `wsToRTP` as a received event. The temptation is to immediately respond to the mark echo from `wsToRTP` — for example, logging it, storing it, or sending a confirmation back. But in the current architecture, `wsPacer` is the **sole goroutine allowed to write to `wsConn`** (see `session.go` WRITE-SAFETY INVARIANTS comment). Any write from `wsToRTP` or from a new goroutine breaks this invariant and causes `gobwas/ws` write corruption or a concurrent-write panic.
 
 **Why it happens:**
-RFC 3261 defines Timer B/F at 64*T1 for transaction timeouts. sipgo's INVITE server transaction implements this timer. Before sipgo fixed the dialog lifecycle (issue #59 addressed in v0.x), the transaction timeout directly terminated the dialog. Even after the fix, misuse is common: developers that handle the INVITE without calling `defer dlg.Close()` and without waiting on `<-dlg.Context().Done()` leave the dialog in limbo. The handler goroutine exits but the dialog stays in the cache, accumulating memory for every call.
+The mark echo is a read-side event (arrives from WS server → `wsToRTP`). The clear event is a write-side action (must be sent to WS server → `wsPacer`). Developers wire both together and write back to the conn from the read goroutine — a common WebSocket concurrency mistake.
 
 **How to avoid:**
+The mark echo is inbound-only — audio-dock reads it and stores state (e.g., the pending mark name), but does NOT write anything back in response. Mark echoes flow: WS server → `wsToRTP` → stores pending mark name in a channel or sync.Map → `wsPacer` may read that channel if it needs to track playout position.
+
+For outbound mark events (audio-dock echoing a mark *to* the WS server after outbound audio playout), the echo must be sent **exclusively from `wsPacer`**, just like `sendDTMF`. Use the same `dtmfQueue` pattern: add a `markEchoQueue chan string` and drain it in `wsPacer`'s select.
+
 ```go
-srv.OnInvite(func(req *sip.Request, tx sip.ServerTransaction) {
-    dlg, err := dialogSrv.ReadInvite(req, tx)
-    if err != nil { return }
-    defer dlg.Close() // MANDATORY — cleans up from DialogServerCache
-
-    dlg.Respond(sip.StatusTrying, "Trying", nil)
-    // ... setup RTP, WS, etc ...
-    dlg.Respond(sip.StatusOK, "OK", sdpBody)
-
-    // MANDATORY — block until dialog terminates (BYE received or context cancelled)
-    <-dlg.Context().Done()
-    // cleanup RTP socket, WS here
-})
-
-srv.OnAck(func(req *sip.Request, tx sip.ServerTransaction) {
-    dialogSrv.ReadAck(req, tx) // MANDATORY — routes ACK to correct dialog
-})
-
-srv.OnBye(func(req *sip.Request, tx sip.ServerTransaction) {
-    dialogSrv.ReadBye(req, tx) // MANDATORY — terminates dialog context
-})
+// In wsPacer select — add alongside existing dtmfQueue case:
+case markName := <-s.markEchoQueue:
+    if err := sendMark(wsConn, s.streamSid, markName, seqNo); err != nil {
+        sig.Signal()
+        return
+    }
+    seqNo++
 ```
-Without `ReadAck` and `ReadBye` registered, the dialog context never closes and goroutines block forever.
 
 **Warning signs:**
-- Calls hang after 30–32 seconds and are dropped without a BYE.
-- `runtime/pprof` goroutine dump shows goroutines blocked on `<-dlg.Context().Done()` for terminated calls.
-- Memory grows proportionally to total call count (not concurrent call count).
+- Data race detector (`go test -race`) reports concurrent writes to `wsConn`.
+- `gobwas/ws` returns a write error mid-call even with no network disruption.
+- Mark echo appears in logs but crashes follow shortly after.
 
-**Phase to address:** Phase 1 (SIP foundation) — INVITE handler pattern must be established correctly from day one.
+**Phase to address:** Phase implementing mark/clear in Go — establish the outbound mark echo queue in `wsPacer` before any mark logic in `wsToRTP`.
 
 ---
 
-### Pitfall 2: gorilla/websocket Concurrent Write Panic — "concurrent write to websocket connection"
+### Pitfall 2: clear Flushes the packetQueue but Does Not Reset the RTP Pacer Timestamp — Audio Glitch After Clear
 
 **What goes wrong:**
-The RTP receive loop, the silence injection timer, and the DTMF forwarder all run in separate goroutines and all call `ws.WriteMessage()`. gorilla/websocket panics with `panic: concurrent write to websocket connection` when two goroutines call any write method simultaneously. The panic crashes the entire process — not just the affected call.
+The clear event from the WS server instructs audio-dock to discard all buffered outbound audio (drain `packetQueue`). If `packetQueue` is drained but `rtpPacer` continues sending silence frames at the same RTP timestamp progression, the call is fine. However, if the implementation stops the pacer during clear and then restarts it (common mistake when trying to "pause" audio), the RTP timestamp and sequence number jump. The caller's jitter buffer detects a sequence discontinuity, flushes its buffer, and the caller hears a ~200ms click or pop.
 
 **Why it happens:**
-gorilla/websocket explicitly states: "Connections support one concurrent reader and one concurrent writer. Applications are responsible for ensuring that no more than one goroutine calls the write methods concurrently." The library detects concurrent writes with an `isWriting` flag and panics deliberately — the buffer is corrupted before detection occurs. Adding a `sync.Mutex` around individual `WriteMessage` calls is not sufficient if the outer state (e.g., framing state across multiple `NextWriter` calls) is interleaved.
+Developers naturally think "pause playback = stop the RTP stream". But the RTP pacer must send at exactly 20ms/frame continuously — the silence frames between real audio are what keep the NAT traversal hole open and what keep the jitter buffer in a steady state. Stopping and restarting the pacer introduces a gap that jitter buffers detect as packet loss.
 
 **How to avoid:**
-Use a dedicated writer goroutine and a channel to serialize all writes:
+Clear means **drain the queue only** — do not stop or interrupt `rtpPacer`. The pacer always runs at 20ms; it falls back to silence naturally when `packetQueue` is empty. The correct implementation:
+
 ```go
-type wsWriter struct {
-    conn    *websocket.Conn
-    writeCh chan []byte
-    done    chan struct{}
-}
-
-func newWsWriter(conn *websocket.Conn) *wsWriter {
-    w := &wsWriter{
-        conn:    conn,
-        writeCh: make(chan []byte, 128), // buffer = ~2.5 seconds of audio at 50pps
-        done:    make(chan struct{}),
-    }
-    go w.pump()
-    return w
-}
-
-func (w *wsWriter) pump() {
-    defer close(w.done)
-    for msg := range w.writeCh {
-        if err := w.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-            return
-        }
-    }
-}
-
-func (w *wsWriter) Send(msg []byte) {
-    select {
-    case w.writeCh <- msg:
-    default:
-        // drop if full — prevents blocking the RTP read goroutine
-    }
-}
-
-func (w *wsWriter) Close() {
-    close(w.writeCh)
-    <-w.done
-}
-```
-Alternative: use `nhooyr.io/websocket` which is goroutine-safe for concurrent writes by design (all write methods may be called concurrently).
-
-**Warning signs:**
-- Process crashes with `panic: concurrent write to websocket connection`.
-- Crashes happen intermittently under load (2+ concurrent calls) but never with a single call.
-- Stack trace shows multiple goroutines in `websocket.(*Conn).WriteMessage` at the same time.
-
-**Phase to address:** Phase 2 (WebSocket bridge) — design the writer architecture before wiring RTP callbacks.
-
----
-
-### Pitfall 3: CGO in Any Dependency Silently Breaks `FROM scratch` Docker Image
-
-**What goes wrong:**
-The Go binary links against libc at runtime if any transitive dependency uses CGO. The binary appears to compile fine with `CGO_ENABLED=1` (default). The `FROM scratch` Docker image has no libc. At container start, the binary immediately exits with `exec format error` or `no such file or directory` — with no useful error message on Alpine/scratch.
-
-**Why it happens:**
-Go's default CGO_ENABLED=1 causes the `net` package to use the system C resolver for DNS lookups. If `os/user` or any imported package contains `import "C"`, the resulting binary has a dynamic dependency on glibc/musl. The developer doesn't notice because local builds (macOS/glibc Linux) work fine. The problem only surfaces on the scratch Docker image.
-
-**Specific risk for this project:** sipgo itself is pure Go. However, popular logging or monitoring libraries can pull in CGO-dependent packages. Prometheus client (`github.com/prometheus/client_golang`) is pure Go — safe. Any SQLite or system-call-heavy library would not be.
-
-**How to avoid:**
-```dockerfile
-# In Dockerfile builder stage — explicitly disable CGO
-FROM golang:1.24-alpine AS builder
-ENV CGO_ENABLED=0
-ENV GOOS=linux
-ENV GOARCH=amd64
-RUN go build -a -ldflags="-s -w" -o audio-dock ./cmd/audio-dock
-
-# Verify no dynamic linking before shipping
-RUN ldd audio-dock 2>&1 | grep -q "not a dynamic executable" || exit 1
-```
-Add to CI: `file ./audio-dock` must output `statically linked`, not `dynamically linked`.
-Verify after adding every new dependency: `go build -v ./... 2>&1 | grep -i cgo` should be empty.
-
-**Warning signs:**
-- Container starts but exits immediately with no log output.
-- `docker logs` shows `exec format error` or `/lib/x86_64-linux-gnu/libc.so.6: no such file`.
-- `ldd ./audio-dock` on the build host shows `linux-vdso.so` and `libc` entries.
-- `go build` output contains lines with `cgo` for unexpected packages.
-
-**Phase to address:** Phase 1 (Docker foundation) — enforce `CGO_ENABLED=0` from the first Dockerfile commit.
-
----
-
-### Pitfall 4: Go GC Pauses Cause RTP Packet Bursts (20ms Timing Violation)
-
-**What goes wrong:**
-Go's GC pauses goroutine execution for STW (stop-the-world) phases. At default `GOGC=100`, a heap that doubles triggers a GC cycle. In a high-allocation path (JSON serialization per RTP packet, base64 encoding, WebSocket frame allocation), GC pauses accumulate to 5–15ms per cycle. The RTP receiver goroutine is paused during GC. When it resumes, the OS socket buffer has queued 3–8 packets. These arrive at the WebSocket backend as a burst, causing the jitter buffer to overflow or underflow — audible as clicks, gaps, or garbled audio.
-
-**Why it happens:**
-v1.0 Node.js built a drain-queue workaround precisely because of this problem (see `makeDrain()` in wsClient.ts). Go's GC is far better than V8's but not zero-latency. The default `GOGC=100` is optimized for throughput, not latency. Per-packet allocations (JSON objects, base64 strings, byte slices) drive frequent GC cycles.
-
-**How to avoid:**
-Two complementary strategies:
-
-1. **Reduce allocations in the hot path (primary):**
-   - Reuse a `sync.Pool` of `[]byte` buffers for RTP reads: no per-packet allocation on the read path.
-   - Build the Twilio JSON envelope with a pre-allocated `[]byte` buffer using `fmt.Appendf` or a fixed-layout template; avoid `json.Marshal` per packet.
-   - The base64 encoding of 160 bytes is always exactly 216 characters — pre-allocate the output buffer.
-
-2. **Tune GC for lower latency (secondary):**
-   ```
-   # In container env vars:
-   GOGC=200          # GC runs less often; tolerable for a bounded-memory service
-   GOMEMLIMIT=256MiB # Hard cap prevents runaway heap; combined with GOGC=200 is safe
-   ```
-   Do NOT set `GOGC=off` without `GOMEMLIMIT` — unbounded heap growth until OOM kill.
-   Official Go GC guide warning: memory limit + no GOGC can cause GC thrashing if the limit is too tight.
-
-**Warning signs:**
-- Audio quality degrades under load (multiple concurrent calls).
-- `go tool pprof` heap profile shows high allocation rate in the RTP receive path.
-- WS backend observes irregular inter-packet timing (jitter > 5ms) even though Go RTP handler runs in a dedicated goroutine.
-- `GODEBUG=gccheckmark=1` reveals frequent GC activity during call processing.
-
-**Phase to address:** Phase 2 (RTP implementation) — establish allocation-free hot path; Phase 4 (observability) — expose GC metrics via Prometheus to monitor in production.
-
----
-
-### Pitfall 5: UDP Read Loop Goroutine Leak on Call Teardown
-
-**What goes wrong:**
-The UDP read goroutine for each call blocks on `conn.ReadFromUDP()`. When the call ends and `conn.Close()` is called, the read goroutine must unblock and exit. If `conn.Close()` races with the goroutine (e.g., called from a different goroutine before the reader has exited), the goroutine may block indefinitely on a closed socket or loop on an error it doesn't recognize as a shutdown signal. After 10+ calls, `GOMAXPROCS` goroutines are stuck in a blocking syscall, consuming file descriptors and memory.
-
-**Why it happens:**
-`net.UDPConn.ReadFromUDP()` is a blocking call. Closing the connection from another goroutine causes it to return with an error (`use of closed network connection`). If the read loop checks `err != nil` and returns without special-casing this error string (which is an internal Go error, not exported), the goroutine exits cleanly. But if the loop retries on any error, it will spin forever on a closed socket.
-
-**How to avoid:**
-```go
-func (h *rtpHandler) readLoop(ctx context.Context) {
-    buf := make([]byte, 1500)
+// In wsToRTP, on "clear" event:
+case "clear":
+    // Drain packetQueue non-blockingly — do not stop rtpPacer.
     for {
-        n, _, err := h.conn.ReadFromUDP(buf)
-        if err != nil {
-            // conn.Close() from another goroutine causes this.
-            // Also triggered by ctx cancellation if SetReadDeadline is used.
-            return // any error = stop reading; let cleanup caller handle it
+        select {
+        case <-s.packetQueue:
+            // discard one frame
+        default:
+            goto drained
         }
-        h.handlePacket(buf[:n])
+    }
+drained:
+    s.log.Info().Str("call_id", s.callID).Msg("wsToRTP: clear — outbound audio queue flushed")
+    // If any pending marks should be echoed back, enqueue them now.
+```
+
+The RTP pacer sees an empty queue and sends silence — no timestamp reset, no sequence gap, no jitter buffer disruption.
+
+**Warning signs:**
+- Caller hears a click or pop immediately after TTS is interrupted via barge-in.
+- Wireshark shows RTP sequence number or timestamp discontinuity aligned with the clear event.
+- RTP timestamp resets to zero after clear (definitive sign that the pacer was restarted).
+
+**Phase to address:** Phase implementing mark/clear — write the drain helper before wiring up the clear event handler; verify in tests that rtpPacer sequence numbers are monotonic through a clear+new-audio cycle.
+
+---
+
+### Pitfall 3: Outbound mark Message Schema — Missing streamSid Causes Silent Failure
+
+**What goes wrong:**
+The outbound `mark` message sent **from audio-dock to the WS server** (echoing that outbound audio playout has reached a mark point) requires a `streamSid` field. If `streamSid` is omitted, Twilio-compatible WS consumers silently ignore the mark event — no error is returned, but the consumer never fires the callback that was waiting for the mark. Features built on mark-based synchronization (barge-in, playback confirmation) break without any error signal.
+
+**Why it happens:**
+The Twilio docs show two different mark schemas:
+- **Server → Twilio** (outgoing): requires `streamSid`
+- **Twilio → Server** (incoming echo): includes `sequenceNumber`
+
+Developers add `sequenceNumber` (which they see on incoming marks) to outgoing marks, but forget `streamSid` (which is on all other outgoing events like `media`). The JSON is valid; the consumer just doesn't match it.
+
+**How to avoid:**
+Outgoing mark schema (audio-dock → WS server):
+```json
+{
+  "event": "mark",
+  "streamSid": "MZ...",
+  "mark": {
+    "name": "my-label"
+  }
+}
+```
+No `sequenceNumber` needed on outgoing marks. Always include `streamSid`. Add a unit test asserting the marshalled JSON contains `streamSid`.
+
+**Warning signs:**
+- WS consumer never fires the mark callback even though audio completes.
+- Debug log shows mark sent but consumer-side acknowledge never arrives.
+- JSON schema mismatch is invisible without consumer-side logging of received mark names.
+
+**Phase to address:** Phase implementing mark — add a test for `sendMark()` JSON output before integration testing.
+
+---
+
+### Pitfall 4: clear Event Must Also Echo All Pending mark Names Back to the WS Server
+
+**What goes wrong:**
+Per the Twilio Media Streams spec: "If your server sends a clear message, Twilio empties the audio buffer and sends back mark messages matching any remaining mark messages." In the audio-dock inversion, audio-dock is the bridge — when it receives a `clear` from the WS server and flushes `packetQueue`, it must also send back mark echoes for any marks that were queued in `packetQueue` but never reached playout. If these pending marks are not echoed, the WS consumer's barge-in state machine gets stuck waiting for marks that will never arrive.
+
+**Why it happens:**
+Developers implement clear as a simple queue drain without tracking which marks were interspersed with audio frames. If marks are queued separately (e.g., on a mark channel alongside packetQueue), they must also be drained and echoed.
+
+**How to avoid:**
+Keep a `pendingMarkQueue chan string` in the session that is populated when the WS server sends a `mark` event (before the audio following it has played). On `clear`:
+1. Drain `packetQueue` (audio frames).
+2. Drain `pendingMarkQueue` and for each mark name, enqueue it onto `markEchoQueue` so `wsPacer` sends the echo.
+
+This preserves the sole-writer invariant: mark echoes are sent from `wsPacer`, not from `wsToRTP`.
+
+**Warning signs:**
+- After a barge-in (clear), the WS consumer hangs waiting for a mark acknowledgement that never arrives.
+- Consumer-side timeout fires on mark wait after every barge-in.
+- No mark echo appears in WS debug logs after a clear.
+
+**Phase to address:** Phase implementing mark/clear — design the mark lifecycle (enqueue on receive, echo on playout or on clear) before coding either feature.
+
+---
+
+### Pitfall 5: SIP OPTIONS Keepalive Timer Leaks If Not Tied to the Root Context
+
+**What goes wrong:**
+A `time.NewTicker` or `time.AfterFunc` goroutine for OPTIONS keepalive that is started in `main()` or `Register()` but not cancelled with the application's root context leaks after the application shuts down. In tests, this means the goroutine is still running after the test exits. In production with multiple restarts (e.g., Kubernetes pod restarts), leftover timers from the previous instance do not exist because Go processes exit — but if OPTIONS keepalive is started per-test or per-connection, the leak accumulates within a test run.
+
+**Why it happens:**
+It is tempting to start the OPTIONS keepalive goroutine inside `Register()` (alongside `reregisterLoop`) for co-location. The `reregisterLoop` already has this pattern correct — it uses `ctx context.Context` and exits on `<-ctx.Done()`. Developers copy the goroutine skeleton but forget to wire the `ctx` parameter, writing `context.Background()` instead.
+
+**How to avoid:**
+The OPTIONS keepalive goroutine must accept the same root `ctx` that `reregisterLoop` uses:
+
+```go
+func (r *Registrar) Register(ctx context.Context) error {
+    expiry, err := r.doRegister(ctx)
+    if err != nil {
+        return err
+    }
+    go r.reregisterLoop(ctx, expiry)
+    go r.optionsKeepaliveLoop(ctx)  // same ctx — stops when app shuts down
+    return nil
+}
+
+func (r *Registrar) optionsKeepaliveLoop(ctx context.Context) {
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            r.sendOptions(ctx)
+        }
     }
 }
-
-// Shutdown: close the conn, then wait for the goroutine to exit.
-func (h *rtpHandler) Close() {
-    h.conn.Close() // unblocks ReadFromUDP
-    h.wg.Wait()   // wait for readLoop to exit
-}
 ```
-Use `sync.WaitGroup` to ensure the goroutine has exited before `Close()` returns. Callers that proceed to close other resources (WS, session map) after `Close()` need this guarantee.
 
-Alternatively, use `conn.SetReadDeadline(time.Now())` before closing — causes `ReadFromUDP` to return with a deadline error immediately.
+`ticker.Stop()` is mandatory — without it, the ticker goroutine leaks even if the outer goroutine exits.
 
 **Warning signs:**
-- Goroutine count grows with each completed call and never decreases.
-- `GET /debug/pprof/goroutine` shows goroutines blocked in `net.(*UDPConn).ReadFromUDP` for calls that ended minutes ago.
-- File descriptor count (check `/proc/<pid>/fd/`) grows with call count.
-- `netstat -u` shows UDP sockets in `CLOSE_WAIT` or orphaned.
+- `go test -count=1 -timeout=60s` takes longer than expected because OPTIONS goroutines keep running after the test's registrar is torn down.
+- `runtime/pprof` goroutine dump shows `optionsKeepaliveLoop` goroutines after shutdown.
+- Goroutine count grows by 1 per `Register()` call in tests that create multiple registrars.
 
-**Phase to address:** Phase 2 (RTP) — establish clean shutdown pattern in initial UDP implementation; verify with goroutine-count assertion in tests.
+**Phase to address:** Phase implementing SIP OPTIONS keepalive — pass `ctx` to the goroutine from day one; add a goroutine-count assertion to the registrar test.
 
 ---
 
-### Pitfall 6: sipgo `ClientRequestRegisterBuild` Not Used — CSeq Double-Increment Breaks Re-REGISTER
+### Pitfall 6: SIP OPTIONS Response Codes — 401/407 Does Not Mean Registration Is Lost; 408/5xx Does
 
 **What goes wrong:**
-sipgo's `client.TransactionRequest()` automatically increments the CSeq header before sending the request (RFC 3261 requirement for new transactions). When `REGISTER` is called for re-registration, the CSeq is already set in the request object and gets incremented again — producing a double-increment. sipgate's registrar then rejects the re-REGISTER with a 400 or 401 because the CSeq sequence is unexpected. Registration works once at startup but fails silently on every subsequent refresh.
+The OPTIONS keepalive goroutine checks the response code to determine whether the registration is still valid. Some implementations treat **any non-200** response as a registration failure and trigger an immediate re-registration. This causes a re-registration storm if sipgate responds with `401 Unauthorized` to the OPTIONS probe (requiring digest auth), because the keepalive is not retrying with auth — it just triggers re-registration, which in turn gets a 401, which triggers another re-registration.
 
 **Why it happens:**
-sipgo documentation states: "Every new transaction will have implicitly CSEQ increase if present." For REGISTER requests, the correct option is `sipgo.ClientRequestRegisterBuild`, which builds the request correctly per RFC and handles the CSeq counter. Developers copying examples that use `TransactionRequest` without this option miss the subtle API requirement.
+RFC 3261 does not require OPTIONS probes to be authenticated for the purpose of keepalive — many SIP servers will respond 200 OK without auth. But some SIP providers (sipgate included based on general trunking behavior) may return `401` or `200` depending on configuration. Developers assume 401 = registration gone when it actually means "you need to authenticate this probe."
+
+For registration-loss detection specifically:
+- `408 Request Timeout` — no response at all; network path or registrar gone. Treat as failure.
+- `5xx` (especially `503 Service Unavailable`) — registrar temporarily down. Treat as failure.
+- `200 OK` — all good.
+- `401/407` — auth required for OPTIONS probe; NOT a registration failure. Either add auth handling or ignore 401 as "server is alive but wants auth" (i.e., treat as "registered").
+- `404` — user not found; this CAN indicate registration loss.
 
 **How to avoid:**
 ```go
-// WRONG — CSeq will be double-incremented:
-tx, err := client.TransactionRequest(ctx, registerReq)
+func (r *Registrar) sendOptions(ctx context.Context) {
+    req := siplib.NewRequest(siplib.OPTIONS, siplib.Uri{Host: r.registrar, Port: 5060})
+    // ... set From/To/Contact headers ...
 
-// CORRECT:
-tx, err := client.TransactionRequest(ctx, registerReq,
-    sipgo.ClientRequestRegisterBuild)
+    res, err := r.client.Do(ctx, req)
+    if err != nil {
+        // Network timeout or transaction failure — likely registration lost
+        r.log.Warn().Err(err).Msg("OPTIONS keepalive: no response — triggering re-registration")
+        r.triggerReregister(ctx)
+        return
+    }
 
-// Or use the high-level helper:
-res, err := client.Do(ctx, registerReq, sipgo.ClientRequestRegisterBuild)
+    switch {
+    case res.StatusCode == 200:
+        r.log.Debug().Msg("OPTIONS keepalive: 200 OK — registration confirmed")
+    case res.StatusCode == 401 || res.StatusCode == 407:
+        // Auth required for probe — server is alive, registration not necessarily lost
+        r.log.Debug().Int("status", res.StatusCode).Msg("OPTIONS keepalive: auth required — treating as alive")
+    case res.StatusCode == 404:
+        r.log.Warn().Msg("OPTIONS keepalive: 404 Not Found — re-registering")
+        r.triggerReregister(ctx)
+    case res.StatusCode >= 500:
+        r.log.Warn().Int("status", res.StatusCode).Msg("OPTIONS keepalive: server error — triggering re-registration")
+        r.triggerReregister(ctx)
+    }
+}
 ```
-Also: the `REGISTER` transaction object must be stored and `defer tx.Terminate()` called on completion. Forgetting `tx.Terminate()` leaks the transaction goroutine.
 
 **Warning signs:**
-- First REGISTER succeeds, first re-REGISTER (90s later) gets 400 Bad Request or 401 Unauthorized.
-- sipgate logs show CSeq values that are not monotonically increasing by 1.
-- `tx.Terminate()` not called — transaction goroutine leaks (observable in pprof goroutine profile).
+- Log shows OPTIONS triggered re-registration but re-registration also fails with 401 (auth loop).
+- Registration counter in `/metrics` oscillates rapidly (register → unregister → register cycle).
+- Re-registration rate exceeds 1 per minute with no actual network outage.
 
-**Phase to address:** Phase 1 (SIP registration) — must be correct before call acceptance is built.
+**Phase to address:** Phase implementing SIP OPTIONS keepalive — define the failure/non-failure response code table in the spec before implementation.
 
 ---
 
-### Pitfall 7: CANCEL After 200 OK Race — Must Handle `cancelledInvites` Set
+### Pitfall 7: OPTIONS Keepalive Interval Too Aggressive — Sipgate Rate-Limits or Blacklists
 
 **What goes wrong:**
-sipgate sends a CANCEL while the INVITE is being processed (WS connection is being established, which takes up to 2 seconds). The CANCEL arrives before the 200 OK is sent. If the handler does not track this state, the 200 OK is sent anyway, the SIP session is "confirmed" from the server's perspective, but the caller has already hung up. The RTP handler and WS client are allocated but will never be used. They leak until the 64*T1 dialog timer fires.
-
-This exact race condition was implemented in v1.0 (see `cancelledInvites` set in callManager.ts lines 338–340, 385–389).
+An OPTIONS keepalive interval of < 10 seconds generates 6+ requests per minute per registered UA. At scale (multiple audio-dock instances), or during testing where OPTIONS intervals are set to 1–2 seconds for faster feedback, sipgate may rate-limit or block the source IP. The registration itself may then fail because REGISTER traffic from the same IP is also rate-limited.
 
 **Why it happens:**
-The INVITE handler is async (it awaits WS connection). CANCEL can arrive at any point during this async window. In Go, this translates to CANCEL arriving on a separate goroutine while the INVITE handler goroutine is blocked in `createWsClient()`. Without shared state and a check after each await point, the CANCEL is lost.
+Developers set the keepalive interval low during development to get fast feedback on the detection logic. They forget to increase it before deploying. The default in production VOIP systems is 30–60 seconds.
 
 **How to avoid:**
-Use an atomic or mutex-protected set of "cancelled call IDs":
-```go
-type callManager struct {
-    pendingInvites  sync.Map // callID -> struct{}
-    cancelledCalls  sync.Map // callID -> struct{}
-    activeSessions  sync.Map // callID -> *callSession
-}
-
-// In INVITE handler:
-h.pendingInvites.Store(callID, struct{}{})
-defer h.pendingInvites.Delete(callID)
-defer h.cancelledCalls.Delete(callID)
-
-ws, err := createWsClient(...)
-
-// Check CANCEL race after every blocking operation:
-if _, cancelled := h.cancelledCalls.Load(callID); cancelled {
-    ws.Close()
-    rtp.Close()
-    return // 487 was already sent by CANCEL handler
-}
-
-// In CANCEL handler:
-h.cancelledCalls.Store(callID, struct{}{})
-// If still pending, send 487:
-if _, pending := h.pendingInvites.Load(callID); pending {
-    tx.Respond(sip.NewResponseFromRequest(req, 487, "Request Terminated", nil))
-}
-```
+- Default interval: 30 seconds. Make it configurable via env var (`SIP_OPTIONS_INTERVAL_S`), defaulting to 30.
+- Do NOT use an interval below 10 seconds except in controlled test environments.
+- During tests, use a mock response from a local test server rather than live sipgate traffic.
 
 **Warning signs:**
-- Calls that are cancelled quickly (caller dials and immediately cancels) show lingering RTP sockets.
-- Log shows "200 OK sent" followed immediately by "BYE received" from sipgate (sipgate sends BYE when it receives 200 OK for a cancelled INVITE).
-- Goroutine leak in WS connection goroutines for calls that were cancelled.
+- `REGISTER` starts failing with `503` or connection refused after OPTIONS traffic increases.
+- sipgate portal shows registration drops correlated with high OPTIONS volume.
+- Options responses are received but REGISTER renewals start timing out.
 
-**Phase to address:** Phase 2 (call lifecycle) — implement CANCEL race guard before testing with live sipgate calls.
+**Phase to address:** Phase implementing SIP OPTIONS keepalive — define the configurable interval env var and set the test harness to use a local mock.
 
 ---
 
-### Pitfall 8: sipgo v0.x Security Advisory — Nil Pointer Dereference on Missing To Header (GHSA-c623-f998-8hhv)
+### Pitfall 8: OPTIONS Keepalive Sends to Wrong URI — Must Target the Registrar, Not the AoR
 
 **What goes wrong:**
-Any malformed SIP request without a `To` header causes `sipgo.NewResponseFromRequest()` to panic with a nil pointer dereference, crashing the entire service. One malformed UDP packet kills all active calls.
+The OPTIONS probe is an out-of-dialog request to detect whether the SIP trunk is reachable. It should be sent to the **registrar URI** (`sip.sipgate.de:5060`), not to the AoR (`sip:user@sipgate.de`). If the Request-URI is the AoR, the OPTIONS is treated as a call probe (does user X exist?) rather than a trunk health probe. The response behavior differs: an AoR probe may return 200 if the AoR is registered elsewhere, giving a false positive even if the trunk path is broken.
 
 **Why it happens:**
-`NewResponseFromRequest` assumes the `To` header is present without nil-checking it. This is a parsing oversight. The flaw exists in versions `>= v0.3.0, < v1.0.0-alpha-1`.
+Developers copy the `aorURI()` helper (already used in REGISTER requests) for the OPTIONS probe and send to `sip:user@sipgate.de`. The probe appears to work (200 OK) but is probing the wrong endpoint.
 
 **How to avoid:**
-Pin sipgo to `>= v1.0.0` (stable release December 2024). The v1.0.0 release is marked as API-stable: "No breaking changes planned in the near future." Current stable version as of research: **v1.2.0** (February 2025).
-
+OPTIONS target = registrar IP, not AoR:
 ```go
-// go.mod
-require github.com/emiago/sipgo v1.2.0
-```
+func (r *Registrar) sendOptions(ctx context.Context) {
+    // Target the registrar, same as REGISTER Request-URI
+    registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
+    req := siplib.NewRequest(siplib.OPTIONS, registrarURI)
 
-**Warning signs:**
-- Any use of sipgo versions 0.x.
-- Service panics with `nil pointer dereference` in response to incoming SIP traffic.
-
-**Phase to address:** Phase 1 (library selection) — start with v1.2.0 from day one; never use v0.x.
-
----
-
-### Pitfall 9: Record-Route Headers Reversed or Missing in 200 OK (Proxy-Unroutable BYE)
-
-**What goes wrong:**
-The in-dialog BYE is routed using the Route set constructed from the Record-Route headers in the 200 OK. If Record-Route headers are missing from the 200 OK, or their order is reversed, the BYE goes directly to the caller's Contact address instead of through the sipgate proxy chain. sipgate's SBC then rejects the BYE with 403 or drops it, and the call is never terminated cleanly from the server side. The caller hangs up locally but the server session stays open.
-
-This was a known v1.0 bug fixed in callManager.ts — `extractAllRecordRoutes()` and the `recordRoutes` parameter to `buildResponse()` were added specifically for this.
-
-**Why it happens:**
-If using sipgo's `dlg.Respond()`, it handles Record-Route automatically from the INVITE. But if building responses manually (as in audio-dock's raw UDP approach), Record-Route headers must be explicitly extracted from the INVITE and echoed verbatim (in the same order) into the 200 OK. RFC 3261 §12.1.2 MUST requirement. Developers forget this and the response "works" in simple test environments (no proxy) but fails with sipgate's multi-proxy topology.
-
-**How to avoid:**
-If using sipgo's dialog API (`dlg.Respond()`): this is handled automatically — no action needed.
-If building raw SIP responses:
-```go
-// Extract ALL Record-Route headers from the INVITE (preserve order):
-var recordRoutes []string
-for _, rr := range req.RecordRoute() {
-    recordRoutes = append(recordRoutes, rr.String())
-}
-// Include in 200 OK — MUST echo verbatim, same order as in INVITE:
-// RFC 3261 §12.1.2: The UAS MUST copy all Record-Route header field values
-// from the request into the response.
-```
-Validate by checking that outbound BYE (after the call) routes through the proxy (visible in SIP packet capture as routed through sip.sipgate.de, not directly to the caller IP).
-
-**Warning signs:**
-- BYE is sent but caller never receives it; call stays on their phone after server sends BYE.
-- SIP packet capture shows BYE going to caller's direct IP, bypassing sip.sipgate.de proxy.
-- sipgate SBC returns 403 to BYE.
-- In-dialog requests (BYE, re-INVITE) get 481 "Call/Transaction Does Not Exist".
-
-**Phase to address:** Phase 2 (call lifecycle) — verify Record-Route echoing with a multi-call test against live sipgate before Phase 3.
-
----
-
-### Pitfall 10: sipgate Non-Standard DTMF Payload Type 113 (Not RFC Standard PT 101)
-
-**What goes wrong:**
-sipgate uses RTP payload type 113 for `telephone-event/8000`, not the commonly assumed PT 101. A Go implementation that listens only on PT 101 (or dynamically assigned PT 97/98/101) receives DTMF packets but silently ignores them, reporting no DTMF events. The caller presses keys, nothing happens.
-
-This was already solved in v1.0 (`if payloadType === 113` in rtpHandler.ts line 150) and documented in the SDP answer (`a=rtpmap:113 telephone-event/8000`).
-
-**Why it happens:**
-RFC 4733 defines telephone-event as a dynamic payload type (96–127); the specific value is negotiated in SDP. sipgate negotiates PT 113. Many Go SIP/RTP examples hard-code PT 101 or 96 from pion/rtp defaults. If the SDP answer doesn't advertise PT 113, or if the RTP handler checks for the wrong PT, DTMF is silently lost.
-
-**How to avoid:**
-In the SDP answer, always declare PT 113 explicitly:
-```
-m=audio <port> RTP/AVP 0 113
-a=rtpmap:0 PCMU/8000
-a=rtpmap:113 telephone-event/8000
-a=fmtp:113 0-16
-```
-In the RTP handler, check for PT 113 (not 101):
-```go
-const ptTelephoneEvent = 113 // sipgate-specific, negotiated in SDP
-
-switch payloadType {
-case 0:
-    h.handlePCMU(payload)
-case ptTelephoneEvent:
-    h.handleDTMF(payload, rtpTimestamp)
+    // From/To should still be the AoR for identification
+    aor := r.aorURI()
+    fromH := &siplib.FromHeader{Address: aor, Params: siplib.NewParams()}
+    fromH.Params.Add("tag", siplib.GenerateTagN(16))
+    req.AppendHeader(fromH)
+    req.AppendHeader(&siplib.ToHeader{Address: aor})
+    // ...
 }
 ```
 
 **Warning signs:**
-- DTMF events never arrive despite caller pressing keys (confirmed in network capture showing PT 113 packets).
-- SDP answer contains `a=rtpmap:101 telephone-event/8000` instead of `a=rtpmap:113 telephone-event/8000`.
-- RTP handler reports "unknown payload type 113" in debug logs.
+- OPTIONS returns 200 even after the sipgate trunk is intentionally taken offline.
+- OPTIONS is being routed through the public PSTN (call to the AoR number) instead of the SIP control plane.
+- OPTIONS target IP differs from the REGISTER target IP in packet captures.
 
-**Phase to address:** Phase 2 (RTP) — replicate the PT 113 logic from v1.0 exactly.
+**Phase to address:** Phase implementing SIP OPTIONS keepalive — unit test for the generated REQUEST-URI.
+
+---
+
+### Pitfall 9: Concurrent doRegister Calls — OPTIONS-Triggered Re-Registration Races the Periodic reregisterLoop
+
+**What goes wrong:**
+The OPTIONS keepalive goroutine detects registration loss and calls `doRegister()` directly. The `reregisterLoop` is also ticking and may call `doRegister()` at the same time. Two concurrent REGISTER transactions are sent to sipgate with different CSeq values. One wins, one gets a stale-CSeq 400 rejection. The loser leaves `r.registered` in an inconsistent state (one goroutine sets it `true`, the other sets it `false`).
+
+**Why it happens:**
+`doRegister()` is a free function today — it has no lock around the client.Do() call. The `reregisterLoop` calls it on a ticker; the OPTIONS goroutine calls it on a failure event. Nothing prevents concurrent calls.
+
+**How to avoid:**
+Add a `sync.Mutex` on the `Registrar` struct that `doRegister()` holds for the duration of the REGISTER transaction:
+
+```go
+type Registrar struct {
+    // ...existing fields...
+    mu sync.Mutex // serializes concurrent doRegister calls
+}
+
+func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    // ... existing doRegister body ...
+}
+```
+
+Alternatively, use a `chan struct{}` with size 1 as a trylock so the OPTIONS goroutine can skip re-registration if one is already in progress rather than blocking.
+
+**Warning signs:**
+- Log shows two `REGISTER` requests in flight simultaneously (same Call-ID prefix, different CSeq).
+- `r.registered` flips true→false→true in rapid succession without any actual network change.
+- sipgate returns `400 Bad Request` on a REGISTER with a note about CSeq ordering.
+
+**Phase to address:** Phase implementing SIP OPTIONS keepalive — add the mutex to `Registrar` before wiring `optionsKeepaliveLoop` to `doRegister`.
+
+---
+
+### Pitfall 10: Node.js wsClient.ts Ignores mark/clear Events — Needs Separate Callbacks, Not Inline Event Handling
+
+**What goes wrong:**
+The Node.js `wsClient.ts` currently handles inbound events via a single `ws.on('message', ...)` listener inside `onAudio()`, with a comment: `// Ignore non-media events (mark, clear, etc.)`. Adding mark/clear handling inline to this listener creates a structural problem: `onAudio()` is called once to set up the audio handler, but mark and clear have their own callbacks that the `callManager` needs to register separately. If mark/clear are handled inside the `onAudio` listener, the callManager has no way to receive mark echoes or inject the flush logic from the outside.
+
+**Why it happens:**
+The current design tunnels all WS events through `onAudio` for simplicity. This was fine for media-only use. Mark and clear are control-plane events that the call manager layer — not the audio layer — needs to act on (e.g., mark arrival → notify that TTS chunk has finished; clear → drain the outbound drain queue). Extending the existing single-listener approach makes the WsClient interface "leaky" (exposes protocol internals to callManager).
+
+**How to avoid:**
+Extend the `WsClient` interface with explicit callbacks for mark and clear:
+```typescript
+export interface WsClient {
+    // ... existing methods ...
+    /** Register handler called when WS server sends a mark echo (outbound audio reached the mark point) */
+    onMark(handler: (name: string) => void): void;
+    /** Send a clear message to the WS server (flush outbound buffer) */
+    sendClear(): void;
+    /** Send a mark message to the WS server (set a named position in the outbound stream) */
+    sendMark(name: string): void;
+}
+```
+
+Inside `createWsClient`, handle `mark` and `clear` in the same `ws.on('message')` listener, but dispatch to the separately registered `markHandler` and `clearHandler` callbacks. The outbound `sendClear()` and `sendMark()` calls are safe to call from any context because `ws.send()` in Node.js is inherently serial (unlike Go's gobwas/ws).
+
+**Warning signs:**
+- `callManager.ts` imports protocol constants from `wsClient.ts` directly (encapsulation violation).
+- Test for mark/clear requires instantiating the entire WS protocol inside the test (no seam for injection).
+- Adding mark handling introduces a `// HACK` comment inside `onAudio`.
+
+**Phase to address:** Phase implementing mark/clear for Node.js — extend `WsClient` interface before implementing mark/clear logic in callManager.
 
 ---
 
@@ -407,13 +367,11 @@ case ptTelephoneEvent:
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| `CGO_ENABLED=1` (default) with `FROM scratch` | No build changes needed | Binary won't run in the container; silent failure | Never — set `CGO_ENABLED=0` from day one |
-| Using `time.After()` inside a per-packet loop | Readable timeout logic | One goroutine + 201-byte timer object created per packet; destroys latency at 50pps | Never in hot paths — use `time.NewTimer` and `Reset()` |
-| `json.Marshal(envelope)` per RTP packet | Simple code | ~3 allocations per packet × 50pps × N calls = high GC pressure | Never in production hot path — use pre-built templates |
-| Skipping `tx.Terminate()` on REGISTER transactions | Less code | Transaction goroutines leak; pprof goroutine count grows with each re-REGISTER cycle | Never |
-| Building raw SIP responses instead of using sipgo dialog API | Full control, matches v1.0 architecture | Must manually handle Record-Route, Via echoing — correctness burden; high risk | Acceptable if the team has SIP expertise and tests against sipgate live |
-| `GOGC=off` without `GOMEMLIMIT` | Fewer GC pauses | Unbounded heap growth; OOM kill in container | Never — must pair with `GOMEMLIMIT` if used |
-| Ignoring `dlg.Context().Done()` in INVITE handler | Handler exits faster | Dialog never terminates cleanly; memory leak per call | Never |
+| Hardcode OPTIONS interval at 30s | No new env var to document | Cannot tune for different trunk providers; tests must wait 30s for detection | Never — add `SIP_OPTIONS_INTERVAL_S` env var with `30` default |
+| Drain `packetQueue` with a goroutine that closes a done channel | Simpler code than channel-select drain | Race between drain goroutine and `rtpPacer` draining simultaneously; duplicate packets possible | Never — drain synchronously with a non-blocking select loop |
+| Store pending mark names in a `[]string` slice (not a channel) | Simple append | Concurrent access from `wsToRTP` (writer) and `wsPacer` (reader) requires mutex; easy to miss | Acceptable only with an explicit `sync.Mutex`; a `chan string` is cleaner |
+| Trigger re-registration on 401 to OPTIONS | Zero extra code for auth-aware OPTIONS handling | Re-registration storm when sipgate requires auth on OPTIONS probe | Never — 401 on OPTIONS does not mean registration is lost |
+| Use `context.Background()` in OPTIONS keepalive goroutine | Simple, self-contained | Goroutine does not stop on shutdown; timer leak in tests | Never — always use the same root `ctx` as `reregisterLoop` |
 
 ---
 
@@ -421,13 +379,13 @@ case ptTelephoneEvent:
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| sipgate trunk (UDP SIP) | Forgetting that sipgate uses UDP SIP (not WSS for trunk-side); the trunk sends INVITE directly to the public IP:5060 | Bind a raw UDP listener on port 5060 for SIP (not a WebSocket transport); sipgate trunk does not use WSS for call delivery |
-| sipgate trunk | Advertising Docker-internal IP (`172.x.x.x`) in SDP `c=` line | Set `SDP_CONTACT_IP` env var to host's public/reachable IP; verify with `tcpdump udp port 5060` that the correct IP appears in the SDP |
-| sipgate trunk DTMF | Hardcoding PT 101 for telephone-event | Advertise and handle PT 113; confirmed behavior from v1.0 live testing |
-| sipgate trunk re-REGISTER | Not refreshing at 90% of server-specified `Expires` | Read `Expires` from 200 OK Contact header; schedule re-REGISTER at 90% of that value |
-| gorilla/websocket AI backend | Calling `WriteMessage` from RTP goroutine AND from silence-injection timer goroutine | Route all writes through a single channel+goroutine writer; or switch to `nhooyr.io/websocket` |
-| Docker `FROM scratch` | Any CGO dependency in the dependency tree | Enforce `CGO_ENABLED=0` in Dockerfile; add `ldd` check as build verification step |
-| Go module proxy | `GOFLAGS=-mod=vendor` must match whether `vendor/` directory is present | If using `-mod=vendor`, run `go mod vendor` in the builder stage before `go build`; or omit vendor and rely on module cache downloaded in the builder stage |
+| Twilio-compatible WS consumer (mark) | Outgoing mark message omits `streamSid` | Always include `streamSid` in outgoing mark; schema: `{event, streamSid, mark: {name}}` |
+| Twilio-compatible WS consumer (clear) | Clear flushes queue but does not echo pending marks | After flush, echo all pending mark names back through `markEchoQueue → wsPacer` |
+| sipgate SIP trunk (OPTIONS) | Sending OPTIONS to AoR URI instead of registrar URI | Request-URI = `sip:sip.sipgate.de:5060`; same target as REGISTER |
+| sipgate SIP trunk (OPTIONS auth) | Treating 401 response to OPTIONS as registration loss | 401 on OPTIONS = server alive, auth required for probe; not a registration failure |
+| sipgo `client.Do()` (OPTIONS) | No timeout context on OPTIONS transaction | Wrap with `context.WithTimeout(ctx, 5*time.Second)` per probe; leak otherwise when registrar is unreachable |
+| gobwas/ws write safety (mark echo) | Sending mark echo from `wsToRTP` goroutine | All writes go through `wsPacer` only; use `markEchoQueue` channel for cross-goroutine delivery |
+| Node.js `ws.send()` (mark/clear) | Sending mark/clear directly from `callManager` using the raw `ws` object | Expose `sendMark`/`sendClear` on the `WsClient` interface; keep the raw socket inside the factory closure |
 
 ---
 
@@ -435,37 +393,25 @@ case ptTelephoneEvent:
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Per-packet `json.Marshal()` for Twilio envelope | GC pressure; jitter at 50 pps × N calls | Pre-build envelope template; only substitute base64 payload field using `fmt.Appendf` | At 3+ concurrent calls (150+ pps) |
-| `make([]byte, 1500)` inside RTP read loop | ~1500 bytes allocated per packet; GC thrashes | Use `sync.Pool` for read buffers; reset and return on each iteration | At 50+ concurrent calls |
-| Separate goroutine per 20ms silence packet (using `time.AfterFunc`) | Goroutine spawn overhead at 50/s; timer heap grows | Use `time.NewTicker(20*time.Millisecond)` — reuses a single timer goroutine | Immediately visible in goroutine profiler |
-| `net.UDPConn` default OS receive buffer (~208 KB on Linux) | Packets dropped by kernel during GC pauses | Call `conn.SetReadBuffer(1024*1024)` (1 MB) on each RTP socket at bind time | During GC pauses if default buffer fills in < 1 second |
-| `sync.Map` for active sessions when all mutations are lock-protected anyway | Slower than `map` + `sync.RWMutex` for read-heavy workloads (due to sync.Map's pointer indirection) | For <100 concurrent sessions, a plain `map[string]*session` with `sync.RWMutex` is faster and simpler | Not a blocking issue at expected call volumes |
-
----
-
-## Security Mistakes
-
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Using sipgo v0.x (< v1.0.0-alpha-1) | Remote DoS: one malformed SIP packet (missing To header) crashes the entire service — no authentication required | Pin `github.com/emiago/sipgo >= v1.2.0` in go.mod |
-| Exposing `net/http/pprof` on the public SIP interface | Memory/goroutine dumps accessible without authentication | Bind pprof to `127.0.0.1` only; never on `0.0.0.0`; use a separate management port |
-| Not validating source IP for SIP INVITEs | Unauthorized call injection from non-sipgate IPs | Validate source against sipgate's published IP ranges at the UDP listener level |
-| Logging raw SIP messages at DEBUG level in production | SIP credentials (Authorization header with digest hash) and PSTN numbers in log aggregator | Redact `Authorization` headers before logging; use structured logging field exclusion |
+| Drain `packetQueue` with a blocking `for range` in `wsToRTP` | `wsToRTP` blocks on empty queue after clear; new WS messages (including next `media`) are not read | Non-blocking select drain: `for { select { case <-s.packetQueue: default: goto done } }` | Immediately on first clear with no queued audio |
+| `time.NewTicker` inside `sendOptions()` instead of in `optionsKeepaliveLoop` | A new ticker is created per OPTIONS send call (misplaced logic) | Ticker belongs in the loop, not in the send function | First time OPTIONS send is called more than once |
+| Allocating a new `sip.Request` for OPTIONS on every tick | ~5 allocations per tick × 1 tick/30s = negligible | Pre-build the request once and reuse; sipgo CSeq auto-increments; no need to rebuild | Not a real performance trap at 1 tick/30s; but important for test clarity |
+| Sending OPTIONS from every `CallSession` goroutine (per-call keepalive) | N calls × 1 OPTIONS/30s floods the registrar | OPTIONS keepalive is a service-level concern, not a per-call concern; one goroutine in `Registrar` | At 10+ concurrent calls |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **SIP Registration:** `REGISTER` succeeds at startup — verify a re-REGISTER occurs at ~90% of the `Expires` value returned in the 200 OK Contact header (not just the value sent).
-- [ ] **DTMF:** Digits are pressed on the PSTN phone — verify PT 113 packets arrive and `telephone-event` events are forwarded to WS backend; check SDP answer has `a=rtpmap:113 telephone-event/8000`.
-- [ ] **RTP socket cleanup:** Run 10 sequential calls end-to-end — verify goroutine count and open file descriptor count return to pre-test baseline.
-- [ ] **CANCEL race:** Dial and cancel within 500ms (before WS connects) — verify no RTP socket or WS client is leaked; verify 487 was sent.
-- [ ] **Record-Route:** Make a call through sipgate (which uses a proxy) — verify BYE routes through the proxy chain, not directly to the caller IP.
-- [ ] **Static binary:** Run `ldd ./audio-dock` on the compiled binary — must output `not a dynamic executable`. Check `file ./audio-dock` — must say `statically linked`.
-- [ ] **200 OK retransmit:** Intercept the ACK (drop one with iptables) — verify 200 OK is retransmitted with intervals capped at T2=4s; verify retransmit stops when ACK arrives.
-- [ ] **Concurrent writes:** Run 2+ concurrent calls while silence injection is active — verify no `panic: concurrent write to websocket connection` in logs.
-- [ ] **GC under load:** Run 5 concurrent calls with `GODEBUG=gcstoptheworld=1` and verify audio timing; check pprof heap allocation rate is not growing per call.
-- [ ] **sipgo version:** Confirm `go.mod` pins `github.com/emiago/sipgo v1.2.0` or later; verify no v0.x transitive dependency.
+- [ ] **mark outgoing schema:** `sendMark()` JSON output contains `streamSid` field — verify with a unit test on the marshalled bytes.
+- [ ] **mark sole-writer invariant:** All mark echoes go through `wsPacer` via `markEchoQueue`; `wsToRTP` never calls `writeJSON` directly — verify with data race detector (`go test -race`).
+- [ ] **clear does not reset RTP:** After a clear event, send a new media blob; verify in unit test that `rtpPacer` sequence numbers are monotonically increasing (no reset to zero or discontinuity).
+- [ ] **clear echoes pending marks:** Send mark → queue audio → send clear before audio plays; verify the WS server receives a mark echo even though audio never played.
+- [ ] **OPTIONS targets registrar URI:** Log the `Request-URI` of the first OPTIONS probe; confirm it matches `sip.sipgate.de:5060`, not `sip:user@sipgate.de`.
+- [ ] **OPTIONS goroutine stops on shutdown:** Trigger SIGTERM; verify the OPTIONS ticker goroutine exits before the process exits (goroutine-count assertion or test with short context timeout).
+- [ ] **concurrent doRegister safety:** Add `go test -race` test that calls `doRegister` from two goroutines simultaneously; verify no data race on `r.registered`.
+- [ ] **401 on OPTIONS does not re-register:** Mock OPTIONS response as 401; verify `r.registered` stays `true` and no REGISTER is sent.
+- [ ] **Node.js WsClient interface extended:** `WsClient` in `wsClient.ts` exports `onMark`, `sendMark`, `sendClear`; `callManager.ts` uses these — not the raw `ws` object.
+- [ ] **OPTIONS interval configurable:** `SIP_OPTIONS_INTERVAL_S` env var accepted; defaults to 30; validated as integer ≥ 10 in config schema.
 
 ---
 
@@ -473,14 +419,12 @@ case ptTelephoneEvent:
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Dialog leak (missing `dlg.Close()`) | LOW | Add `defer dlg.Close()` and `<-dlg.Context().Done()` to every INVITE handler; existing leaks clear on process restart |
-| gorilla/websocket concurrent write panic | MEDIUM | Introduce writer-channel goroutine pattern; refactor all call paths that write to WS to use the channel; or migrate to `nhooyr.io/websocket` |
-| CGO binary fails in scratch container | LOW | Set `CGO_ENABLED=0` in Dockerfile and rebuild; add `ldd` verification step |
-| DTMF not working (wrong PT) | LOW | Change PT 101 → PT 113 in SDP answer and RTP handler; redeploy |
-| CSeq double-increment on re-REGISTER | LOW | Add `sipgo.ClientRequestRegisterBuild` option to the REGISTER transaction call |
-| Record-Route missing from 200 OK | MEDIUM | Extract Record-Route headers from INVITE and include in 200 OK; test with live sipgate call to confirm BYE routing |
-| GC jitter causing audio degradation | MEDIUM | Profile hot path allocations; introduce `sync.Pool` for RTP buffers; tune `GOGC=200 GOMEMLIMIT=256MiB`; measure improvement with Prometheus jitter histogram |
-| CANCEL race causing resource leak | MEDIUM | Add `sync.Map`-based cancelled-invites tracking; add check after each async wait in INVITE handler |
+| mark echo sent from wrong goroutine (concurrent write) | MEDIUM | Introduce `markEchoQueue chan string` in `CallSession`; move all mark sends to `wsPacer` select; re-run race detector |
+| clear resets RTP pacer timestamp | LOW | Remove pacer stop/restart from clear handler; replace with queue drain only; verify with monotonic sequence test |
+| OPTIONS triggers re-registration on 401 | LOW | Add response code switch to `sendOptions`; treat 401 as "alive"; redeploy |
+| OPTIONS keepalive goroutine leak in tests | LOW | Pass root `ctx` to goroutine; add `defer ticker.Stop()` |
+| Concurrent doRegister race | MEDIUM | Add `sync.Mutex` to `Registrar.doRegister`; add race detector test |
+| Node.js mark/clear inline in onAudio | MEDIUM | Refactor `WsClient` interface to add `onMark`/`sendMark`/`sendClear`; update all consumers |
 
 ---
 
@@ -488,37 +432,32 @@ case ptTelephoneEvent:
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| sipgo v0.x nil pointer DoS | Phase 1 (library selection) | `go.mod` shows `v1.2.0`; run sipgo basic tests with and without To header |
-| `ClientRequestRegisterBuild` missing — CSeq double-increment | Phase 1 (SIP registration) | Send 3 REGISTER renewals; verify each CSeq increments by exactly 1 |
-| Dialog leak — missing `dlg.Close()` + `<-dlg.Context().Done()` | Phase 1 (INVITE handler pattern) | Run 10 calls; goroutine count returns to baseline |
-| DTMF PT 113 | Phase 2 (RTP handler) | Press keys during live call; DTMF events appear in WS stream |
-| gorilla/websocket concurrent write panic | Phase 2 (WebSocket bridge) | 2+ concurrent calls + silence injection; zero panics in 1-hour soak |
-| UDP read goroutine leak | Phase 2 (RTP handler) | 20 sequential calls; FD count and goroutine count return to baseline |
-| CANCEL race / resource leak | Phase 2 (call lifecycle) | Fast-cancel test (< 500ms after dial); zero leaked RTP sockets |
-| Record-Route missing in 200 OK | Phase 2 (call lifecycle) | BYE routes through sipgate proxy (verify in wireshark) |
-| CGO in `FROM scratch` Docker image | Phase 1 (Docker foundation) | `ldd ./audio-dock` → `not a dynamic executable`; CI enforces this |
-| GC-induced RTP jitter | Phase 2/3 (RTP + resilience) | Prometheus jitter histogram shows p99 < 2ms on 5-call soak |
-| 200 OK retransmit timer correctness | Phase 2 (SIP call lifecycle) | Drop one ACK with iptables; verify retransmit schedule (500ms, 1s, 2s, 4s, 4s…) |
+| mark echo sent from wrong goroutine | Phase: mark/clear Go — add `markEchoQueue` before mark logic | `go test -race` passes; no concurrent write panics in 2+ concurrent call test |
+| clear resets RTP timestamp | Phase: mark/clear Go — drain-only flush from day one | Unit test: `rtpPacer` sequence monotonic through clear+media cycle |
+| Outgoing mark schema missing streamSid | Phase: mark/clear Go/Node.js — add `sendMark()` function with test | Unit test on marshalled JSON asserts `streamSid` field present |
+| clear must echo pending marks | Phase: mark/clear Go/Node.js — design mark lifecycle before coding | Integration test: mark → audio → clear → verify mark echo received |
+| OPTIONS goroutine not tied to ctx | Phase: SIP OPTIONS keepalive Go — same goroutine pattern as reregisterLoop | `go test -race -count=5` goroutine count is stable across registrar teardowns |
+| 401 treated as registration loss | Phase: SIP OPTIONS keepalive Go — response code table in spec | Unit test: mock 401 response → `registered` stays `true`, no REGISTER sent |
+| OPTIONS interval too aggressive | Phase: SIP OPTIONS keepalive Go/Node.js — add `SIP_OPTIONS_INTERVAL_S` env var | Config validation test: interval < 10 is rejected; default is 30 |
+| OPTIONS targets wrong URI | Phase: SIP OPTIONS keepalive Go — unit test for request URI | Unit test on generated OPTIONS request: `Request-URI` == registrar URI |
+| Concurrent doRegister race | Phase: SIP OPTIONS keepalive Go — add mutex before wiring trigger | `go test -race` on registrar with concurrent doRegister calls |
+| Node.js WsClient interface not extended | Phase: mark/clear Node.js — extend interface before callManager changes | TypeScript compile error if callManager accesses raw `ws` object |
 
 ---
 
 ## Sources
 
-- sipgo GitHub issue #59 — Dialog terminating mid-call at 64*T1: https://github.com/emiago/sipgo/issues/59 (MEDIUM confidence — issue directly describes the problem)
-- sipgo security advisory GHSA-c623-f998-8hhv — Nil pointer DoS via missing To header: https://github.com/emiago/sipgo/security/advisories/GHSA-c623-f998-8hhv (HIGH confidence — official security advisory)
-- sipgo release v1.2.0 (February 2025) — UDP memory leak fix, ACK routing fix: https://github.com/emiago/sipgo/releases (HIGH confidence — official release notes)
-- sipgo pkg.go.dev documentation — `ClientRequestRegisterBuild` requirement, `defer dlg.Close()` pattern: https://pkg.go.dev/github.com/emiago/sipgo (HIGH confidence — official documentation)
-- gorilla/websocket pkg.go.dev — concurrent write constraint: https://pkg.go.dev/github.com/gorilla/websocket (HIGH confidence — official documentation)
-- gorilla/websocket issue #913 — "panic: concurrent write to websocket connection": https://github.com/gorilla/websocket/issues/913 (HIGH confidence — confirmed in multiple issues)
-- nhooyr.io/websocket comparison — goroutine-safe writes: https://pkg.go.dev/nhooyr.io/websocket (MEDIUM confidence — docs state "all methods may be called concurrently except Reader and Read")
-- Go GC Guide (official) — GOGC, GOMEMLIMIT, thrashing risk: https://tip.golang.org/doc/gc-guide (HIGH confidence — official Go documentation)
-- golang/go issue #43451 — UDPConn.ReadFromUDP allocates per call: https://github.com/golang/go/issues/43451 (HIGH confidence — official Go issue tracker)
-- Building static Go binaries (Eli Bendersky, 2024) — CGO unexpected dependencies: https://eli.thegreenplace.net/2024/building-static-binaries-with-go-on-linux/ (HIGH confidence — verified author, current)
-- RFC 3261 §12.1.2 — Record-Route MUST be echoed in 200 OK: https://www.rfc-editor.org/rfc/rfc3261 (HIGH confidence — normative RFC)
-- RFC 4733 §2.5 — Telephone-event redundant End packet deduplication: https://datatracker.ietf.org/doc/html/rfc4733 (HIGH confidence — normative RFC)
-- RFC 5407 — Example call flows of race conditions (CANCEL/200 OK): https://datatracker.ietf.org/doc/html/rfc5407 (HIGH confidence — normative RFC)
-- audio-dock v1.0 source — PT 113 implementation, CANCEL race, Record-Route: src/rtp/rtpHandler.ts, src/bridge/callManager.ts (HIGH confidence — production-verified behavior)
+- Twilio Media Streams WebSocket Messages — mark and clear event schemas, timing semantics: https://www.twilio.com/docs/voice/media-streams/websocket-messages (HIGH confidence — official Twilio documentation)
+- Twilio changelog — bidirectional streaming + mark/clear for barge-in: https://www.twilio.com/en-us/changelog/bi-directional-streaming-support-with-media-streams (HIGH confidence — official Twilio announcement)
+- OpenAI Community — mark/clear implementation pitfall: no confirmation when audio flush completes, pending marks accumulate: https://community.openai.com/t/openai-realtime-how-to-correctly-truncate-a-live-streaming-conversation-on-speech-interruption-twilio-media-streams/1371637 (MEDIUM confidence — community discussion, consistent with Twilio spec)
+- sipgo pkg.go.dev — client.Do() signature, TransactionRequest, no explicit concurrent-call safety documentation: https://pkg.go.dev/github.com/emiago/sipgo (MEDIUM confidence — official library docs; concurrent safety not explicitly stated)
+- sipgo GitHub client.go — Do() implementation pattern, CSeq auto-increment behavior: https://github.com/emiago/sipgo/blob/main/client.go (MEDIUM confidence — source code review)
+- RFC 3261 §11 — SIP OPTIONS request semantics; out-of-dialog use for capability probing: https://www.rfc-editor.org/rfc/rfc3261 (HIGH confidence — normative RFC)
+- RFC 6223 — Indication of Support for Keep-Alive in SIP: https://www.rfc-editor.org/rfc/rfc6223 (HIGH confidence — normative RFC)
+- Cisco CUBE documentation — out-of-dialog OPTIONS ping group, response code interpretation for registration loss detection: https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/voice/cube_sipsip/configuration/15-mt/cube-sipsip-15-mt-book/voi-out-of-dialog.html (MEDIUM confidence — vendor documentation; response code table is consistent with RFC 3261)
+- audio-dock v2.0 source — `wsPacer` sole-writer invariant, `wsSignal` pattern, `dtmfQueue` pattern (direct model for `markEchoQueue`): `go/internal/bridge/session.go` and `go/internal/bridge/ws.go` (HIGH confidence — production code)
+- audio-dock v1.0 source — `wsClient.ts` `onAudio` listener with "Ignore non-media events (mark, clear, etc.)" comment: `node/src/ws/wsClient.ts` (HIGH confidence — production code, documents the gap to fill)
 
 ---
-*Pitfalls research for: Go SIP/RTP/WebSocket audio bridge (audio-dock v2.0 Go rewrite)*
-*Researched: 2026-03-03*
+*Pitfalls research for: mark/clear Twilio Media Streams events + SIP OPTIONS keepalive — v2.1 milestone additions*
+*Researched: 2026-03-05*

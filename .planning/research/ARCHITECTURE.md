@@ -1,648 +1,700 @@
 # Architecture Research
 
-**Domain:** SIP-to-WebSocket audio bridge — Go rewrite of audio-dock
-**Researched:** 2026-03-03
-**Confidence:** HIGH (Go concurrency model, stdlib patterns); MEDIUM (sipgo API surface — verified against pkg.go.dev; goroutine lifecycle patterns — verified via official Go docs and multiple sources)
+**Domain:** SIP-to-WebSocket audio bridge — v2.1 additions: mark/clear events + SIP OPTIONS keepalive
+**Researched:** 2026-03-05
+**Confidence:** HIGH (Go concurrency model, existing codebase verified by direct read); HIGH (Twilio Media Streams mark/clear protocol — official docs); MEDIUM (sipgo OPTIONS keepalive — API verified, integration pattern inferred from existing REGISTER pattern)
 
 ---
 
-## Standard Architecture
+## What This Document Covers
 
-### System Overview
+This is a **subsequent-milestone architecture document**. The v2.0 codebase is already shipped and verified. This document maps exactly three new features onto the existing goroutine and component architecture:
 
-```
-  sipgate trunking
-  UDP :5060 (SIP signaling)
-  UDP :10000-10099 (RTP media)
-         |
-         v
-  ┌──────────────────────────────────────────────────────────────────────────┐
-  │                         audio-dock (Go binary)                           │
-  │                                                                          │
-  │  main()                                                                  │
-  │  signal.NotifyContext(SIGTERM/SIGINT) → root ctx                         │
-  │     │                                                                    │
-  │     ├─ internal/config  ─── os.LookupEnv + validation, loaded once      │
-  │     │                                                                    │
-  │     ├─ internal/sip ──────────────────────────────────────────────────┐  │
-  │     │    sipgo UserAgent + Server (ListenAndServe goroutine)           │  │
-  │     │    sipgo Client (REGISTER + re-register goroutine)              │  │
-  │     │    srv.OnInvite / OnAck / OnBye / OnCancel / OnOptions          │  │
-  │     │    raw SIP helpers: SDP parser/builder, header extractors        │  │
-  │     └────────────────────────────────┬───────────────────────────────┘  │
-  │                                      │ SipCallbacks interface            │
-  │     ┌────────────────────────────────v───────────────────────────────┐  │
-  │     │                  internal/bridge.CallManager                    │  │
-  │     │                                                                  │  │
-  │     │  mu sync.RWMutex                                                 │  │
-  │     │  sessions map[string]*CallSession      ← callId key              │  │
-  │     │  pending  map[string]struct{}          ← dedup retransmissions   │  │
-  │     │  cancelled map[string]struct{}         ← CANCEL race guard       │  │
-  │     │                                                                  │  │
-  │     │  handleInvite() → goroutine            [one goroutine per call]  │  │
-  │     │     │                                                            │  │
-  │     │     ├─ allocate RTP port (internal/rtp)                         │  │
-  │     │     ├─ connect WS (internal/ws)                                 │  │
-  │     │     └─ start call goroutines:                                   │  │
-  │     │           rtpReadLoop  (goroutine A: net.UDPConn.ReadFromUDP)   │  │
-  │     │           wsReadLoop   (goroutine B: wsConn.Read)               │  │
-  │     │           silenceTick  (goroutine C: during WS reconnect only)  │  │
-  │     └──────────────────────────────────────────────────────────────┘  │
-  │                                                                          │
-  │  internal/obs                                                            │
-  │     net/http mux: GET /health, GET /metrics                              │
-  │     (reads from CallManager via interface — no lock needed for counters) │
-  └──────────────────────────────────────────────────────────────────────────┘
-         |                                       |
-         | RTP/UDP (PCMU 8kHz, 20ms packets)     | WebSocket (ws:// or wss://)
-         v                                       v
-  sipgate media servers                 AI voice-bot backend
-                                        (Twilio Media Streams consumer)
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Go Implementation |
-|-----------|---------------|-------------------|
-| **internal/config** | Parse + validate env vars at startup; fail fast | Plain struct + `os.LookupEnv`; validated with hand-written checks or `github.com/kelseyhightower/envconfig`; exported singleton |
-| **internal/sip** | SIP registration + inbound message dispatch | `sipgo` `UserAgent`, `Server`, `Client`; registers via `ClientRequestRegisterBuild`; dispatches INVITE/BYE/ACK/CANCEL/OPTIONS via `srv.OnX` handlers; raw SDP helpers as pure functions |
-| **internal/rtp** | Per-call UDP socket; RTP encode/decode; port allocation | `net.UDPConn` per call; atomic port counter (`sync/atomic`); 12-byte header read/write; PT=0 PCMU, PT=113 telephone-event |
-| **internal/ws** | Per-call WebSocket client; Twilio Media Streams protocol | `github.com/gorilla/websocket`; separate read goroutine + write channel; connected/start/media/stop/dtmf JSON messages |
-| **internal/bridge** | CallManager: session registry + INVITE orchestration; reconnect loop | `sync.RWMutex`-protected `map[string]*CallSession`; per-call goroutine set; reconnect goroutine with `time.Sleep` + budget |
-| **internal/obs** | HTTP health + Prometheus metrics | `net/http` stdlib only; `prometheus/client_golang`; reads atomic counters from CallManager |
-| **cmd/audio-dock** | Entry point: wire all components, start goroutines, handle SIGTERM | `signal.NotifyContext`; `sync.WaitGroup` for shutdown drain; 5s deadline context |
+1. **`mark` event** — WS server sends mark message → audio-dock echoes it when outbound audio playout reaches that point
+2. **`clear` event** — WS server sends clear → audio-dock flushes buffered outbound PCMU frames from `packetQueue`
+3. **SIP OPTIONS keepalive** — audio-dock sends periodic OPTIONS to sipgate; 408/503 response triggers re-registration
 
 ---
 
-## Recommended Project Structure
+## Current v2.0 Architecture (Baseline)
+
+Understanding the existing goroutine structure is the prerequisite for all three additions.
+
+### Goroutine Map Per Call (v2.0 baseline)
 
 ```
-audio-dock/
-├── cmd/
-│   └── audio-dock/
-│       └── main.go              # Entry point: load config, wire, start, shutdown
-├── internal/
-│   ├── config/
-│   │   └── config.go            # Env var struct, Load() func, validation
-│   ├── sip/
-│   │   ├── agent.go             # sipgo UserAgent+Server+Client factory; REGISTER loop
-│   │   ├── sdp.go               # parseSdpOffer(), buildSdpAnswer() — pure functions
-│   │   └── headers.go           # extractHeader(), extractAllVias(), buildResponse(), buildBye()
-│   ├── rtp/
-│   │   ├── handler.go           # RtpHandler struct: UDPConn, read loop, sendAudio()
-│   │   └── port.go              # portAllocator: atomic counter, bindPort()
-│   ├── ws/
-│   │   ├── client.go            # WsClient: dial, readLoop goroutine, writeCh channel
-│   │   └── protocol.go          # Twilio Media Streams JSON types + encode/decode
-│   ├── bridge/
-│   │   ├── call_manager.go      # CallManager struct, handleInvite, handleBye, terminateAll
-│   │   ├── session.go           # CallSession struct definition
-│   │   └── reconnect.go         # startWsReconnectLoop() — goroutine with backoff
-│   └── obs/
-│       └── server.go            # net/http mux: /health + /metrics handlers
-├── Dockerfile                   # multi-stage: golang:1.24-bookworm → scratch/distroless
-├── go.mod
-└── go.sum
+StartSession goroutine (exits after run() returns)
+    │
+    └─ session.run(sessionCtx, initialWsConn)
+           │
+           ├── goroutine: rtpReader(sessionCtx, rtpConn)
+           │     Reads UDP from sipgate → routes PCMU to rtpInboundQueue
+           │     Routes DTMF End packets → dtmfQueue
+           │     Lifecycle: exits when rtpConn.Close() is called on ctx.Done()
+           │
+           ├── goroutine: rtpPacer(sessionCtx, rtpConn)
+           │     Ticks every 20ms → drains packetQueue → writes PCMU RTP to caller
+           │     Falls back to pcmuSilenceFrame when packetQueue is empty
+           │     Lifecycle: exits on ctx.Done() or WriteTo error
+           │
+           └── WS reconnect loop (for{} in run()):
+                 ├── goroutine: wsPacer(sessionCtx, wsConn, wsWg, sig)
+                 │     Ticks every 20ms → drains rtpInboundQueue → sends media events
+                 │     Also drains dtmfQueue between ticks (priority select)
+                 │     SOLE WS writer during audio forwarding
+                 │     Lifecycle: new goroutine each WS connection; exits on ctx.Done() or write error
+                 │
+                 └── goroutine: wsToRTP(sessionCtx, wsConn, wsWg, sig)
+                       Reads WS frames → decodes media events → chunks PCMU → packetQueue
+                       Handles stop event → dlg.Bye + cancel
+                       Lifecycle: new goroutine each WS connection; exits on read error or ctx.Done()
 ```
 
-### Structure Rationale
+### Key Queues and Channels
 
-- **cmd/audio-dock/main.go:** Minimal wiring — creates components, calls their Start methods, blocks on shutdown context. No logic here.
-- **internal/:** All packages are `internal` — this is a single-binary service, not a library. Nothing should be importable from outside.
-- **internal/sip/:** Separates the three concerns within SIP: the network plumbing (agent.go), SDP text processing (sdp.go), and SIP message construction helpers (headers.go). Each is independently testable.
-- **internal/rtp/handler.go + port.go:** Port allocation is separate so it can use a package-level atomic without coupling to handler struct internals.
-- **internal/ws/:** `client.go` owns the goroutine lifecycle. `protocol.go` contains only typed structs and JSON helpers — no I/O, fully unit testable.
-- **internal/bridge/:** Split across three files because reconnect logic is complex enough to deserve its own file. `session.go` is data-only (no methods), making the struct easy to read.
-- **internal/obs/:** Isolated so observability can be added or removed without touching any other package.
+| Queue | Direction | Buffer | Goroutine Pair |
+|-------|-----------|--------|----------------|
+| `packetQueue chan []byte` | WS → RTP | 500 frames (10s) | wsToRTP produces, rtpPacer consumes |
+| `rtpInboundQueue chan []byte` | RTP → WS | 50 frames (1s) | rtpReader produces, wsPacer consumes |
+| `dtmfQueue chan string` | RTP → WS | 10 slots | rtpReader produces, wsPacer consumes |
+
+### WS Writer Invariant (CRITICAL for all additions)
+
+**wsPacer is the sole goroutine that writes to wsConn during audio forwarding.**
+This is enforced structurally: only wsPacer holds the wsConn write path. Any new WS-direction
+write (including mark echo) must be routed through wsPacer, not dispatched from wsToRTP or any
+other goroutine. gobwas/ws is not safe for concurrent writes.
 
 ---
 
-## Architectural Patterns
+## Feature 1: `mark` Event
 
-### Pattern 1: Two Goroutines Per Call (Read Loops Only; Write Is Synchronous)
+### Protocol (Twilio Media Streams — official docs)
 
-**What:** Each active call runs exactly two long-lived goroutines: `rtpReadLoop` and `wsReadLoop`. These are the only goroutines blocked on I/O. All writes (RTP send, WS send) are performed inline from these read goroutines — no separate write goroutines needed because:
-- `net.UDPConn.WriteTo` is safe to call from any goroutine concurrently.
-- `gorilla/websocket` requires one concurrent writer; a buffered `chan []byte` (the `writeCh`) serializes all WS writes into a single `wsWriteLoop` goroutine.
-
-**When to use:** Always for this service. The pattern eliminates the V8-drain-queue workaround entirely: goroutines block cheaply at the OS level; Go's runtime multiplexes them without event loop stalls.
-
-**Trade-offs:** Goroutine-per-read is idiomatic Go. The write channel for WS adds one channel send per packet, which is negligible (~10ns). The silence goroutine (goroutine C) is only alive during reconnect windows.
-
-**Example:**
-```go
-// internal/bridge/session.go
-type CallSession struct {
-    CallID       string
-    CallSid      string
-    StreamSid    string
-    LocalTag     string
-    RemoteTag    string
-    RemoteURI    string
-    RemoteTarget string
-    CSeq         atomic.Int32
-
-    rtp *rtp.Handler
-    ws  *ws.Client    // replaced atomically during reconnect
-
-    // Reconnect state — guarded by reconnMu
-    reconnMu      sync.Mutex
-    wsReconnecting bool
-
-    cancel context.CancelFunc  // cancels call-scoped context → stops all goroutines
-    wg     sync.WaitGroup      // tracks rtpReadLoop + wsReadLoop + wsWriteLoop
-
-    log *slog.Logger
-}
-
-// internal/bridge/call_manager.go  (goroutine start)
-func (cm *CallManager) startCallGoroutines(ctx context.Context, s *CallSession) {
-    callCtx, cancel := context.WithCancel(ctx)
-    s.cancel = cancel
-
-    s.wg.Add(2)
-    go s.rtpReadLoop(callCtx)   // goroutine A
-    go s.wsReadLoop(callCtx)    // goroutine B
+**From WS server to audio-dock (inbound direction on wsToRTP):**
+```json
+{
+  "event": "mark",
+  "streamSid": "MZxxx",
+  "mark": { "name": "my-label" }
 }
 ```
 
-### Pattern 2: sync.RWMutex-Protected Session Map (Not sync.Map)
-
-**What:** `CallManager` holds `sessions map[string]*CallSession` protected by `sync.RWMutex`. Reads use `RLock`; adds/removes use `Lock`. The `*CallSession` pointer is read under lock; once a goroutine holds the pointer it operates on the session without the manager lock.
-
-**When to use:** When the workload is heavily read-biased (most messages arrive after setup — BYE lookups and audio routing — vs. the rare INVITE that adds a session).
-
-**Trade-offs:** `sync.Map` is appropriate when keys are stable once written and reads far outnumber writes — fits here, but `sync.RWMutex` + regular map is faster and more readable for small N (tens of concurrent calls). Avoid `sync.Map` for this use case: it allocates more and has worse DX.
-
-**Example:**
-```go
-type CallManager struct {
-    mu       sync.RWMutex
-    sessions map[string]*CallSession
-
-    // Pending/cancelled are only accessed during INVITE setup — short-lived sets
-    pendingMu  sync.Mutex
-    pending    map[string]struct{}
-    cancelled  map[string]struct{}
-
-    sipHandle sip.Handle
-    cfg       *config.Config
-    log       *slog.Logger
-}
-
-func (cm *CallManager) session(callID string) (*CallSession, bool) {
-    cm.mu.RLock()
-    s, ok := cm.sessions[callID]
-    cm.mu.RUnlock()
-    return s, ok
-}
-
-func (cm *CallManager) addSession(s *CallSession) {
-    cm.mu.Lock()
-    cm.sessions[s.CallID] = s
-    cm.mu.Unlock()
+**From audio-dock to WS server (outbound direction from wsPacer — the echo):**
+```json
+{
+  "event": "mark",
+  "sequenceNumber": "N",
+  "streamSid": "MZxxx",
+  "mark": { "name": "my-label" }
 }
 ```
 
-### Pattern 3: Reconnect Loop as Goroutine With for+select (Not Recursive Timer)
+**Semantics:** When the WS server sends a mark after a sequence of media frames, audio-dock must
+echo the mark back when the outbound audio playout reaches that point in the queue — i.e., when
+the mark arrives at the front of the draining packetQueue. This signals "I have played everything
+up to this label."
 
-**What:** Replace the TypeScript recursive `async attempt(n)` pattern with a flat `for` loop inside a goroutine. The loop uses `time.Sleep` for backoff delay and checks the call context for early exit. No recursion, no timer handles to cancel.
+### Integration Point: How Mark Fits the Goroutine Architecture
 
-**Why:** In Go there is no call stack risk from recursion depth and no "timer handle leak" problem. But a flat `for` loop is clearer and avoids the synchronization complexity of `time.AfterFunc` callbacks.
+The challenge: mark must be echoed only after all previously queued PCMU frames have been played
+(sent by rtpPacer). This requires the mark to travel through `packetQueue` in order.
 
-**Trade-offs:** The goroutine blocks during `time.Sleep` but costs only ~2KB of stack. Context cancellation (BYE arrives mid-sleep) is detected at the top of each loop iteration.
+**Approach: sentinel value in packetQueue**
 
-**Example:**
+`packetQueue` currently carries `[]byte` PCMU payloads. The simplest and most goroutine-safe
+solution is to extend the queue element type to carry either audio or a mark sentinel, in order.
+This preserves the FIFO property and requires no additional channel or synchronization.
+
+**New type for queue elements (Go):**
+
 ```go
-// internal/bridge/reconnect.go
-func (cm *CallManager) startWsReconnectLoop(
-    ctx context.Context,
-    s *CallSession,
-    params ws.CallParams,
-) {
-    go func() {
-        const budget = 30 * time.Second
-        const cap    = 4 * time.Second
-        started := time.Now()
-        delay   := time.Second
+// outboundFrame is a tagged union for packetQueue elements.
+// Audio frames carry a 160-byte PCMU payload. Mark frames carry a label to echo.
+// Only one field is non-nil per instance.
+type outboundFrame struct {
+    audio []byte // non-nil for PCMU frames
+    mark  string // non-empty for mark sentinel frames
+}
+```
 
-        // Silence injection during reconnect window (WSR-01)
-        silenceTicker := time.NewTicker(20 * time.Millisecond)
-        defer silenceTicker.Stop()
-        go func() {
-            silence := bytes.Repeat([]byte{0xFF}, 160)
-            for {
-                select {
-                case <-silenceTicker.C:
-                    s.rtp.SendAudio(silence)
-                case <-ctx.Done():
-                    return
-                }
-            }
-        }()
+**Data flow change:**
 
-        attempt := 0
+```
+wsToRTP reads mark event from WS
+    │ enqueues outboundFrame{mark: "label"} into packetQueue (after all prior audio)
+    v
+rtpPacer dequeues outboundFrame
+    │ if frame.mark != "" → send mark name to markEchoQueue (new channel)
+    │ if frame.audio != nil → send RTP packet as before
+    v
+wsPacer select loop gains new case:
+    │ case markName := <-markEchoQueue → sendMarkEcho(wsConn, streamSid, markName, seqNo)
+    │                                  → seqNo++
+```
+
+**New channel on CallSession:**
+
+```go
+markEchoQueue chan string  // capacity 10 — mark names to echo back to WS server
+               // rtpPacer produces (when mark sentinel dequeued)
+               // wsPacer consumes (in existing select loop)
+```
+
+**wsPacer select loop extension (adds one case):**
+
+```go
+for {
+    select {
+    case <-ctx.Done():
+        return
+    case digit := <-s.dtmfQueue:
+        // existing DTMF handling
+    case markName := <-s.markEchoQueue:   // NEW
+        if err := sendMarkEcho(wsConn, s.streamSid, markName, seqNo); err != nil {
+            sig.Signal()
+            return
+        }
+        seqNo++
+    case <-ticker.C:
+        // existing 20ms media tick
+    }
+}
+```
+
+**Why markEchoQueue goes through wsPacer (not direct write from rtpPacer):**
+rtpPacer must not write to wsConn — that violates the sole-writer invariant. The channel
+handoff to wsPacer preserves the invariant without any mutex.
+
+### New Components (Go)
+
+| Item | File | Type |
+|------|------|------|
+| `outboundFrame` struct | `go/internal/bridge/session.go` | New type replacing `chan []byte` |
+| `markEchoQueue chan string` | `go/internal/bridge/session.go` | New field on `CallSession` |
+| `sendMarkEcho()` | `go/internal/bridge/ws.go` | New function (alongside sendDTMF) |
+| `MarkEvent` / `MarkBody` structs | `go/internal/bridge/ws.go` | New JSON types |
+
+### Modified Components (Go)
+
+| File | Change |
+|------|--------|
+| `go/internal/bridge/session.go` (run) | Initialize `markEchoQueue` alongside other queues; change `packetQueue` to `chan outboundFrame` |
+| `go/internal/bridge/session.go` (wsToRTP) | Add `case "mark"` to event switch; enqueue `outboundFrame{mark: name}` |
+| `go/internal/bridge/session.go` (rtpPacer) | Change `packetQueue` drain to inspect `outboundFrame`; route mark to `markEchoQueue` |
+| `go/internal/bridge/session.go` (wsPacer) | Add `case markName := <-s.markEchoQueue` to select |
+| `go/internal/bridge/ws.go` | Add `MarkEvent`, `MarkBody` types and `sendMarkEcho()` |
+
+---
+
+## Feature 2: `clear` Event
+
+### Protocol (Twilio Media Streams — official docs)
+
+**From WS server to audio-dock (inbound on wsToRTP):**
+```json
+{
+  "event": "clear",
+  "streamSid": "MZxxx"
+}
+```
+
+**Semantics:** Flush all buffered outbound audio immediately. Any mark sentinels already queued
+must also be discarded (they refer to audio that will never play). The WS server uses this for
+barge-in: when the user starts speaking, the backend sends clear to stop the TTS playback.
+
+### Integration Point: How Clear Fits the Goroutine Architecture
+
+`packetQueue` is a `chan outboundFrame` (after the mark change above). Draining a Go channel from
+a non-owning goroutine requires care:
+
+- **rtpPacer owns `packetQueue`** (consumer). Only rtpPacer should drain it.
+- **wsToRTP receives the clear event** (the event arrives on the WS read path).
+
+**Approach: clearSignal channel (single-fire, same pattern as wsSignal)**
+
+```go
+clearSignal chan struct{}  // closed by wsToRTP when clear event received
+                           // inspected by rtpPacer each tick
+```
+
+**Why not drain the channel directly from wsToRTP?**
+If wsToRTP drains `packetQueue` while rtpPacer is concurrently reading from it, both goroutines
+race on the same channel. A clear signal channel avoids this: rtpPacer checks it each tick and
+drains the queue itself, which is safe because rtpPacer is the sole consumer.
+
+**rtpPacer clear handling:**
+
+```go
+case <-ticker.C:
+    // Check for pending clear — drain entire queue before next audio frame
+    select {
+    case <-s.clearSignal:
+        // Drain packetQueue (including any mark sentinels — barge-in discards them)
         for {
-            // BYE race guard
             select {
-            case <-ctx.Done():
-                return
+            case <-s.packetQueue:
             default:
-            }
-
-            attempt++
-            newWs, err := ws.Dial(ctx, cm.cfg.WSTargetURL, params, s.log)
-            if err == nil {
-                silenceTicker.Stop()
-                // Swap WsClient under reconnMu
-                s.reconnMu.Lock()
-                s.ws = newWs
-                s.wsReconnecting = false
-                s.reconnMu.Unlock()
-                // Restart wsReadLoop with new connection — send on channel
-                s.wsReplaceCh <- newWs
-                return
-            }
-
-            elapsed := time.Since(started)
-            if elapsed+delay >= budget {
-                cm.terminateSession(s, "ws_reconnect_failed", true)
-                return
-            }
-
-            // Interruptible sleep
-            select {
-            case <-time.After(delay):
-            case <-ctx.Done():
-                return
-            }
-            if delay*2 < cap {
-                delay *= 2
-            } else {
-                delay = cap
+                goto clearedDone
             }
         }
-    }()
+    clearedDone:
+    default:
+    }
+
+    // Normal dequeue: next audio frame or silence
+    var frame outboundFrame
+    select {
+    case frame = <-s.packetQueue:
+    default:
+        // send silence as before
+    }
+    // handle frame.audio or frame.mark as above
+```
+
+**New channel on CallSession:**
+
+```go
+clearSignal chan struct{}  // capacity 1 — wsToRTP sends, rtpPacer drains-on-next-tick
+```
+
+**Why capacity 1?** Multiple clear events within a single 20ms window collapse into one drain
+operation at the rtpPacer tick. A buffered channel of 1 avoids wsToRTP blocking if clearSignal
+is not drained before the next clear arrives.
+
+**wsToRTP clear handling (new case in event switch):**
+
+```go
+case "clear":
+    select {
+    case s.clearSignal <- struct{}{}:
+    default:
+        // rtpPacer hasn't drained previous signal yet; that's fine — queue will be cleared
+    }
+```
+
+### New Components (Go)
+
+| Item | File | Type |
+|------|------|------|
+| `clearSignal chan struct{}` | `go/internal/bridge/session.go` | New field on `CallSession` |
+
+### Modified Components (Go)
+
+| File | Change |
+|------|--------|
+| `go/internal/bridge/session.go` (run) | Initialize `clearSignal` alongside other queues |
+| `go/internal/bridge/session.go` (wsToRTP) | Add `case "clear"` to event switch; non-blocking send to `clearSignal` |
+| `go/internal/bridge/session.go` (rtpPacer) | On each tick, check `clearSignal` and drain `packetQueue` before dequeue |
+
+---
+
+## Feature 3: SIP OPTIONS Keepalive
+
+### Protocol and Semantics
+
+Audio-dock sends an outbound OPTIONS request to `SIP_REGISTRAR` at a configurable interval (e.g.,
+30s). If the registrar replies with 200 OK, the registration is confirmed alive. If the reply
+is 408 (Timeout), 503 (Unavailable), or if no reply arrives within a timeout window, audio-dock
+treats the registration as silently lost and triggers an immediate re-registration.
+
+This solves the case where sipgate drops the registration record silently (no REGISTER expiry
+timeout fires because the timer hasn't elapsed) — a scenario invisible to the existing
+`reregisterLoop`.
+
+### Integration Point: Where OPTIONS Keepalive Lives
+
+The existing `Registrar` in `go/internal/sip/registrar.go` already manages registration state
+(`registered atomic.Bool`, `reregisterLoop` goroutine). OPTIONS keepalive is a registration
+health concern — it belongs in this same struct.
+
+**New method on Registrar:**
+
+```go
+// optionsKeepaliveLoop sends periodic OPTIONS to the registrar and triggers
+// immediate re-registration if the reply indicates liveness loss.
+// Runs as a goroutine alongside reregisterLoop, both started from Register().
+func (r *Registrar) optionsKeepaliveLoop(ctx context.Context, interval time.Duration) {
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            if err := r.sendOptions(ctx); err != nil {
+                r.log.Warn().Err(err).Msg("OPTIONS keepalive failed — triggering re-registration")
+                r.registered.Store(false)
+                if r.metrics != nil {
+                    r.metrics.SIPRegStatus.Set(0)
+                }
+                // Trigger immediate re-registration (not waiting for next reregisterLoop tick)
+                go func() {
+                    if _, err2 := r.doRegister(ctx); err2 != nil {
+                        r.log.Error().Err(err2).Msg("Re-registration after OPTIONS failure failed")
+                    }
+                }()
+            }
+        }
+    }
 }
 ```
 
-### Pattern 4: Context-Propagated Shutdown (signal.NotifyContext)
+**sendOptions implementation with sipgo Client:**
 
-**What:** `main()` creates a root context via `signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)`. This context is passed to all long-running components. When SIGTERM arrives the context is cancelled, causing all goroutines blocked on `ctx.Done()` to unblock and exit cleanly.
+OPTIONS uses the same `sipgo.Client` that already exists on `Registrar` for REGISTER. The pattern
+is identical to `doRegister`: construct a `siplib.Request`, call `r.client.Do(ctx, req)`.
 
-**When to use:** Always — this is the idiomatic Go 1.16+ shutdown pattern. It replaces the TypeScript `process.on('SIGTERM', ...)` handler.
-
-**Trade-offs:** Components must be written to respect context cancellation. The 5-second drain timeout is implemented as a second `context.WithTimeout` wrapping the shutdown sequence.
-
-**Example:**
 ```go
-// cmd/audio-dock/main.go
-func main() {
-    cfg := config.Load()
+func (r *Registrar) sendOptions(ctx context.Context) error {
+    registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
+    req := siplib.NewRequest(siplib.OPTIONS, registrarURI)
 
-    ctx, stop := signal.NotifyContext(context.Background(),
-        syscall.SIGTERM, syscall.SIGINT)
-    defer stop()
+    aor := r.aorURI()
+    fromH := &siplib.FromHeader{Address: aor, Params: siplib.NewParams()}
+    fromH.Params.Add("tag", siplib.GenerateTagN(16))
+    req.AppendHeader(fromH)
+    req.AppendHeader(&siplib.ToHeader{Address: registrarURI})
+    req.AppendHeader(siplib.NewHeader("User-Agent", "audio-dock/2.0"))
 
-    cm := bridge.NewCallManager(cfg, logger)
-    sipHandle, err := sip.Start(ctx, cfg, logger, cm.Callbacks())
-    // ...
-
-    // Block until signal
-    <-ctx.Done()
-    stop() // release signal resources
-
-    shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    optCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
     defer cancel()
 
-    cm.TerminateAll(shutdownCtx)      // BYE all calls + close WS
-    sipHandle.Unregister(shutdownCtx) // REGISTER Expires:0
+    res, err := r.client.Do(optCtx, req)
+    if err != nil {
+        return fmt.Errorf("OPTIONS send: %w", err)
+    }
+    if res.StatusCode != 200 {
+        return fmt.Errorf("OPTIONS rejected %d %s", res.StatusCode, res.Reason)
+    }
+    return nil
 }
 ```
 
-### Pattern 5: WS Write Channel (Serialized Concurrent Writers)
+**Register() change — start optionsKeepaliveLoop alongside reregisterLoop:**
 
-**What:** `gorilla/websocket` panics on concurrent writes. The `ws.Client` owns a `writeCh chan []byte` and a single `wsWriteLoop` goroutine that drains it. All callers — `rtpReadLoop` and the reconnect silence goroutine — send to `writeCh`. The channel is buffered (e.g., 32 entries) to avoid blocking callers under momentary write stalls.
-
-**When to use:** Any time gorilla/websocket is used with multiple potential writers.
-
-**Trade-offs:** One extra goroutine per call. The buffer prevents drops; if the buffer fills (WS stall), packets are dropped with a log warning — same behaviour as the TypeScript version's `ws.readyState !== OPEN` guard.
-
----
-
-## Module-to-Package Mapping (TypeScript → Go)
-
-| TypeScript Module | Go Package | Migration Notes |
-|-------------------|-----------|-----------------|
-| `src/config/index.ts` (Zod schema) | `internal/config/config.go` | Replace Zod with `os.LookupEnv` + manual validation or `kelseyhightower/envconfig`. Same env var names required (backward compat). |
-| `src/logger/index.ts` (pino) | stdlib `log/slog` | `slog.New(slog.NewJSONHandler(os.Stdout, opts))`. Per-call logger via `slog.With("callId", ...)`. No external dep. |
-| `src/sip/userAgent.ts` (custom raw SIP) | `internal/sip/agent.go` | Use `sipgo` instead of raw UDP. `sipgo.NewUA` + `sipgo.NewServer` + `sipgo.NewClient`. REGISTER auth via `client.DoDigestAuth`. |
-| `src/sip/sdp.ts` (pure functions) | `internal/sip/sdp.go` | Direct port — same logic. `parseSdpOffer` and `buildSdpAnswer` as package-level funcs. |
-| `src/rtp/rtpHandler.ts` (dgram EventEmitter) | `internal/rtp/handler.go` | Replace EventEmitter with channels: `audioCh chan []byte`, `dtmfCh chan string`. UDPConn.ReadFromUDP in goroutine. |
-| `src/ws/wsClient.ts` (makeDrain + WsClient) | `internal/ws/client.go` | **Eliminate drain queues entirely** — they exist only to smooth V8 GC bursts. Go goroutines read from UDPConn at the natural OS buffer rate; no burst problem. |
-| `src/bridge/callManager.ts` (CallSession Map) | `internal/bridge/call_manager.go` | Replace JS event-loop single-threaded safety with `sync.RWMutex`. Replace Promise-chain INVITE flow with sequential goroutine code. |
-
----
-
-## Data Flow
-
-### Inbound Call Setup (INVITE → audio bridge active)
-
-```
-sipgate (UDP :5060)
-    │ SIP INVITE
-    v
-sipgo srv.OnInvite handler (called in sipgo goroutine)
-    │ fire-and-forget: go cm.handleInvite(req, tx)
-    v
-cm.handleInvite goroutine
-    │ 1. dedup check (pendingMu)
-    │ 2. tx.Respond(100 Trying)
-    │ 3. parse SDP body → remoteIp, remotePort, hasPcmu
-    │ 4. rtp.AllocPort() → bind net.UDPConn on :10000-10099
-    │ 5. rtp.SendAudio(silence) — NAT hole-punch
-    │ 6. check cancelled set (CANCEL race guard)
-    │ 7. ws.Dial(ctx, url, params) — 2s timeout
-    │    failure → tx.Respond(503); rtp.Close(); return
-    │ 8. tx.Respond(200 OK with SDP answer)
-    │ 9. store *CallSession in cm.sessions
-    │ 10. start rtpReadLoop (goroutine A)
-    │     start wsWriteLoop (goroutine B)
-    │     start wsReadLoop  (goroutine C)
-    v
-Call active — goroutines running
-```
-
-### RTP → WebSocket (inbound audio path)
-
-```
-sipgate media server
-    │ UDP datagram: [12-byte RTP header][160-byte PCMU payload]
-    v
-rtp.Handler.rtpReadLoop (goroutine A — blocked on UDPConn.ReadFromUDP)
-    │ parse RTP header: version, CSRC count, extension bit, payload type
-    │ PT=0 (PCMU):  send payload to audioCh
-    │ PT=113 (DTMF): decode event, check End bit, dedup by timestamp → dtmfCh
-    v
-audioCh <- payload   (non-blocking; drop if channel full — same as TS drop policy)
-    │
-    v
-bridge wiring in handleInvite:
-    for payload := range s.rtp.AudioCh() {
-        if s.wsReconnecting { continue }   // WSR-03 gate
-        s.ws.SendAudio(payload)            // enqueues to writeCh
+```go
+func (r *Registrar) Register(ctx context.Context) error {
+    expiry, err := r.doRegister(ctx)
+    if err != nil {
+        return err
     }
-    v
-ws.Client.writeCh <- JSON bytes
-    v
-wsWriteLoop goroutine → wsConn.WriteMessage(websocket.TextMessage, json)
-    v
-AI voice-bot backend
+    r.log.Info()...Msg("SIP registration successful")
+    go r.reregisterLoop(ctx, expiry)
+    go r.optionsKeepaliveLoop(ctx, r.optionsInterval) // NEW
+    return nil
+}
 ```
 
-### WebSocket → RTP (outbound audio path)
+**New config field:**
 
-```
-AI voice-bot backend
-    │ WS text frame: {"event":"media","media":{"payload":"<base64>"}}
-    v
-ws.Client.wsReadLoop (goroutine C — blocked on wsConn.ReadMessage)
-    │ json.Unmarshal → TwilioMessage
-    │ event == "media": base64.Decode payload → []byte
-    │ chunk into 160-byte slices, pad last slice with 0xFF if short
-    v
-s.rtp.SendAudio(slice)  — direct call, no intermediate channel
-    │ build 12-byte RTP header (seq++, ts += 160, ssrc fixed)
-    │ UDPConn.WriteTo(packet, remoteAddr)  — thread-safe
-    v
-sipgate media server → caller handset
+```go
+// SIPOptionsInterval — interval for OPTIONS keepalive pings (0 = disabled)
+SIPOptionsInterval int `env:"SIP_OPTIONS_INTERVAL" default:"30" usage:"SIP OPTIONS keepalive interval in seconds (0 to disable)"`
 ```
 
-### WebSocket Reconnect Flow
+Adding `SIPOptionsInterval` to `config.Config` and passing it through `NewRegistrar` is the
+only wiring change required.
+
+### Response to inbound OPTIONS (existing handler.go)
+
+`handler.go` already handles inbound OPTIONS at line 168 (`onOptions` sends 200 OK). This
+is for OPTIONS probes sipgate sends TO audio-dock (checking if audio-dock is alive). The new
+feature is audio-dock sending OPTIONS TO sipgate (checking if the registration is still active).
+These are two distinct directions and require no changes to the existing inbound handler.
+
+### New Components (Go)
+
+| Item | File | Type |
+|------|------|------|
+| `optionsKeepaliveLoop` method | `go/internal/sip/registrar.go` | New method on `Registrar` |
+| `sendOptions` method | `go/internal/sip/registrar.go` | New private method |
+| `SIPOptionsInterval` field | `go/internal/config/config.go` | New env var field |
+
+### Modified Components (Go)
+
+| File | Change |
+|------|--------|
+| `go/internal/config/config.go` | Add `SIPOptionsInterval int` field |
+| `go/internal/sip/registrar.go` | Add `optionsInterval` field to struct; update `NewRegistrar`; add `optionsKeepaliveLoop` + `sendOptions`; start loop from `Register()` |
+| `go/cmd/audio-dock/main.go` | Pass `cfg.SIPOptionsInterval` to `NewRegistrar` (if interval is promoted to a parameter rather than read from cfg directly inside the registrar) |
+
+---
+
+## Node.js Equivalents
+
+The Node.js implementation uses a different architecture (single-threaded event loop, callbacks,
+no goroutines) but the same semantic behavior is required.
+
+### mark/clear in Node.js (wsClient.ts)
+
+The Node.js `wsClient.ts` already has `ws.on('message', ...)` in `onAudio()`. The `mark` and
+`clear` events are currently ignored (line 258: "Ignore non-media events (mark, clear, etc.)").
+
+**mark event:**
+- When WS server sends mark, `wsToRTP` callback must enqueue a mark sentinel into the
+  outbound drain queue (between the audio frames already queued there).
+- When the sentinel reaches the front of the drain (i.e., the `sendPacket` callback fires with
+  it), audio-dock sends the mark echo via `ws.send(...)`.
+- Implementation: extend the `outboundDrain` queue element type from `Buffer` to
+  `{ type: 'audio', payload: Buffer } | { type: 'mark', name: string }` and handle the mark
+  type in the `sendPacket` callback inside `makeDrain`.
+
+**clear event:**
+- When WS server sends clear, drain the outbound queue immediately: `outboundDrain.stop()` then
+  restart. Any pending marks also get discarded.
+- `outboundDrain.stop()` already exists for the `stop()` path — reuse it.
+
+**Files changed:**
+- `node/src/ws/wsClient.ts`: extend `makeDrain` type, handle mark/clear in `onAudio` callback
+
+### SIP OPTIONS keepalive in Node.js (userAgent.ts)
+
+`userAgent.ts` builds raw SIP messages as strings. The OPTIONS request is structurally similar
+to REGISTER (same header set, no body). Adding keepalive requires:
+
+- A new `sendOptions()` function inside `createSipUserAgent` using the same socket
+- A `setInterval` (or `setTimeout` chain) started after the initial 200 OK from REGISTER
+- On timeout/error response to OPTIONS, immediately call `sendRegister()` to re-register
+
+**Files changed:**
+- `node/src/sip/userAgent.ts`: add `sendOptions()` helper and start interval in `resolve()` callback
+
+---
+
+## Complete Component Modification Summary
+
+### Go — New Files
+
+None. All additions fit within existing files.
+
+### Go — Modified Files
+
+| File | Lines Changed | Change Description |
+|------|--------------|-------------------|
+| `go/internal/bridge/session.go` | ~50 lines | New `outboundFrame` type; `markEchoQueue` + `clearSignal` fields; `run()` initializes new channels; `wsToRTP` handles mark/clear; `rtpPacer` inspects clear signal and mark frames; `wsPacer` drains `markEchoQueue` |
+| `go/internal/bridge/ws.go` | ~20 lines | `MarkEvent`, `MarkBody` types; `sendMarkEcho()` function |
+| `go/internal/sip/registrar.go` | ~50 lines | `optionsInterval` field; `optionsKeepaliveLoop` + `sendOptions` methods; `Register()` starts new goroutine |
+| `go/internal/config/config.go` | ~3 lines | `SIPOptionsInterval` env var field |
+
+### Node.js — Modified Files
+
+| File | Lines Changed | Change Description |
+|------|--------------|-------------------|
+| `node/src/ws/wsClient.ts` | ~30 lines | Extend drain type to union; handle mark/clear in `onAudio` message handler |
+| `node/src/sip/userAgent.ts` | ~30 lines | `sendOptions()` helper; keepalive interval started on registration success |
+
+---
+
+## Updated Data Flow Diagrams
+
+### mark Event Data Flow (Go)
 
 ```
-ws.Client wsReadLoop receives error / EOF
-    │ signal disconnect via disconnCh <- struct{}{}
-    v
-handleInvite bridge wiring detects disconnect:
-    s.reconnMu.Lock(); s.wsReconnecting = true; s.reconnMu.Unlock()
-    go cm.startWsReconnectLoop(callCtx, s, params)
-    v
-reconnect goroutine:
-    ┌─ start silence ticker (20ms) → rtp.SendAudio(silence) [WSR-01]
+WS server sends:
+{"event":"mark","streamSid":"MZ...","mark":{"name":"end-of-greeting"}}
     │
-    └─ loop:
-         check callCtx.Done() — exit if BYE arrived
-         ws.Dial(ctx, url, params)
-         success → swap s.ws, send on s.wsReplaceCh, stop ticker, return
-         failure → time.Sleep(delay); delay = min(delay*2, 4s)
-         budget  → terminateSession(s, "ws_reconnect_failed", true)
+    v
+wsToRTP reads WS frame
+    │ case "mark": enqueue outboundFrame{mark: "end-of-greeting"} to packetQueue
+    v
+packetQueue [audio][audio][audio][mark:"end-of-greeting"]  ← mark is in-order
+    │
+    v
+rtpPacer dequeues outboundFrame at 20ms tick
+    │ frame.audio != nil → send RTP packet (as before)
+    │ frame.mark != "" → non-blocking send to markEchoQueue
+    v
+markEchoQueue <- "end-of-greeting"
+    │
+    v
+wsPacer select: case markName := <-s.markEchoQueue
+    │ sendMarkEcho(wsConn, streamSid, "end-of-greeting", seqNo)
+    v
+WS server receives:
+{"event":"mark","sequenceNumber":"N","streamSid":"MZ...","mark":{"name":"end-of-greeting"}}
 ```
 
-### SIGTERM Shutdown Flow
+### clear Event Data Flow (Go)
 
 ```
-OS → SIGTERM
+WS server sends:
+{"event":"clear","streamSid":"MZ..."}
     │
     v
-signal.NotifyContext cancels root ctx
+wsToRTP reads WS frame
+    │ case "clear": non-blocking send to clearSignal channel
+    v
+clearSignal <- struct{}{}
     │
     v
-main() unblocks from <-ctx.Done()
+rtpPacer next 20ms tick:
+    │ select { case <-s.clearSignal: drain entire packetQueue }
+    │ packetQueue drained → all buffered audio and mark sentinels discarded
+    │ next tick: packetQueue is empty → send silence frame (as normal)
+    v
+Caller hears silence immediately (TTS playback interrupted)
+```
+
+### SIP OPTIONS Keepalive Data Flow (Go)
+
+```
+optionsKeepaliveLoop ticks every SIP_OPTIONS_INTERVAL seconds
     │
     v
-shutdownCtx, _ := context.WithTimeout(ctx, 5s)
+sendOptions(ctx):
+    │ construct OPTIONS sip:registrar SIP/2.0
+    │ client.Do(ctx, req) → 5s timeout
     │
-    ├─ cm.TerminateAll(shutdownCtx)
-    │     for each session: terminateSession(s, "shutdown", true)
-    │       → BYE + ws.Stop() + rtp.Close()
-    │       → s.cancel() → rtpReadLoop + wsReadLoop exit
-    │       → s.wg.Wait() — drain goroutines
+    ├── 200 OK → log trace; registration confirmed alive; no action
     │
-    └─ sipHandle.Unregister(shutdownCtx)
-          → REGISTER Expires:0, Contact:*
+    └── error or non-200:
+            registered.Store(false)
+            metrics.SIPRegStatus.Set(0)
+            go doRegister(ctx) → immediate re-registration attempt
+                │
+                ├── success → registered.Store(true); metrics.SIPRegStatus.Set(1)
+                └── failure → logged as error; reregisterLoop will retry next tick
 ```
 
 ---
 
-## Goroutine Lifecycle Per Call
+## Goroutine Lifecycle Changes (v2.1)
 
-```
-handleInvite goroutine (exits after session stored + goroutines started)
-│
-├── goroutine A: rtpReadLoop
-│     blocked: net.UDPConn.ReadFromUDP
-│     exits:   ctx.Done() signals UDPConn.SetReadDeadline(past) OR conn.Close()
-│
-├── goroutine B: wsWriteLoop
-│     blocked: chan []byte (writeCh) OR wsConn.WriteMessage
-│     exits:   writeCh closed (ws.Stop() closes it)
-│
-├── goroutine C: wsReadLoop
-│     blocked: wsConn.ReadMessage
-│     exits:   wsConn.Close() from ws.Stop() OR wsConn.SetReadDeadline(past)
-│
-└── goroutine D: wsReconnectLoop (only during reconnect window)
-      blocked: time.Sleep OR ws.Dial
-      exits:   reconnect success, budget exhausted, or ctx.Done()
-```
+The goroutine map per call gains no new goroutines. The changes are:
 
-**Key invariant:** `s.wg.Wait()` in `terminateSession` ensures all A/B/C goroutines have exited before `TerminateAll` returns. This is the Go equivalent of the TypeScript `Promise.all` in `terminateAll()`.
+- `rtpPacer` gains a `clearSignal` check on each tick (non-blocking select)
+- `wsPacer` gains a `markEchoQueue` case in its existing select loop
+- `wsToRTP` handles two new event types (`mark`, `clear`) in its existing switch
 
----
-
-## Concurrency Decision Matrix
-
-| Concern | TypeScript Approach | Go Approach | Rationale |
-|---------|--------------------|-----------| ---------|
-| Session map safety | JS event loop (single-threaded) | `sync.RWMutex` | Go is multi-threaded; map is not goroutine-safe |
-| Per-call audio send | EventEmitter callback chain | Channel + goroutine | Channels decouple producer/consumer without callback nesting |
-| WS writes | `ws.readyState` guard + drain queue | `writeCh chan []byte` + single writer goroutine | gorilla/websocket: one concurrent writer only |
-| RTP writes | Synchronous in callback | `UDPConn.WriteTo` direct (thread-safe) | `net.PacketConn` is safe for concurrent writes |
-| Reconnect loop | Recursive `async attempt()` | Flat `for` loop in goroutine | No call stack risk; `ctx.Done()` interrupts cleanly |
-| SIGTERM | `process.on('SIGTERM')` | `signal.NotifyContext` + root ctx | Context propagates to all goroutines automatically |
-| Timer cleanup (silence) | `clearInterval(session.silenceInterval)` | `ticker.Stop()` + `ctx.Done()` select branch | No handles stored on struct; goroutine self-terminates |
-| 200 OK retransmit | `setTimeout` + timer handle on session | goroutine + `time.Sleep(T1)` loop, exits on ACK channel | No timer handle leak; simpler cancellation |
-
----
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 1-20 concurrent calls | Single Go binary; ~4 goroutines per call = ~80 goroutines total; negligible overhead |
-| 20-100 concurrent calls | Monitor `runtime.NumGoroutine()` via /metrics. UDP SO_RCVBUF tuning may be needed per socket. Still single-process. |
-| 100+ concurrent calls | Port range expansion (RTP_PORT_MIN/MAX). Goroutines remain cheap (Go handles millions). Bottleneck is likely network bandwidth, not CPU. Horizontal scale if needed — each instance is stateless within a call. |
-
-### Scaling Priorities
-
-1. **First bottleneck:** JSON serialization for Twilio Media Streams at high call volume. At 50 calls × 50 packets/sec = 2,500 JSON encodes/sec. This is fast in Go but can be profiled and switched to pre-computed byte slices if needed.
-2. **Second bottleneck:** UDP receive buffer exhaustion — tune `net.UDPConn.SetReadBuffer()` if packets drop under load. Default OS buffer is typically 208KB; increase to 4MB for audio workloads.
-3. **Third bottleneck:** Port exhaustion from the 10000-10099 default range (100 ports). Configurable via env vars; expand range for higher concurrency.
-
----
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Shared UDPConn Across All Calls
-
-**What people do:** One UDP socket bound to a fixed port, multiplexed by source IP:port.
-**Why it's wrong:** SDP negotiation requires advertising a unique local port per call. A single socket makes this impossible. Demuxing is error-prone.
-**Do this instead:** One `net.UDPConn` per call, bound to a port from the configured range. Close it in `terminateSession`.
-
-### Anti-Pattern 2: Goroutine Per Packet
-
-**What people do:** `go handlePacket(buf)` inside the read loop.
-**Why it's wrong:** For 20ms/160-byte RTP packets at 50/sec per call, spawning a goroutine per packet creates unnecessary scheduler pressure. The handler is CPU-cheap (parse 12 bytes, send to channel).
-**Do this instead:** Process the packet inline in the read loop; send to a channel only if crossing a goroutine boundary is needed.
-
-### Anti-Pattern 3: Using time.AfterFunc for Reconnect / Retransmit Loops
-
-**What people do:** Port the TypeScript `setTimeout(fn, delay)` pattern directly using `time.AfterFunc`.
-**Why it's wrong:** `time.AfterFunc` callbacks run in a new goroutine each time, which makes clean cancellation complex. Storing timer handles on the session struct recreates the exact cleanup problem from TypeScript's `okRetransmitTimer`.
-**Do this instead:** A single goroutine with `time.Sleep` or `time.NewTimer` + `select { case <-timer.C: case <-ctx.Done(): }`. Context cancellation terminates cleanly without explicit handle management.
-
-### Anti-Pattern 4: Ignoring WS Drain Queues in the Go Port
-
-**What people do:** Port the `makeDrain` queue from TypeScript assuming it is needed for audio smoothing.
-**Why it's wrong:** The drain queue in TypeScript compensates for V8 GC pauses causing burst delivery. Go goroutines are scheduled by the runtime without GC-pause jitter. The underlying OS network stack delivers UDP packets at their natural rate to a reading goroutine without burst accumulation.
-**Do this instead:** Eliminate the drain queue entirely. The `rtpReadLoop` reads one packet per iteration; audio flows at the wire cadence with no accumulation.
-
-### Anti-Pattern 5: Accepting INVITE Before WS Connects (Fail-Open)
-
-**What people do:** Accept the INVITE, then dial the WebSocket asynchronously, and silently drop audio if WS fails.
-**Why it's wrong:** Same as in the TypeScript version — the caller hears a connected call with no backend processing it.
-**Do this instead:** In `handleInvite`, dial the WebSocket with a 2-second timeout context before calling `tx.Respond(200 OK)`. If `ws.Dial` returns an error, `tx.Respond(503 Service Unavailable)`.
-
-### Anti-Pattern 6: CSeq and Sequence Fields as Non-Atomic
-
-**What people do:** Store `CSeq int` on `CallSession` and increment with `session.CSeq++`.
-**Why it's wrong:** `handleBye` (sipgo callback goroutine) and `terminateSession` (called from reconnect goroutine or main goroutine) may both read CSeq concurrently.
-**Do this instead:** Use `atomic.Int32` for CSeq on the session struct, or read CSeq under the session's own mutex.
-
----
-
-## Integration Points
-
-### External Services
-
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| sipgate trunking | `sipgo.NewServer` + `sipgo.NewClient` over UDP:5060; REGISTER with Digest Auth | `sipgo.ClientRequestRegisterBuild` handles auth challenge. Re-register at 90% of SIP_EXPIRES via ticker goroutine. |
-| AI voice-bot backend | `gorilla/websocket` Dial as client; Twilio Media Streams JSON | One WS connection per call. Backend acts as server. audio-dock sends connected/start/media/stop events. |
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `internal/sip` → `internal/bridge` | `SipCallbacks` interface (function fields) | Set at startup; no import cycle. sip package calls bridge methods. |
-| `internal/bridge` → `internal/sip` | `SipHandle` interface (sendRaw, unregister) | Bridge holds interface; sip package implements it. |
-| `internal/rtp` → `internal/bridge` | `audioCh <-chan []byte`, `dtmfCh <-chan string` on `RtpHandler` | Read-only channels exposed; bridge range-reads from them in goroutine. |
-| `internal/ws` → `internal/bridge` | `disconnCh <-chan struct{}` on `WsClient`; `SendAudio()` method | Bridge detects disconnect via channel receive; sends audio via method call. |
-| `internal/bridge` → `internal/obs` | `StatsProvider` interface: `ActiveCalls() int`, `Registered() bool` | Obs package calls into bridge; no reverse dependency. Atomic reads only — no lock needed. |
+The `Registrar` gains one new goroutine: `optionsKeepaliveLoop`. This goroutine is service-scoped
+(not per-call), started alongside `reregisterLoop`, and exits when the root context is cancelled.
 
 ---
 
 ## Suggested Build Order
 
-The dependency graph forces this implementation sequence. Each step unlocks the next.
+The three features are independent — they share no new code paths with each other. Build in this
+order to minimize blast radius and enable incremental testing:
 
-```
-Phase 1: Foundation (no external deps)
-  1a. internal/config — pure env var parsing; validate all required vars
-  1b. log/slog setup in main.go — JSON handler, level from config
-  1c. internal/sip/sdp.go — pure functions, no deps, unit testable immediately
+### Step 1: mark/clear (Go) — bridge layer only
 
-Phase 2: Transport Layer (blocking I/O, each package independently testable)
-  2a. internal/rtp/port.go — port allocator (atomic counter, bindPort)
-  2b. internal/rtp/handler.go — UDPConn + read loop + RTP header codec
-      [test: bind socket, send RTP packet, verify audioCh receives payload]
-  2c. internal/ws/protocol.go — Twilio JSON types + encode/decode (pure)
-  2d. internal/ws/client.go — Dial + writeCh + read/write goroutines
-      [test: mock WS server, verify connected+start sent, media echo]
+1. Add `outboundFrame` type and change `packetQueue chan []byte` to `chan outboundFrame`
+   - Update all existing producers (wsToRTP) and consumers (rtpPacer) to use the new type
+   - All existing tests must still pass after this rename
+2. Add `markEchoQueue`, `clearSignal` to `CallSession`; initialize in `run()`
+3. Extend `wsToRTP` switch with `case "mark"` and `case "clear"`
+4. Extend `rtpPacer` to route mark frames to `markEchoQueue` and drain on clear signal
+5. Extend `wsPacer` select with `markEchoQueue` case
+6. Add `MarkEvent`, `MarkBody`, `sendMarkEcho()` to `ws.go`
 
-Phase 3: SIP Layer (depends on config only)
-  3a. internal/sip/headers.go — extractHeader, buildResponse, buildBye (pure)
-  3b. internal/sip/agent.go — sipgo UA + REGISTER + re-register loop
-      [test: mock UDP registrar, verify 401→auth→200 flow]
-      [test: INVITE dispatches to OnInvite callback]
+**Why this order:** Step 1 (type change) touches the most call sites and should be a standalone
+commit before the logic is added. Steps 2-6 are purely additive.
 
-Phase 4: Bridge (depends on all of Phase 2 + 3)
-  4a. internal/bridge/session.go — CallSession struct (data only)
-  4b. internal/bridge/call_manager.go — handleInvite orchestration
-      [test: fake rtp+ws, verify 200 OK + session stored]
-  4c. internal/bridge/reconnect.go — WS reconnect loop
-      [test: drop WS mid-call, verify silence injection + reconnect + resume]
+### Step 2: SIP OPTIONS keepalive (Go) — sip/config layer
 
-Phase 5: Observability (depends on bridge interface only)
-  5a. internal/obs/server.go — /health + /metrics on net/http
-      [test: HTTP GET /health returns active call count]
+7. Add `SIPOptionsInterval` to `config.Config` with default 30
+8. Add `optionsInterval` to `Registrar` struct; update `NewRegistrar`
+9. Implement `sendOptions()` method
+10. Implement `optionsKeepaliveLoop()` and start it from `Register()`
 
-Phase 6: Wiring + Dockerfile
-  6a. cmd/audio-dock/main.go — component wiring + signal.NotifyContext shutdown
-  6b. Dockerfile multi-stage: golang:1.24 → scratch
-      [test: docker build + health probe]
-```
+**Why after mark/clear:** Completely independent of bridge changes. Keeping them separate makes
+rollback easier if there is a sipgo API issue.
 
-**Critical path:** RTP port binding (2a) must succeed before SDP answer can be built (1c produces the template; the port is the variable). WS must connect (2d) before 200 OK is sent. These are enforced by the sequential flow in `handleInvite`.
+### Step 3: Node.js equivalents
 
-**Goroutine dependency at startup:** The sipgo server goroutine (from `srv.ListenAndServe`) must be running before `cm.Callbacks()` are invoked. The REGISTER goroutine blocks until 200 OK is received before `main()` signals ready. No INVITE can arrive before REGISTER completes because sipgate will not route calls to an unregistered endpoint.
+11. Extend `wsClient.ts` drain type; handle mark/clear in message handler
+12. Add OPTIONS keepalive to `userAgent.ts`
+
+**Why last:** Node.js is a reference implementation. Go changes are the primary deliverable.
+The Node.js changes are smaller in scope and follow the same semantic patterns.
+
+---
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Writing mark echo from rtpPacer directly to wsConn
+
+**What people do:** When rtpPacer dequeues a mark sentinel, call `writeJSON(wsConn, markEvent)`
+directly from rtpPacer.
+
+**Why it's wrong:** rtpPacer and wsPacer are concurrent goroutines. wsConn is not safe for
+concurrent writes. This violates the SOLE WS WRITER invariant and will cause frame corruption
+or panics under concurrent load.
+
+**Do this instead:** Route the mark name through `markEchoQueue` to wsPacer. wsPacer is the
+sole writer and handles it in the same select loop as DTMF and media.
+
+### Anti-Pattern 2: Draining packetQueue from wsToRTP on clear
+
+**What people do:** When `case "clear"` is received in wsToRTP, drain `packetQueue` in a
+`for { select { case <-packetQueue: ... default: break } }` loop from wsToRTP.
+
+**Why it's wrong:** `packetQueue` has two endpoints: wsToRTP writes and rtpPacer reads. Draining
+from wsToRTP while rtpPacer simultaneously dequeues is a data race on a `chan`, which in Go is
+safe for concurrent sends/receives but causes non-deterministic interleaving: wsToRTP may drain
+only some frames while rtpPacer drains others, leaving partial frame sequences delivered to the
+caller mid-clear.
+
+**Do this instead:** Signal rtpPacer via `clearSignal`. rtpPacer is the sole consumer and can
+safely drain the entire queue in one atomic drain loop at its next tick.
+
+### Anti-Pattern 3: Starting optionsKeepaliveLoop from reregisterLoop
+
+**What people do:** Inside `reregisterLoop`, after a successful `doRegister`, also fire an
+OPTIONS check inline.
+
+**Why it's wrong:** reregisterLoop fires at 75% of the server-granted expiry interval (90s at
+default Expires=120). That is too infrequent for liveness detection. OPTIONS keepalive needs its
+own independent timer (default 30s).
+
+**Do this instead:** `optionsKeepaliveLoop` is a separate goroutine with its own `time.Ticker`,
+started once from `Register()`, independent of `reregisterLoop`.
+
+### Anti-Pattern 4: Re-registration triggered by OPTIONS running in optionsKeepaliveLoop goroutine
+
+**What people do:** Call `r.doRegister(ctx)` directly in `optionsKeepaliveLoop` (blocking the
+keepalive ticker while re-registration is in flight, which can take up to 5s).
+
+**Why it's wrong:** If re-registration takes the full 5s timeout and OPTIONS interval is 30s,
+the keepalive ticker misses its next fire. Under repeated failure this cascades into drift.
+
+**Do this instead:** Fire `go doRegister(ctx)` from `optionsKeepaliveLoop` so the ticker is not
+blocked by the network round-trip. Concurrent re-registration with a scheduled `reregisterLoop`
+tick is safe because `doRegister` is stateless (constructs a new request each time) and
+`registered.Store` is atomic.
+
+---
+
+## Integration Points
+
+### External Services (unchanged from v2.0)
+
+| Service | Integration Pattern | New in v2.1 |
+|---------|---------------------|-------------|
+| sipgate trunking (SIP) | `sipgo.Client.Do()` over UDP:5060 | OPTIONS keepalive added: new request type on same client |
+| AI voice-bot backend (WS) | gobwas/ws text frames, Twilio Media Streams JSON | mark echo (audio-dock → server) and mark/clear parsing (server → audio-dock) |
+
+### Internal Boundaries (changed/new in v2.1)
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `wsToRTP` → `rtpPacer` | `packetQueue chan outboundFrame` | Type changes from `chan []byte` to `chan outboundFrame`; both audio and mark sentinels travel in-order |
+| `wsToRTP` → `rtpPacer` (clear) | `clearSignal chan struct{}` | New channel; wsToRTP signals, rtpPacer acts |
+| `rtpPacer` → `wsPacer` (mark echo) | `markEchoQueue chan string` | New channel; rtpPacer produces mark names, wsPacer echoes them to WS server |
+| `Registrar.optionsKeepaliveLoop` → `Registrar.doRegister` | Direct goroutine call | Self-contained within Registrar; no new cross-package dependency |
+| `Registrar` → `config.Config` | `SIPOptionsInterval int` field | New config field read by NewRegistrar |
 
 ---
 
 ## Sources
 
-- [emiago/sipgo GitHub](https://github.com/emiago/sipgo) — MEDIUM confidence; README and pkg.go.dev API surface verified; goroutine model inferred from source structure
-- [sipgo pkg.go.dev](https://pkg.go.dev/github.com/emiago/sipgo) — MEDIUM confidence; API types, DialogServerCache, OnInvite handler pattern
-- [gorilla/websocket pkg.go.dev](https://pkg.go.dev/github.com/gorilla/websocket) — HIGH confidence; concurrent writer constraint is explicitly documented
-- [coder/websocket GitHub](https://github.com/coder/websocket) — MEDIUM confidence; alternative to gorilla with better context support (nhooyr.io/websocket successor)
-- [Go Wiki: sync.Mutex or channel?](https://go.dev/wiki/MutexOrChannel) — HIGH confidence; official Go wiki recommendation
-- [signal.NotifyContext — Go stdlib](https://pkg.go.dev/os/signal#NotifyContext) — HIGH confidence; official stdlib docs; Go 1.16+
-- [Graceful Shutdown in Go — VictoriaMetrics](https://victoriametrics.com/blog/go-graceful-shutdown/) — MEDIUM confidence; widely referenced production pattern
-- [Go standard project layout](https://github.com/golang-standards/project-layout) — MEDIUM confidence; community standard, not official; `internal/` usage is official Go spec
-- [log/slog — Go 1.21+](https://pkg.go.dev/log/slog) — HIGH confidence; official stdlib since Go 1.21
-- [kelseyhightower/envconfig](https://pkg.go.dev/github.com/kelseyhightower/envconfig) — MEDIUM confidence; widely used; struct-tag-based env var parsing
+- [Twilio Media Streams WebSocket Messages](https://www.twilio.com/docs/voice/media-streams/websocket-messages) — HIGH confidence; official Twilio docs, verified mark/clear schemas and semantics
+- [emiago/sipgo GitHub](https://github.com/emiago/sipgo) — MEDIUM confidence; sipgo `client.Do()` for OPTIONS follows same pattern as for REGISTER; API verified via pkg.go.dev
+- [sipgo pkg.go.dev](https://pkg.go.dev/github.com/emiago/sipgo) — MEDIUM confidence; `siplib.OPTIONS` method type, `NewRequest`, `Client.Do` return type
+- Existing codebase — HIGH confidence; `session.go`, `ws.go`, `registrar.go`, `handler.go` read directly; goroutine model, queue types, and write invariants verified from source
 
 ---
-*Architecture research for: audio-dock Go rewrite (SIP/RTP/WebSocket bridge)*
-*Researched: 2026-03-03*
+*Architecture research for: audio-dock v2.1 (mark/clear events + SIP OPTIONS keepalive)*
+*Researched: 2026-03-05*
