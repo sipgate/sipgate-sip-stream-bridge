@@ -16,9 +16,10 @@ type Metrics struct {
 	RTPRx        prometheus.Counter // rtp_packets_received_total
 	RTPTx        prometheus.Counter // rtp_packets_sent_total
 	WSReconnects  prometheus.Counter // ws_reconnect_attempts_total
-	MarkEchoed    prometheus.Counter // mark_echoed_total
-	ClearReceived prometheus.Counter // clear_received_total
-	Registry      *prometheus.Registry
+	MarkEchoed         prometheus.Counter // mark_echoed_total
+	ClearReceived      prometheus.Counter // clear_received_total
+	SIPOptionsFailures prometheus.Counter // sip_options_failures_total
+	Registry           *prometheus.Registry
 }
 
 // NewMetrics creates a custom registry and registers all five required metrics.
@@ -55,9 +56,13 @@ func NewMetrics() *Metrics {
 		Name: "clear_received_total",
 		Help: "Total clear events received from the WS server.",
 	})
+	sipOptionsFailures := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "sip_options_failures_total",
+		Help: "Total SIP OPTIONS keepalive failures (timeout, 5xx, 404).",
+	})
 
 	// Use reg.MustRegister (NOT prometheus.MustRegister) — custom registry only (Research Pitfall 4)
-	reg.MustRegister(activeCalls, sipReg, rtpRx, rtpTx, wsReconnects, markEchoed, clearReceived)
+	reg.MustRegister(activeCalls, sipReg, rtpRx, rtpTx, wsReconnects, markEchoed, clearReceived, sipOptionsFailures)
 
 	return &Metrics{
 		ActiveCalls:   activeCalls,
@@ -66,7 +71,8 @@ func NewMetrics() *Metrics {
 		RTPTx:         rtpTx,
 		WSReconnects:  wsReconnects,
 		MarkEchoed:    markEchoed,
-		ClearReceived: clearReceived,
-		Registry:      reg,
+		ClearReceived:      clearReceived,
+		SIPOptionsFailures: sipOptionsFailures,
+		Registry:           reg,
 	}
 }
