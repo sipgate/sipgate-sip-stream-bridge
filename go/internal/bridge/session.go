@@ -356,6 +356,20 @@ func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 				return
 			}
 			seqNo++
+		case markName := <-s.markEchoQueue:
+			// MARK-01/MARK-02/MARK-03: echo mark name to WS server.
+			// Debug level per locked decision (protocol noise, not error signal).
+			s.log.Debug().Str("call_id", s.callID).Str("mark", markName).Msg("wsPacer: echoing mark")
+			if err := sendMarkEcho(wsConn, s.streamSid, markName, seqNo); err != nil {
+				s.log.Error().Err(err).Str("call_id", s.callID).Str("mark", markName).
+					Msg("wsPacer: sendMarkEcho failed")
+				sig.Signal()
+				return
+			}
+			seqNo++
+			if s.metrics != nil {
+				s.metrics.MarkEchoed.Inc()
+			}
 		case <-ticker.C:
 			// Dequeue one PCMU frame. If none is available, skip this tick silently —
 			// the WS consumer is expected to handle gaps (the inbound stream is voice,
@@ -479,6 +493,56 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 				}
 			}
 
+		case "mark":
+			// Decode the mark name from the nested "mark" object.
+			var markMsg struct {
+				Mark struct {
+					Name string `json:"name"`
+				} `json:"mark"`
+			}
+			if raw, ok := envelope["mark"]; ok {
+				if err := json.Unmarshal(raw, &markMsg); err != nil {
+					s.log.Warn().Err(err).Str("call_id", s.callID).Msg("wsToRTP: mark decode failed — skipping")
+					continue
+				}
+			}
+			markName := markMsg.Mark.Name
+			s.log.Debug().Str("call_id", s.callID).Str("mark", markName).Msg("wsToRTP: received mark")
+
+			if len(s.packetQueue) == 0 {
+				// MARK-02: queue empty — echo immediately, do not enqueue sentinel.
+				select {
+				case s.markEchoQueue <- markName:
+				default:
+					s.log.Warn().Str("call_id", s.callID).Str("mark", markName).
+						Msg("wsToRTP: markEchoQueue full — dropping immediate mark echo")
+				}
+			} else {
+				// MARK-01: audio buffered — enqueue sentinel to preserve order.
+				select {
+				case s.packetQueue <- outboundFrame{mark: markName}:
+				case <-ctx.Done():
+					return
+				default:
+					s.log.Warn().Str("call_id", s.callID).Str("mark", markName).
+						Msg("wsToRTP: packetQueue full — dropping mark sentinel")
+				}
+			}
+
+		case "clear":
+			// MARK-03: signal rtpPacer to drain packetQueue.
+			// rtpPacer is the sole owner of packetQueue — it performs the drain on its next tick.
+			// clearSignal has capacity 1; excess clears coalesce (idempotent).
+			s.log.Debug().Str("call_id", s.callID).Msg("wsToRTP: received clear")
+			select {
+			case s.clearSignal <- struct{}{}:
+			default:
+				// previous clear not yet processed by rtpPacer — coalesced
+			}
+			if s.metrics != nil {
+				s.metrics.ClearReceived.Inc()
+			}
+
 		case "stop":
 			// "stop" is a SIP-side teardown signal from the WS consumer (SIP-05).
 			// Send BYE and cancel the session — this is not a WS-layer failure.
@@ -522,11 +586,51 @@ func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
 			// the first outbound UDP packet establishes the NAT mapping so the caller's
 			// media server can reach our private address. It also keeps the mapping
 			// alive for the duration of the call.
+
+			// MARK-03/MARK-04: check for clear signal before normal dequeue.
+			// Drain the entire packetQueue: audio frames are discarded, mark sentinels are
+			// echoed immediately via markEchoQueue. rtpPacer never stops — silence fills the tick.
+			select {
+			case <-s.clearSignal:
+				s.log.Debug().Str("call_id", s.callID).Msg("rtpPacer: clear signal — draining packetQueue")
+			drainLoop:
+				for {
+					select {
+					case f := <-s.packetQueue:
+						if f.mark != "" {
+							select {
+							case s.markEchoQueue <- f.mark:
+							default:
+								s.log.Warn().Str("call_id", s.callID).Str("mark", f.mark).
+									Msg("rtpPacer: markEchoQueue full during clear — dropping mark echo")
+							}
+						}
+						// audio frames: discard silently
+					default:
+						break drainLoop
+					}
+				}
+			default:
+			}
+
 			var frame outboundFrame
 			select {
 			case frame = <-s.packetQueue:
 			default:
-				// empty — send silence below
+				// empty queue — silence below
+			}
+			if frame.mark != "" {
+				// MARK-01: mark sentinel dequeued — route to wsPacer and skip RTP for this tick.
+				select {
+				case s.markEchoQueue <- frame.mark:
+				default:
+					s.log.Warn().Str("call_id", s.callID).Str("mark", frame.mark).
+						Msg("rtpPacer: markEchoQueue full — dropping mark echo")
+				}
+				// Advance RTP counters normally so timestamp continuity is preserved (MARK-04).
+				seqNo++
+				timestamp += 160
+				continue
 			}
 			chunk := frame.audio
 			if chunk == nil {
