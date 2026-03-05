@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Twilio Media Streams - Complete Protocol
 status: executing
-stopped_at: "Completed 10-01: SIPOptionsInterval config field and SIPOptionsFailures counter scaffold"
-last_updated: "2026-03-05T13:17:49Z"
+stopped_at: "Completed 10-02: optionsKeepaliveLoop implementation and mutex-guard doRegister"
+last_updated: "2026-03-05T13:24:10.791Z"
 last_activity: "2026-03-05 — Completed 10-01: SIPOptionsInterval time.Duration (default 30s) and sip_options_failures_total counter added as compile-safe scaffold for Plan 02"
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
   percent: 11
 ---
 
@@ -53,6 +53,7 @@ Progress: [#░░░░░░░░░] 11%
 | Phase 09 P02 | 2 | 2 tasks | 2 files |
 | Phase 09-go-bridge-mark-clear P03 | 2 | 2 tasks | 2 files |
 | Phase 10-go-sip-options-keepalive P01 | 2 | 2 tasks | 4 files |
+| Phase 10-go-sip-options-keepalive P02 | 3 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ From 10-01 execution (2026-03-05):
 - **SIPOptionsInterval scaffold**: Pure addition — field + counter defined without wiring to registrar.go; Plan 02 does the wiring. Codebase always compiles between plan commits.
 - **time.Duration env field**: go-simpler.org/env v0.12.0 parses default string "30s" natively to time.Duration — no custom parser needed
 - [Phase 10]: SIPOptionsFailures placed after ClearReceived in Metrics struct following existing counter ordering convention
+- [Phase 10]: applyOptionsResponse is a pure function enabling table-driven unit tests for the OPTIONS state machine without a live SIP server
+- [Phase 10]: SIPOptionsFailures.Inc() fires on every failure including threshold-triggering one — placed before triggerRegister branch
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-05T13:17:49Z
-Stopped at: Completed 10-01: SIPOptionsInterval config field and SIPOptionsFailures counter scaffold
-Resume file: .planning/phases/10-go-sip-options-keepalive/10-02-PLAN.md
+Last session: 2026-03-05T13:24:10.788Z
+Stopped at: Completed 10-02: optionsKeepaliveLoop implementation and mutex-guard doRegister
+Resume file: None

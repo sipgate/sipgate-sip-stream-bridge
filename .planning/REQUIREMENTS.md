@@ -23,9 +23,9 @@ Requirements for the v2.1 milestone. Each maps to roadmap phases.
 ### SIP OPTIONS Keepalive (Go)
 
 - [x] **OPTS-01**: Go-Registrar sendet alle 30s einen SIP OPTIONS-Request an sipgate zur Liveness-Prüfung
-- [ ] **OPTS-02**: Bei Timeout, 5xx oder 404-Antwort wird sofort eine Re-Registrierung ausgelöst
-- [ ] **OPTS-03**: Bei 401/407-Antwort wird keine Re-Registrierung ausgelöst (Server ist erreichbar, nur Auth-Problem)
-- [ ] **OPTS-04**: OPTIONS keepalive-Goroutine ist an den Root-Context gebunden und stoppt sauber bei SIGTERM
+- [x] **OPTS-02**: Bei Timeout, 5xx oder 404-Antwort wird sofort eine Re-Registrierung ausgelöst
+- [x] **OPTS-03**: Bei 401/407-Antwort wird keine Re-Registrierung ausgelöst (Server ist erreichbar, nur Auth-Problem)
+- [x] **OPTS-04**: OPTIONS keepalive-Goroutine ist an den Root-Context gebunden und stoppt sauber bei SIGTERM
 - [x] **OPTS-05**: OPTIONS-Interval ist via `SIP_OPTIONS_INTERVAL` env-var konfigurierbar (Default: 30s)
 
 ### SIP OPTIONS Keepalive (Node.js)
@@ -69,9 +69,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MRKN-02 | Phase 11 | Pending |
 | MRKN-03 | Phase 11 | Pending |
 | OPTS-01 | Phase 10 | Complete |
-| OPTS-02 | Phase 10 | Pending |
-| OPTS-03 | Phase 10 | Pending |
-| OPTS-04 | Phase 10 | Pending |
+| OPTS-02 | Phase 10 | Complete |
+| OPTS-03 | Phase 10 | Complete |
+| OPTS-04 | Phase 10 | Complete |
 | OPTS-05 | Phase 10 | Complete |
 | OPTN-01 | Phase 11 | Pending |
 | OPTN-02 | Phase 11 | Pending |

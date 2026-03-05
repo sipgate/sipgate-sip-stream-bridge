@@ -37,7 +37,7 @@ See archive: `.planning/milestones/v2.0-ROADMAP.md`
 **Milestone Goal:** Extend both Go and Node.js implementations with mark/clear protocol events and SIP OPTIONS keepalive for silent registration-loss detection.
 
 - [x] **Phase 9: Go Bridge mark/clear** - Go implementation of Twilio mark and clear events with correct packetQueue goroutine wiring (completed 2026-03-05)
-- [ ] **Phase 10: Go SIP OPTIONS Keepalive** - Periodic OPTIONS ping to sipgate for silent registration-loss detection and re-registration
+- [x] **Phase 10: Go SIP OPTIONS Keepalive** - Periodic OPTIONS ping to sipgate for silent registration-loss detection and re-registration (completed 2026-03-05)
 - [ ] **Phase 11: Node.js Equivalents** - Port mark/clear and OPTIONS keepalive to the Node.js reference implementation
 
 ## Phase Details
@@ -103,5 +103,5 @@ Phases execute in numeric order: 9 → 10 → 11
 | 7. WebSocket Resilience + DTMF | v2.0 | 2/2 | Complete | 2026-03-04 |
 | 8. Lifecycle + Observability | v2.0 | 2/2 | Complete | 2026-03-04 |
 | 9. Go Bridge mark/clear | v2.1 | 3/3 | Complete | 2026-03-05 |
-| 10. Go SIP OPTIONS Keepalive | 1/2 | In Progress|  | - |
+| 10. Go SIP OPTIONS Keepalive | 2/2 | Complete   | 2026-03-05 | - |
 | 11. Node.js Equivalents | v2.1 | 0/TBD | Not started | - |
