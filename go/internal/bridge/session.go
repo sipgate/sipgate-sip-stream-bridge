@@ -29,6 +29,15 @@ const packetQueueSize = 500
 // When full, new frames are dropped and a warning is logged.
 const rtpInboundQueueSize = 50
 
+// outboundFrame is a tagged union for packetQueue entries.
+// Exactly one field is set per instance:
+//   - audio != nil: a 160-byte PCMU audio frame to send to the caller
+//   - mark != "": a mark sentinel — route to markEchoQueue, send no RTP packet
+type outboundFrame struct {
+	audio []byte // non-nil for PCMU frames (160 bytes)
+	mark  string // non-empty for mark sentinel frames
+}
+
 // pcmuSilenceFrame is a single 20 ms PCMU silence frame (160 bytes of μ-law zero = 0xFF).
 // rtpPacer sends this when no audio is queued so the RTP stream is continuous.
 // Continuous RTP is required for NAT traversal: the first outbound UDP packet punches the
@@ -55,10 +64,12 @@ type CallSession struct {
 	log          zerolog.Logger
 	cancel          context.CancelFunc
 	wg              sync.WaitGroup // tracks ONLY rtpReader + rtpPacer (persistent RTP goroutines)
-	packetQueue     chan []byte     // buffered PCMU frames (160 bytes each) for rtpPacer (WS→RTP)
-	rtpInboundQueue chan []byte     // buffered PCMU frames (160 bytes each) for wsPacer (RTP→WS)
-	lastDtmfTS      uint32         // RTP timestamp of last forwarded DTMF End packet (RFC 4733 dedup)
-	dtmfQueue       chan string     // digit strings ("0"-"9","*","#","A"-"D") from rtpReader to wsPacer
+	packetQueue     chan outboundFrame // buffered outbound frames for rtpPacer (WS→RTP)
+	rtpInboundQueue chan []byte        // buffered PCMU frames (160 bytes each) for wsPacer (RTP→WS)
+	lastDtmfTS      uint32             // RTP timestamp of last forwarded DTMF End packet (RFC 4733 dedup)
+	dtmfQueue       chan string        // digit strings ("0"-"9","*","#","A"-"D") from rtpReader to wsPacer
+	markEchoQueue   chan string        // mark names from rtpPacer to wsPacer (capacity 10)
+	clearSignal     chan struct{}      // buffered (1): wsToRTP notifies rtpPacer to drain packetQueue
 	metrics         *observability.Metrics
 }
 
@@ -100,9 +111,11 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 	defer rtpConn.Close()
 
 	// Initialize queues before launching goroutines (Pitfall 6 for DTMF in Phase 7-02).
-	s.packetQueue = make(chan []byte, packetQueueSize)
+	s.packetQueue = make(chan outboundFrame, packetQueueSize)
 	s.rtpInboundQueue = make(chan []byte, rtpInboundQueueSize)
 	s.dtmfQueue = make(chan string, 10) // 10 slots; more than enough for any realistic keypress burst
+	s.markEchoQueue = make(chan string, 10)
+	s.clearSignal = make(chan struct{}, 1)
 
 	// Send initial handshake on the pre-dialed connection from StartSession.
 	wsConn := initialWsConn
@@ -457,7 +470,7 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 				pcmuPayload = pcmuPayload[len(chunk):]
 
 				select {
-				case s.packetQueue <- chunk:
+				case s.packetQueue <- outboundFrame{audio: chunk}:
 				case <-ctx.Done():
 					return
 				default:
@@ -509,10 +522,14 @@ func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
 			// the first outbound UDP packet establishes the NAT mapping so the caller's
 			// media server can reach our private address. It also keeps the mapping
 			// alive for the duration of the call.
-			var chunk []byte
+			var frame outboundFrame
 			select {
-			case chunk = <-s.packetQueue:
+			case frame = <-s.packetQueue:
 			default:
+				// empty — send silence below
+			}
+			chunk := frame.audio
+			if chunk == nil {
 				chunk = pcmuSilenceFrame
 			}
 
