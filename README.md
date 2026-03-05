@@ -37,6 +37,8 @@ Two implementations are available in this repository:
 | **Playout buffer** | ✅ 50-frame queue, paced 20 ms | ✗ |
 | **WS reconnect** | ✅ 1s/2s/4s, 30s budget | ✅ 1s/2s/4s, 30s budget |
 | **DTMF forwarding** | ✅ RFC 4733 End-bit dedup | ✅ RFC 4733 End-bit dedup |
+| **Mark/clear protocol** | ✅ echo after drain, fast-path | ✅ echo after drain, fast-path |
+| **SIP OPTIONS keepalive** | ✅ re-register after 2 failures | ✅ re-register after 2 failures |
 | **Graceful shutdown** | ✅ DrainAll + UNREGISTER | ✅ BYE + UNREGISTER |
 | **`GET /health`** | ✅ port 9090 | ✅ port 9090 |
 | **`GET /metrics`** | ✅ Prometheus | ✅ Prometheus |
