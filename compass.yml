@@ -1,0 +1,61 @@
+name: sipgate-sip-stream-bridge
+id: ari:cloud:compass:d9f1e0b4-bbce-4bc5-8ca1-73ba50a4d868:component/d87c76ce-d35e-454d-a6d6-9614c126a7a5/b8bf1435-a7d1-4c16-b385-48e369faec78
+description: Go service bridging sipgate SIP trunking to WebSocket endpoints via the Twilio Media Streams protocol — drop-in compatible with AI voice-bot backends
+configVersion: 1
+typeId: SERVICE
+fields:
+  tier: 4
+links:
+  - name: null
+    type: REPOSITORY
+    url: https://github.com/sipgate/sipgate-sip-stream-bridge
+relationships:
+  DEPENDS_ON: []
+labels:
+  - source:github
+customFields:
+  - name: Business SLA
+    type: single_select
+    value: null
+  - name: Business SLO
+    type: single_select
+    value: null
+  - name: Deployed on
+    type: multi_select
+    value: null
+  - name: Eligible for nautilus
+    type: boolean
+    value: false
+  - name: Json Logging enabled
+    type: single_select
+    value: null
+  - name: Kafka Consumer fault tolerant
+    type: single_select
+    value: null
+  - name: Last Build successful
+    type: boolean
+    value: false
+  - name: Last reviewed
+    type: text
+    value: null
+  - name: Logging Rate-Limited
+    type: single_select
+    value: null
+  - name: Processes Credit Card Data
+    type: single_select
+    value: null
+  - name: Programming language
+    type: text
+    value: null
+  - name: Requires Local State
+    type: single_select
+    value: null
+  - name: Service Hours
+    type: single_select
+    value: null
+  - name: nautilus migration
+    type: single_select
+    value: null
+  - name: nautilus migration blocked
+    type: multi_select
+    value: null
