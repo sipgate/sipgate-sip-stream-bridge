@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Twilio Media Streams - Complete Protocol
 status: executing
-stopped_at: "Completed 10-02: optionsKeepaliveLoop implementation and mutex-guard doRegister"
-last_updated: "2026-03-05T13:24:10.791Z"
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-03-05T15:57:11.909Z"
 last_activity: "2026-03-05 — Completed 10-01: SIPOptionsInterval time.Duration (default 30s) and sip_options_failures_total counter added as compile-safe scaffold for Plan 02"
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 6
   percent: 11
 ---
 
@@ -54,6 +54,7 @@ Progress: [#░░░░░░░░░] 11%
 | Phase 09-go-bridge-mark-clear P03 | 2 | 2 tasks | 2 files |
 | Phase 10-go-sip-options-keepalive P01 | 2 | 2 tasks | 4 files |
 | Phase 10-go-sip-options-keepalive P02 | 3 | 2 tasks | 2 files |
+| Phase 11-node.js-equivalents P01 | 1 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ From 10-01 execution (2026-03-05):
 - [Phase 10]: SIPOptionsFailures placed after ClearReceived in Metrics struct following existing counter ordering convention
 - [Phase 10]: applyOptionsResponse is a pure function enabling table-driven unit tests for the OPTIONS state machine without a live SIP server
 - [Phase 10]: SIPOptionsFailures.Inc() fires on every failure including threshold-triggering one — placed before triggerRegister branch
+- [Phase 11-node.js-equivalents]: it.todo stubs chosen over failing expect() — pnpm test exits 0 (green pending) so Wave 1 CI stays green
+- [Phase 11-node.js-equivalents]: No vitest.config.ts needed — Vitest auto-discovers node/test/**/*.test.ts in type:module pnpm project
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-05T13:24:10.788Z
-Stopped at: Completed 10-02: optionsKeepaliveLoop implementation and mutex-guard doRegister
+Last session: 2026-03-05T15:57:11.906Z
+Stopped at: Completed 11-01-PLAN.md
 Resume file: None

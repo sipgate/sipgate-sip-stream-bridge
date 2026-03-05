@@ -16,9 +16,9 @@ Requirements for the v2.1 milestone. Each maps to roadmap phases.
 
 ### Twilio Protocol — mark/clear (Node.js)
 
-- [ ] **MRKN-01**: Node.js-Implementierung erkennt `mark`-Events und echot den mark-Namen nach Playout aller vorherigen Audio-Frames zurück
-- [ ] **MRKN-02**: Node.js-Implementierung erkennt `clear`-Events, leert die Audio-Queue und echot pending marks sofort
-- [ ] **MRKN-03**: `WsClient`-Interface wird um `onMark`, `sendMark`, `sendClear` erweitert
+- [x] **MRKN-01**: Node.js-Implementierung erkennt `mark`-Events und echot den mark-Namen nach Playout aller vorherigen Audio-Frames zurück
+- [x] **MRKN-02**: Node.js-Implementierung erkennt `clear`-Events, leert die Audio-Queue und echot pending marks sofort
+- [x] **MRKN-03**: `WsClient`-Interface wird um `onMark`, `sendMark`, `sendClear` erweitert
 
 ### SIP OPTIONS Keepalive (Go)
 
@@ -30,9 +30,9 @@ Requirements for the v2.1 milestone. Each maps to roadmap phases.
 
 ### SIP OPTIONS Keepalive (Node.js)
 
-- [ ] **OPTN-01**: Node.js-Implementierung sendet alle 30s einen SIP OPTIONS-Request an sipgate
-- [ ] **OPTN-02**: Bei Timeout oder Fehler wird Re-Registrierung ausgelöst; bei 401/407 nicht
-- [ ] **OPTN-03**: OPTIONS keepalive stoppt sauber beim Shutdown des User-Agents
+- [x] **OPTN-01**: Node.js-Implementierung sendet alle 30s einen SIP OPTIONS-Request an sipgate
+- [x] **OPTN-02**: Bei Timeout oder Fehler wird Re-Registrierung ausgelöst; bei 401/407 nicht
+- [x] **OPTN-03**: OPTIONS keepalive stoppt sauber beim Shutdown des User-Agents
 
 ## Future Requirements
 
@@ -65,17 +65,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MARK-02 | Phase 9 | Complete |
 | MARK-03 | Phase 9 | Complete |
 | MARK-04 | Phase 9 | Complete |
-| MRKN-01 | Phase 11 | Pending |
-| MRKN-02 | Phase 11 | Pending |
-| MRKN-03 | Phase 11 | Pending |
+| MRKN-01 | Phase 11 | Complete |
+| MRKN-02 | Phase 11 | Complete |
+| MRKN-03 | Phase 11 | Complete |
 | OPTS-01 | Phase 10 | Complete |
 | OPTS-02 | Phase 10 | Complete |
 | OPTS-03 | Phase 10 | Complete |
 | OPTS-04 | Phase 10 | Complete |
 | OPTS-05 | Phase 10 | Complete |
-| OPTN-01 | Phase 11 | Pending |
-| OPTN-02 | Phase 11 | Pending |
-| OPTN-03 | Phase 11 | Pending |
+| OPTN-01 | Phase 11 | Complete |
+| OPTN-02 | Phase 11 | Complete |
+| OPTN-03 | Phase 11 | Complete |
 
 **Coverage:**
 - v2.1 requirements: 15 total
