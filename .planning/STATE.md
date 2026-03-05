@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Twilio Media Streams - Complete Protocol
 status: executing
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-03-05T15:57:11.909Z"
+stopped_at: Completed 11-02-PLAN.md
+last_updated: "2026-03-05T16:01:18.841Z"
 last_activity: "2026-03-05 — Completed 10-01: SIPOptionsInterval time.Duration (default 30s) and sip_options_failures_total counter added as compile-safe scaffold for Plan 02"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 11
 ---
 
@@ -55,6 +55,7 @@ Progress: [#░░░░░░░░░] 11%
 | Phase 10-go-sip-options-keepalive P01 | 2 | 2 tasks | 4 files |
 | Phase 10-go-sip-options-keepalive P02 | 3 | 2 tasks | 2 files |
 | Phase 11-node.js-equivalents P01 | 1 | 2 tasks | 4 files |
+| Phase 11-node.js-equivalents P02 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ From 10-01 execution (2026-03-05):
 - [Phase 10]: SIPOptionsFailures.Inc() fires on every failure including threshold-triggering one — placed before triggerRegister branch
 - [Phase 11-node.js-equivalents]: it.todo stubs chosen over failing expect() — pnpm test exits 0 (green pending) so Wave 1 CI stays green
 - [Phase 11-node.js-equivalents]: No vitest.config.ts needed — Vitest auto-discovers node/test/**/*.test.ts in type:module pnpm project
+- [Phase 11-node.js-equivalents]: makeDrainForTest export: exposes internal makeDrain for unit tests without moving it to a separate module
+- [Phase 11-node.js-equivalents]: Mark sentinel no 20ms wait: after echoing a mark sentinel the next item is scheduled at delay=0 — marks are protocol signals not audio frames
+- [Phase 11-node.js-equivalents]: sendClear delegates to outboundDrain.stop(): reuses existing flush+echo-marks behavior rather than duplicating logic
 
 ### Pending Todos
 
@@ -99,6 +103,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-05T15:57:11.906Z
-Stopped at: Completed 11-01-PLAN.md
+Last session: 2026-03-05T16:01:18.838Z
+Stopped at: Completed 11-02-PLAN.md
 Resume file: None

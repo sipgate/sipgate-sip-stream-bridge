@@ -109,4 +109,4 @@ Phases execute in numeric order: 9 → 10 → 11
 | 8. Lifecycle + Observability | v2.0 | 2/2 | Complete | 2026-03-04 |
 | 9. Go Bridge mark/clear | v2.1 | 3/3 | Complete | 2026-03-05 |
 | 10. Go SIP OPTIONS Keepalive | v2.1 | 2/2 | Complete | 2026-03-05 |
-| 11. Node.js Equivalents | 1/3 | In Progress|  | - |
+| 11. Node.js Equivalents | 2/3 | In Progress|  | - |
