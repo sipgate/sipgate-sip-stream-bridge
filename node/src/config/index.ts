@@ -15,6 +15,7 @@ const configSchema = z
     SDP_CONTACT_IP: z.ipv4().optional(),
     SIP_EXPIRES: z.coerce.number().int().positive().default(120),
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
+    HTTP_PORT: z.coerce.number().int().min(1).max(65535).default(9090),
   })
   .refine((data) => data.RTP_PORT_MIN < data.RTP_PORT_MAX, {
     message: 'RTP_PORT_MIN must be less than RTP_PORT_MAX',

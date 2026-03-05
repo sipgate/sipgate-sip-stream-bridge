@@ -38,8 +38,8 @@ Two implementations are available in this repository:
 | **WS reconnect** | ✅ 1s/2s/4s, 30s budget | ✅ 1s/2s/4s, 30s budget |
 | **DTMF forwarding** | ✅ RFC 4733 End-bit dedup | ✅ RFC 4733 End-bit dedup |
 | **Graceful shutdown** | ✅ DrainAll + UNREGISTER | ✅ BYE + UNREGISTER |
-| **`GET /health`** | ✅ | ✗ |
-| **`GET /metrics`** | ✅ Prometheus | ✗ |
+| **`GET /health`** | ✅ port 9090 | ✅ port 9090 |
+| **`GET /metrics`** | ✅ Prometheus | ✅ Prometheus |
 
 → **[Go implementation README](./go/README.md)**
 
@@ -90,18 +90,23 @@ See the individual READMEs for the full option list.
 
 ## Integration Testing
 
-`test-listener.js` in this directory is a minimal Twilio Media Streams server for local testing:
+[`test-listener/`](./test-listener/) is a minimal Twilio Media Streams WebSocket server for local testing. It has its own `package.json` with the `ws` dependency.
 
 ```bash
-# Terminal 1 — start listener on port 8080
-node test-listener.js           # log all events
-MODE=echo node test-listener.js  # echo caller audio back
+# Terminal 1 — install once, then start listener on port 8080
+cd test-listener && npm install
+node index.js             # MODE=log (default) — log all events
+MODE=echo node index.js   # echo caller audio back
+MODE=tone node index.js   # send a synthetic tone (simulates TTS)
+MODE=timing node index.js # print inter-arrival time per packet (jitter check)
 
 # Terminal 2 — start audio-dock (Go example)
 cd go && go run ./cmd/audio-dock
 ```
 
-Then call your sipgate number. The listener logs `connected`, `start`, and `media` events.
+Then call your sipgate number. The listener logs `connected`, `start`, `media`, and `stop` events.
+
+Set `WS_TARGET_URL=ws://localhost:8080` in `.env` (the listener's default port).
 
 ---
 
@@ -118,7 +123,7 @@ audio-dock/
 │   ├── src/          # TypeScript source
 │   ├── test/         # FD leak test
 │   └── package.json
-├── test-listener.js  # Local Twilio Media Streams listener
+├── test-listener/    # Local Twilio Media Streams listener (own package.json)
 ├── .env.example      # Shared environment variable template
 └── .planning/        # GSD project planning artifacts
 ```

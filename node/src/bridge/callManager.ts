@@ -21,6 +21,7 @@ import type { Logger } from 'pino';
 
 import type { Config } from '../config/index.js';
 import { createChildLogger } from '../logger/index.js';
+import type { Metrics } from '../observability/metrics.js';
 import { createRtpHandler, type RtpHandler } from '../rtp/rtpHandler.js';
 import { buildSdpAnswer, parseSdpOffer } from '../sip/sdp.js';
 import type { SipCallbacks, SipHandle } from '../sip/userAgent.js';
@@ -188,10 +189,14 @@ export class CallManager {
   private readonly config: Config;
   private sipHandle!: SipHandle; // set via setSipHandle() before any calls arrive
   private readonly log: Logger;
+  private readonly metrics?: Metrics;
+  /** Set to true during terminateAll() — causes new INVITEs to receive 503 (LCY-01) */
+  private isShuttingDown = false;
 
-  constructor(config: Config, log: Logger) {
+  constructor(config: Config, log: Logger, metrics?: Metrics) {
     this.config = config;
     this.log = log;
+    this.metrics = metrics;
   }
 
   /** Wire the SipHandle produced by createSipUserAgent into the manager */
@@ -229,6 +234,7 @@ export class CallManager {
 
   /** Terminate all active sessions in parallel — for graceful shutdown */
   async terminateAll(): Promise<void> {
+    this.isShuttingDown = true; // reject new INVITEs with 503 during drain (LCY-01)
     const sessions = [...this.sessions.values()];
     // Clear first so terminateSession idempotency guard doesn't block
     this.sessions.clear();
@@ -249,6 +255,16 @@ export class CallManager {
     const toHeader = extractHeader(raw, 'To');
     const sipCallId = extractHeader(raw, 'Call-ID');
     const cseq = extractHeader(raw, 'CSeq');
+
+    // Reject new INVITEs during graceful shutdown drain (LCY-01 / OBS-03 §21.5.4)
+    if (this.isShuttingDown) {
+      const resp503 = buildResponse({
+        status: 503, reason: 'Service Unavailable',
+        vias: extractAllVias(raw), from, to: toHeader, callId: sipCallId, cseq,
+      });
+      this.sipHandle.sendRaw(Buffer.from(resp503), rinfo.port, rinfo.address);
+      return;
+    }
 
     // Dedup: ignore retransmissions while call is being set up or already established
     if (this.pendingInvites.has(sipCallId)) return;
@@ -435,6 +451,7 @@ export class CallManager {
       silenceInterval: null,
     };
     this.sessions.set(sipCallId, session);
+    this.metrics?.incActiveCalls();
 
     // 9a. Retransmit 200 OK until ACK arrives (RFC 3261 §13.3.1.4)
     // Timer doubles from T1=500ms up to T2=4000ms per attempt.
@@ -453,6 +470,7 @@ export class CallManager {
     // RTP audio → WS backend (route via session.ws so post-reconnect handler picks up new WsClient)
     let firstRtp = true;
     rtp.on('audio', (payload: Buffer) => {
+      this.metrics?.incRtpRx();
       if (session.wsReconnecting) return; // drop during reconnect window — WSR-03
       if (firstRtp) {
         callLog.info({ event: 'first_rtp_audio', bytes: payload.length }, 'First RTP audio packet received from sipgate');
@@ -469,6 +487,7 @@ export class CallManager {
         callLog.info({ event: 'first_ws_audio', bytes: payload.length }, 'First audio from WS backend — sending to sipgate');
         firstWsAudio = false;
       }
+      this.metrics?.incRtpTx();
       rtp.sendAudio(payload);
     });
     // WS disconnect → start reconnect loop (keeps SIP call alive during transient WS drops)
@@ -572,6 +591,7 @@ export class CallManager {
   private terminateSession(session: CallSession, reason: string, sendBye: boolean): void {
     if (!this.sessions.has(session.callId)) return; // idempotent
     this.sessions.delete(session.callId);
+    this.metrics?.decActiveCalls();
 
     // Cancel any pending 200 OK retransmit timer
     if (session.okRetransmitTimer !== null) {
@@ -634,6 +654,7 @@ export class CallManager {
     // Send μ-law silence to caller throughout reconnect window — prevents dead-air.
     // Stored on session so terminateSession can clear it if BYE arrives mid-sleep.
     session.silenceInterval = setInterval(() => {
+      this.metrics?.incRtpTx();
       session.rtp.sendAudio(Buffer.alloc(160, 0xff));
     }, 20);
 
@@ -651,6 +672,7 @@ export class CallManager {
         return;
       }
 
+      this.metrics?.incWsReconnect();
       session.log.info({ event: 'ws_reconnect_attempt', attempt: n, delay }, 'Attempting WS reconnect');
 
       try {
@@ -662,6 +684,7 @@ export class CallManager {
 
         // Re-wire WS audio → RTP (old ws.onAudio listeners are on the dead socket and won't fire)
         newWs.onAudio((payload) => {
+          this.metrics?.incRtpTx();
           session.rtp.sendAudio(payload);
         });
 

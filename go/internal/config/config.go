@@ -34,7 +34,7 @@ type Config struct {
 	LogLevel string `env:"LOG_LEVEL" default:"info" usage:"Log level: trace, debug, info, warn, error"`
 
 	// HTTP server port for /health and /metrics (OBS-02, OBS-03)
-	HTTPPort string `env:"HTTP_PORT" default:"8080" usage:"HTTP server port for /health and /metrics endpoints"`
+	HTTPPort string `env:"HTTP_PORT" default:"9090" usage:"HTTP server port for /health and /metrics endpoints"`
 }
 
 // Load reads environment variables into Config and fails fast on misconfiguration (CFG-05).
