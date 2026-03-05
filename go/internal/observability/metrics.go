@@ -15,8 +15,10 @@ type Metrics struct {
 	SIPRegStatus prometheus.Gauge   // sip_registration_status (0/1)
 	RTPRx        prometheus.Counter // rtp_packets_received_total
 	RTPTx        prometheus.Counter // rtp_packets_sent_total
-	WSReconnects prometheus.Counter // ws_reconnect_attempts_total
-	Registry     *prometheus.Registry
+	WSReconnects  prometheus.Counter // ws_reconnect_attempts_total
+	MarkEchoed    prometheus.Counter // mark_echoed_total
+	ClearReceived prometheus.Counter // clear_received_total
+	Registry      *prometheus.Registry
 }
 
 // NewMetrics creates a custom registry and registers all five required metrics.
@@ -45,16 +47,26 @@ func NewMetrics() *Metrics {
 		Name: "ws_reconnect_attempts_total",
 		Help: "Total WebSocket reconnect attempts across all calls.",
 	})
+	markEchoed := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "mark_echoed_total",
+		Help: "Total mark echo events sent to the WS server.",
+	})
+	clearReceived := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "clear_received_total",
+		Help: "Total clear events received from the WS server.",
+	})
 
 	// Use reg.MustRegister (NOT prometheus.MustRegister) — custom registry only (Research Pitfall 4)
-	reg.MustRegister(activeCalls, sipReg, rtpRx, rtpTx, wsReconnects)
+	reg.MustRegister(activeCalls, sipReg, rtpRx, rtpTx, wsReconnects, markEchoed, clearReceived)
 
 	return &Metrics{
-		ActiveCalls:  activeCalls,
-		SIPRegStatus: sipReg,
-		RTPRx:        rtpRx,
-		RTPTx:        rtpTx,
-		WSReconnects: wsReconnects,
-		Registry:     reg,
+		ActiveCalls:   activeCalls,
+		SIPRegStatus:  sipReg,
+		RTPRx:         rtpRx,
+		RTPTx:         rtpTx,
+		WSReconnects:  wsReconnects,
+		MarkEchoed:    markEchoed,
+		ClearReceived: clearReceived,
+		Registry:      reg,
 	}
 }
