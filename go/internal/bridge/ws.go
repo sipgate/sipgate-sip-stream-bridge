@@ -199,6 +199,34 @@ func sendDTMF(conn net.Conn, streamSid, digit string, seqNo uint32) error {
 	})
 }
 
+// MarkEvent is the Twilio Media Streams `mark` event (WS server → audio-dock outbound echo).
+// Schema: {"event":"mark","sequenceNumber":"N","streamSid":"MZxxx","mark":{"name":"label"}}
+// Sent by wsPacer only (sole-writer invariant). Called from markEchoQueue consumer in wsPacer.
+// Reference: https://www.twilio.com/docs/voice/media-streams/websocket-messages#mark
+type MarkEvent struct {
+	Event          string   `json:"event"`
+	SequenceNumber string   `json:"sequenceNumber"`
+	StreamSid      string   `json:"streamSid"`
+	Mark           MarkBody `json:"mark"`
+}
+
+// MarkBody holds the nested mark payload.
+type MarkBody struct {
+	Name string `json:"name"`
+}
+
+// sendMarkEcho writes a `mark` echo event to the WebSocket connection.
+// Called only from wsPacer (sole WS writer invariant preserved).
+// seqNo is the wsPacer-local sequence counter, incremented by the caller after each send.
+func sendMarkEcho(conn net.Conn, streamSid, markName string, seqNo uint32) error {
+	return writeJSON(conn, MarkEvent{
+		Event:          "mark",
+		SequenceNumber: fmt.Sprintf("%d", seqNo),
+		StreamSid:      streamSid,
+		Mark:           MarkBody{Name: markName},
+	})
+}
+
 // wsSignal is a single-fire channel signal for WS goroutine failure notification.
 // Both wsPacer and wsToRTP call Signal() on error; sync.Once ensures the channel
 // is closed exactly once regardless of which goroutine fires first (prevents panic
