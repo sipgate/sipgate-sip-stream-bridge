@@ -1,5 +1,8 @@
+import http from 'node:http';
+
 import { config } from './config/index.js';
 import { createChildLogger } from './logger/index.js';
+import { Metrics } from './observability/metrics.js';
 import { createSipUserAgent } from './sip/userAgent.js';
 import { CallManager } from './bridge/callManager.js';
 
@@ -11,7 +14,9 @@ log.info(
 );
 
 async function main(): Promise<void> {
-  const callManager = new CallManager(config, createChildLogger({ component: 'call-manager' }));
+  const metrics = new Metrics();
+
+  const callManager = new CallManager(config, createChildLogger({ component: 'call-manager' }), metrics);
 
   const sipHandle = await createSipUserAgent(
     config,
@@ -20,8 +25,29 @@ async function main(): Promise<void> {
   );
 
   callManager.setSipHandle(sipHandle);
+  metrics.setSipRegistered(true);
 
   log.info({ event: 'sip_booted' }, 'SIP registrar started — waiting for calls');
+
+  // HTTP server: /health (OBS-02) and /metrics (OBS-03)
+  const httpServer = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/health') {
+      const body = JSON.stringify(metrics.getHealth());
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(body);
+    } else if (req.method === 'GET' && req.url === '/metrics') {
+      const body = metrics.getPrometheus();
+      res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
+      res.end(body);
+    } else {
+      res.writeHead(404, { 'Content-Length': '0' });
+      res.end();
+    }
+  });
+
+  httpServer.listen(config.HTTP_PORT, () => {
+    log.info({ event: 'http_server_started', port: config.HTTP_PORT }, 'HTTP server started');
+  });
 
   // Graceful shutdown handler (LCY-01)
   // CONTEXT.md locked decision: SIGTERM + SIGINT same handler, 5s drain timeout,
@@ -35,8 +61,10 @@ async function main(): Promise<void> {
     }, 5000);
 
     try {
+      httpServer.close(); // stop accepting new HTTP requests
       await callManager.terminateAll(); // BYE + stop event + WS.close in parallel
       await sipHandle.unregister();     // REGISTER with Expires:0, Contact:*
+      metrics.setSipRegistered(false);
       log.info({ event: 'shutdown_complete' }, 'Graceful shutdown complete');
     } catch (err) {
       log.error({ err, event: 'shutdown_error' }, 'Error during shutdown');
