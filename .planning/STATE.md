@@ -2,39 +2,41 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Go Rewrite
-status: unknown
-last_updated: "2026-03-04T15:31:30.175Z"
+status: completed
+stopped_at: v2.0 milestone archived — shipped 2026-03-05
+last_updated: "2026-03-05"
+last_activity: "2026-03-05 — v2.0 milestone complete: archived to milestones/, PROJECT.md evolved, git tagged"
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 9
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-03 — v2.0 Go Rewrite started)
+See: .planning/PROJECT.md (updated 2026-03-05 — v2.0 Go Rewrite complete)
 
 **Core value:** Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive, and the integration is drop-in compatible with Twilio Media Streams consumers.
-**Current focus:** Phase 8 — Production Hardening
+**Current focus:** Planning next milestone (v3.0)
 
 ## Current Position
 
-Phase: 8 of 8 — COMPLETE
-Plan: 2 of 2 in phase 8 — COMPLETE
-Status: 08-02 complete (2026-03-04) — HTTP /health + /metrics observability layer implemented
-Last activity: 2026-03-04 — 08-02: NewMetrics() + 5 Prometheus metrics + HTTP server + httpServer.Shutdown in drain sequence
+Milestone v2.0 SHIPPED 2026-03-05.
 
-Progress: ██████████ 100%
+All 5 phases (4–8) complete. 9 plans complete. 29/29 v1 requirements satisfied.
+
+Next: `/gsd:new-milestone` to define v3.0 scope.
 
 ## Performance Metrics
 
-**Velocity:**
-- Total plans completed: 6 (v2.0); 10 (v1.0)
-- Average duration: ~3.1min (v2.0)
-- Total execution time: ~19min
+**v2.0 Velocity:**
+- Total plans completed: 9
+- Average duration: ~3.1min/plan
+- Total execution time: ~28min
 
 **By Phase:**
 
@@ -42,67 +44,15 @@ Progress: ██████████ 100%
 |-------|-------|-------|----------|
 | 04-go-scaffold | 2/2 | ~7min | ~3.5min |
 | 05-sip-registration | 1/1 | ~3min | ~3min |
-| 06-inbound-call-rtp-bridge | 3/3 ✓ | ~8min | ~2.7min |
-| 07-websocket-resilience-dtmf | 2/2 ✓ | ~6min | ~3min |
-| 08-lifecycle-observability | 2/2 ✓ | ~6min | ~3min |
-
-*Updated after each plan completion*
-| Phase 08 P02 | 4 | 2 tasks | 7 files |
+| 06-inbound-call-rtp-bridge | 3/3 | ~8min | ~2.7min |
+| 07-websocket-resilience-dtmf | 2/2 | ~6min | ~3min |
+| 08-lifecycle-observability | 2/2 | ~6min | ~3min |
 
 ## Accumulated Context
 
 ### Decisions
 
-All v1.0 decisions logged in PROJECT.md Key Decisions table.
-
-v2.0 decisions:
-- SIP library: emiago/sipgo v1.2.0 (pure Go, stable v1.x, production-proven via LiveKit)
-- SDP: pion/sdp/v3 v3.0.18 (same library LiveKit uses)
-- RTP: pion/rtp v1.10.1
-- Logging: rs/zerolog (structured JSON, low-allocation hot path)
-- No diago: raw RTP byte access needed for Twilio base64 encoding; diago abstraction fights this
-- DTMF PT: extract from SDP offer dynamically (sipgate uses PT 113, not conventional 101)
-- Docker final image: FROM scratch with CGO_ENABLED=0 static binary
-- [04-01] zerolog message field key is "message" (zerolog default), not "msg" — consistent throughout codebase
-- [04-01] SDP_CONTACT_IP is required (not optional) — needed for SDP contact line in Phase 6
-- [04-01] WS_TARGET_URL kept as exact v1.0 env var name for drop-in compatibility (NOT WS_URL)
-- [04-01] Config package uses fmt.Fprintf+os.Exit, not zerolog — avoids circular dep before logger init
-- [04-02] GOARCH=amd64 explicit in Dockerfile — prevents exec format errors from ARM Mac hosts building for Linux CI/prod
-- [04-02] CA certs included in Phase 4 Dockerfile — avoids Docker layer invalidation when Phase 6 TLS is added
-- [04-02] No RTP EXPOSE range in Dockerfile — large ranges stall Docker Desktop port proxy on macOS; Phase 6 adds with warning
-- [05-01] 75% re-register interval — matches diago's calcRetry pattern (confirmed from source); SIP-02 satisfied
-- [05-01] nil client guard in doRegister — sipgo Client.Do panics on nil receiver; guard returns proper error (Rule 1 fix)
-- [05-01] Server.Close() not used — returns nil in sipgo v1.2.0; shutdown via ctx cancel + ua.Close()
-- [05-01] slog-zerolog bridge added — sipgo slog output flows as zerolog JSON; avoids fragmented log stream
-- [05-01] pion/sdp + pion/rtp added in Phase 5 — avoids go.mod changes mid Phase 6 sprint
-- [Phase 06-01]: CallManagerIface defined in sip package to avoid circular import with bridge package
-- [Phase 06-01]: StartSession launched as goroutine in onInvite to prevent blocking subsequent INVITE handling
-- [Phase 06-01]: DTMF PT always extracted from SDP offer (never hardcoded); fallback to 101 if telephone-event not found
-- [Phase 06-02]: PortPool uses buffered chan int for O(1) lock-free acquire/release; non-blocking select default on exhaustion
-- [Phase 06-02]: wsutil.ReadServerData returns ([]byte, ws.OpCode, error) — single frame per call, not slice; text-frame filter added
-- [Phase 06-02]: wg.Wait() called BEFORE sendStop in run() — rtpToWS sole WS writer during audio; sendStop only after drain; prevents gobwas/ws concurrent write race (RESEARCH Pitfall 5)
-- [Phase 06-02]: Pitfall-6 guard: ctx.Err() != nil check at run() entry handles race where BYE arrives before session goroutine starts
-- [Phase 06-03]: sipgo.WithUserAgent(ua string) is the correct v1.2.0 API (not WithUserAgentName)
-- [Phase 06-03]: streamSid = MZ + 32 hex, callSidToken = CA + 32 hex; these are separate from SIP Call-ID
-- [Phase 06-03]: SIP Call-ID goes in customParameters.sipCallId; callSidToken goes in callSid field
-- [Phase 06-03]: WS dial + 200 OK belong in StartSession (not run()); run() accepts pre-dialed wsConn
-- [Phase 06-03]: rtpToWS uses plain blocking ReadFromUDP; run() calls rtpConn.Close() to unblock on shutdown
-- [Phase 07-01]: [07-01] wsSignal uses sync.Once to guard channel close — prevents double-close panic when both wsPacer and wsToRTP fail simultaneously
-- [Phase 07-01]: [07-01] s.wg now tracks ONLY rtpReader + rtpPacer; wsPacer + wsToRTP use per-connection local wsWg
-- [Phase 07-01]: [07-01] wsToRTP WS read error signals reconnect via sig.Signal() instead of dlg.Bye(); only stop event triggers BYE
-- [Phase 07-01]: [07-01] Shutdown sequence: SetReadDeadline → wsWg.Wait() → rtpConn.Close() → s.wg.Wait() → sendStop → wsConn.Close()
-- [Phase 07-02]: parseTelephoneEvent+sendDTMF in ws.go: RFC 4733 4-byte parser + Twilio dtmf event writer; dtmfQueue size 10 non-blocking send; dtmfQueue case before ticker.C in wsPacer for DTMF priority over audio; no new dependencies
-- [08-01] 503 (not 480) for INVITE reject during shutdown — RFC 3261 §21.5.4 defines 503 for server-draining
-- [08-01] DrainAll uses 50ms polling on sync.Map — avoids adding WaitGroup to session close path
-- [08-01] registered.Store(false) only on reregisterLoop failure, NOT before doRegister attempt — avoids false-negative during ~200ms round-trip
-- [08-01] Drain budget: 8s for calls + 5s for unregister; SIGTERM kill timeout should be >=15s in prod
-- [08-02] Custom prometheus.Registry excludes Go runtime metrics — only 5 audio-dock metrics exposed on /metrics
-- [08-02] active_calls_total as Gauge with _total suffix — OBS-03 specifies name literally; Prometheus client allows it
-- [08-02] nil-safe metrics guard pattern — enables nil injection in tests without real registry
-- [08-02] RTPTx increments on all successful WriteTo calls (including silence frames) — silence required for NAT traversal
-- [Phase 08]: [08-02] Custom prometheus.Registry excludes Go runtime metrics — only 5 audio-dock metrics exposed on /metrics
-- [Phase 08]: [08-02] active_calls_total as Gauge with _total suffix — OBS-03 specifies name literally; Prometheus client allows it
-- [Phase 08]: [08-02] nil-safe metrics guard pattern — enables nil injection in tests without real registry
+All decisions logged in PROJECT.md Key Decisions table and v2.0-ROADMAP.md archive.
 
 ### Pending Todos
 
@@ -110,12 +60,10 @@ None.
 
 ### Blockers/Concerns
 
-- [Phase 6] sipgo graceful shutdown (#116) not built-in — RESOLVED in 08-01 with DrainAll BYE loop (LCY-01 satisfied)
-- [Phase 6] DTMF PT mismatch risk: sipgate uses PT 113; must extract PT from SDP offer, never hardcode
-- [Phase 5 validation] Verify sipgate server-granted Expires value — log it on first live registration to confirm re-register timer interval (server_expires_s field logged)
+None. Milestone complete.
 
 ## Session Continuity
 
-Last session: 2026-03-04
-Stopped at: Completed 08-02-PLAN.md (HTTP /health + /metrics, 5 Prometheus metrics on custom registry, httpServer.Shutdown in drain sequence)
+Last session: 2026-03-05
+Stopped at: v2.0 milestone archived
 Resume file: None

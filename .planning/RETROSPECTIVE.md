@@ -4,6 +4,60 @@
 
 ---
 
+## Milestone: v2.0 — Go Rewrite
+
+**Shipped:** 2026-03-05
+**Phases:** 5 (4–8) | **Plans:** 9 | **Timeline:** 2 days (2026-03-03 → 2026-03-04)
+
+### What Was Built
+
+- Go module scaffold with zerolog JSON logging and fail-fast env config validation via go-simpler/env — zero-allocation hot path
+- ~1.06 MB Docker image via `FROM scratch` static binary with `CGO_ENABLED=0` GOARCH=amd64 cross-compile
+- sipgo v1.2.0 SIP registration with Digest Auth challenge/response and automatic re-registration at 75% of server-granted Expires
+- Full Twilio Media Streams bidirectional RTP↔WebSocket bridge: connected/start/media/stop events, per-call goroutine lifecycle
+- sync.Map CallManager + channel-based PortPool (O(1) lock-free acquire/release) for concurrent call isolation
+- WebSocket reconnect loop (1s/2s/4s exponential backoff, 30s budget) + RFC 4733 DTMF End-bit deduplication by RTP timestamp
+- Graceful SIGTERM drain: BYE all active calls (8s budget) → UNREGISTER (5s budget) → exit
+- `/health` JSON endpoint + `/metrics` Prometheus exposition with 5 custom metrics on isolated registry
+
+### What Worked
+
+- **Phase-ordered dependency structure**: Go Scaffold → SIP Registration → Bridge → Resilience → Observability meant each phase left a clean, tested API surface. No backtracking.
+- **TDD for pure Go logic**: PortPool, SDP parsing, parseTelephoneEvent all had RED-first test suites — caught edge cases before integration
+- **wsSignal pattern**: sync.Once-guarded channel for multi-goroutine failure signaling prevented double-close panics without a mutex
+- **per-connection wsWg separate from session s.wg**: allowed independent WS goroutine drain on reconnect without touching the persistent RTP goroutine lifecycle
+- **Custom prometheus.Registry**: keeping Go runtime metrics out of /metrics kept the scrape output clean and matching OBS-03 literally
+
+### What Was Inefficient
+
+- **4 SIP runtime bugs during Phase 6 live testing**: sipgo API differences from documentation (WithUserAgentName vs WithUserAgent), Record-Route handling, 200 OK synchronous send, CANCEL handling — required multiple fix commits post-implementation
+- **WSB-01..06 checkboxes not updated** during Phase 6 completion — only discovered at milestone archive time. Should update REQUIREMENTS.md checkboxes as part of each plan's docs commit.
+- **SDP_CONTACT_IP initially required** then changed to optional with auto-detect during a fix commit — plan should have specified optionality upfront
+- **gsd-tools milestone complete created stub entry** (0 tasks, no accomplishments) — the tool doesn't auto-extract SUMMARY.md content; manual enrichment needed every time
+
+### Patterns Established
+
+- **nil-safe metrics guard**: `if m.metrics != nil { ... }` pattern in all hot paths enables tests to pass nil without a real registry
+- **slog-zerolog bridge**: `samber/slog-zerolog` funnels sipgo's slog output into zerolog JSON stream — avoids split log formats
+- **DTMF PT dynamic extraction**: always extract `telephone-event` PT from SDP offer via pion/sdp; never hardcode 101 (sipgate uses 113)
+- **Drain budget split**: 8s for calls + 5s for unregister; configure SIGTERM kill timeout ≥15s in prod
+- **gobwas/ws write safety**: `wg.Wait()` before `sendStop` — rtpToWS is the sole writer during audio; sendStop only after drain
+
+### Key Lessons
+
+1. **sipgo v1.2.0 API surface differs from docs**: treat SIP library methods as requiring live verification pass, not just unit tests. `WithUserAgent` vs `WithUserAgentName`, `Server.Close()` returning nil, `ClientRequestRegisterBuild` option — these required live corrections.
+2. **RFC 4733 End-bit deduplication is essential**: sipgate sends 3–5 retransmits per DTMF keypress (all with same RTP timestamp). Without deduplication, each keypress fires 3–5 events. Filter on `End=1 && timestamp not seen`.
+3. **sync.Map polling is correct for drain**: avoid adding WaitGroup to the session close path (creates coupling); instead poll `ActiveCount()` with a 50ms tick + context deadline. Clean, bounded, no hot-path impact.
+4. **REQUIREMENTS.md checkbox discipline**: mark requirements checked at plan-completion time, not milestone-completion time. Stale checkboxes look like gaps.
+
+### Cost Observations
+
+- Model mix: claude-sonnet-4-6 throughout
+- Sessions: 2 days, 9 plans
+- Notable: Go rewrite with full feature parity in 2 days including SIP protocol debugging
+
+---
+
 ## Milestone: v1.0 — MVP
 
 **Shipped:** 2026-03-03
@@ -63,14 +117,18 @@
 | Milestone | Phases | Plans | Key Change |
 |-----------|--------|-------|------------|
 | v1.0 MVP | 3 | 10 | Initial project — established all patterns |
+| v2.0 Go Rewrite | 5 | 9 | Language rewrite — same external interface, faster execution per plan |
 
 ### Cumulative Quality
 
 | Milestone | Requirements | Coverage | Notes |
 |-----------|-------------|----------|-------|
 | v1.0 | 27/27 | Automated + 11 human-needed | FD leak: verified |
+| v2.0 | 29/29 | Automated + human-needed | WSB-01..06 docs gap; all implemented |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. SIP RFC compliance requires live testing — automated checks can verify wiring but not protocol correctness
-2. Per-call factory pattern (createRtpHandler, createWsClient) makes concurrent isolation trivially correct
+2. Per-call factory pattern (createRtpHandler / CallSession) makes concurrent isolation trivially correct
+3. Drop RTP during reconnect (not buffer) — bounded memory, acceptable audio gap, simpler code
+4. Update REQUIREMENTS.md checkboxes at plan-completion time, not milestone-completion time

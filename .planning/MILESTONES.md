@@ -1,5 +1,29 @@
 # Milestones
 
+## v2.0 Go Rewrite (Shipped: 2026-03-05)
+
+**Phases completed:** 5 phases (Go Scaffold · SIP Registration · Inbound Call + RTP Bridge · WebSocket Resilience + DTMF · Lifecycle + Observability), 9 plans
+**Files:** 15 Go source files, ~2,900 LOC Go
+**Git range:** `feat(04-01)` → `feat(08-02)`
+**Timeline:** 2026-03-03 → 2026-03-04 (2 days)
+
+**Delivered:** Complete Go rewrite of audio-dock — same external interface as v1.0, deterministic audio with goroutine-based RTP, ~1 MB Docker image from scratch, Prometheus observability included.
+
+**Key accomplishments:**
+1. Go module scaffold with zerolog JSON logging and fail-fast env config validation via go-simpler/env — zero-allocation hot path, matches all v1.0 env var names for drop-in compatibility
+2. ~1.06 MB Docker image via `FROM scratch` static binary (vs 180 MB Node.js Alpine baseline) with `CGO_ENABLED=0` cross-compile for amd64
+3. sipgo v1.2.0 SIP registration with Digest Auth challenge/response and automatic re-registration at 75% of server-granted Expires interval
+4. Full Twilio Media Streams bidirectional RTP↔WebSocket bridge: connected/start/media/stop events, per-call goroutine lifecycle, concurrent calls via sync.Map + channel-based PortPool
+5. WebSocket reconnect loop (1s/2s/4s exponential backoff, 30s budget) + RFC 4733 DTMF End-bit deduplication by RTP timestamp (sipgate PT 113)
+6. Graceful SIGTERM drain (BYE all active calls → UNREGISTER → exit within 10s) + `/health` + `/metrics` Prometheus endpoints (5 metrics on custom registry)
+
+**Known Gaps:**
+- WSB-01..06 checkboxes were not updated in REQUIREMENTS.md during Phase 6 (documentation gap, all implemented in 06-03)
+- Human verification items require live sipgate credentials (live SIP registration, audio E2E, concurrent calls)
+- DTMF PT mismatch monitoring: sipgate uses PT 113, service extracts dynamically — verify on first live registration
+
+---
+
 ## v1.0 MVP (Shipped: 2026-03-03)
 
 **Phases completed:** 3 phases (Foundation · Core Bridge · Resilience), 10 plans
@@ -22,4 +46,3 @@
 - 11 human verification items require live sipgate credentials (live SIP registration, audio E2E, concurrent calls)
 
 ---
-

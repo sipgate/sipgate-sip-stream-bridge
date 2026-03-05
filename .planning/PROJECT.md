@@ -2,88 +2,94 @@
 
 ## What This Is
 
-A Node.js/TypeScript service that registers with sipgate trunking via SIP, accepts incoming calls, and bridges the audio bidirectionally to a configurable WebSocket endpoint. The WebSocket protocol follows the Twilio Media Streams format, making it drop-in compatible with AI voice-bot backends. Runs as a Docker container with resilient WebSocket reconnection and graceful shutdown.
+A Go service that registers with sipgate trunking via SIP, accepts incoming calls, and bridges the audio bidirectionally to a configurable WebSocket endpoint. The WebSocket protocol follows the Twilio Media Streams format, making it drop-in compatible with AI voice-bot backends. Ships as a ~1 MB Docker image from a static Go binary. Includes `/health` and `/metrics` (Prometheus) endpoints. A Node.js/TypeScript reference implementation (v1.0) is preserved in the `node/` directory.
 
 ## Core Value
 
 Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket endpoint in real-time — audio flows both ways, the connection stays alive through transient drops, and the integration is drop-in compatible with Twilio Media Streams consumers.
 
-## Current Milestone: v2.0 Go Rewrite
+## Current State (v2.0 — shipped 2026-03-05)
 
-**Goal:** Rewrite audio-dock in Go to eliminate GC-induced audio jitter and achieve deterministic sub-millisecond latency — same external interface, smaller Docker image, observability included.
+**Tech stack:** Go 1.26, emiago/sipgo v1.2.0, pion/sdp v3.0.18, pion/rtp v1.10.1, rs/zerolog, gobwas/ws, prometheus/client_golang v1.23.2. Docker: golang:1.26-alpine builder + FROM scratch runtime.
 
-**Target features:**
-- Complete Go implementation: SIP registration, bidirectional RTP↔WebSocket bridge, Twilio Media Streams protocol
-- Deterministic audio: no drain-queue workarounds; Go goroutines + raw `net.UDPConn` handle UDP natively
-- `/health` + `/metrics` (Prometheus) via stdlib `net/http` — no additional framework needed
-- Static Go binary in Docker FROM scratch or distroless — significantly smaller image than Node.js runtime
+**Codebase:** 15 Go source files, ~2,900 LOC. Layout:
+- `go/cmd/audio-dock/main.go` — entrypoint, wiring, graceful drain
+- `go/internal/config/` — env var schema + validation
+- `go/internal/sip/` — Agent, Registrar, Handler, SDP parsing
+- `go/internal/bridge/` — PortPool, CallManager, CallSession, WS bridge
+- `go/internal/observability/` — Prometheus metrics
+
+**Known issues / tech debt:**
+- Human verification items require live sipgate credentials (E2E audio, concurrent calls, registration confirm)
+- DTMF PT mismatch watch: sipgate uses PT 113; service extracts dynamically from SDP offer
 
 ## Requirements
 
 ### Validated
 
-- ✓ Service registers with sipgate trunking via SIP on startup — v1.0 (SIP.js 0.21.x + ws polyfill, refreshFrequency 90)
-- ✓ Service accepts incoming SIP calls and negotiates PCMU codec — v1.0 (full INVITE/ACK/BYE/OPTIONS handling)
-- ✓ Each call establishes a dedicated WebSocket connection to the configured target URL — v1.0 (per-call WsClient factory)
-- ✓ Audio from caller is forwarded to WebSocket in Twilio Media Streams format (base64 mulaw 8kHz) — v1.0
-- ✓ Audio received from WebSocket is played back to the caller (bidirectional) — v1.0
-- ✓ Multiple concurrent calls supported, each with independent WebSocket connection — v1.0 (CallSession Map)
-- ✓ If WebSocket is unavailable at call start, the SIP call is rejected with 503 — v1.0
-- ✓ If WebSocket drops during an active call, service reconnects and keeps call alive — v1.0 (exponential backoff 1s/2s/4s, 30s budget)
-- ✓ All credentials and target URL configured via environment variables — v1.0 (Zod 4 validated config)
-- ✓ Service runs in Docker with multi-stage build on node:22-alpine — v1.0
+- ✓ Service registers with sipgate trunking via SIP on startup — v1.0 (SIP.js 0.21.x), v2.0 (sipgo v1.2.0)
+- ✓ Service accepts incoming SIP calls and negotiates PCMU codec — v1.0, v2.0
+- ✓ Each call establishes a dedicated WebSocket connection to the configured target URL — v1.0, v2.0
+- ✓ Audio from caller is forwarded to WebSocket in Twilio Media Streams format (base64 mulaw 8kHz) — v1.0, v2.0
+- ✓ Audio received from WebSocket is played back to the caller (bidirectional) — v1.0, v2.0
+- ✓ Multiple concurrent calls supported, each with independent WebSocket connection — v1.0, v2.0
+- ✓ If WebSocket is unavailable at call start, the SIP call is rejected with 503 — v1.0, v2.0
+- ✓ If WebSocket drops during an active call, service reconnects and keeps call alive — v1.0, v2.0 (exponential backoff 1s/2s/4s, 30s budget)
+- ✓ All credentials and target URL configured via environment variables — v1.0, v2.0 (same env var names)
+- ✓ Service runs in Docker with multi-stage build — v1.0 (node:22-alpine), v2.0 (FROM scratch ~1 MB)
+- ✓ DTMF digits forwarded as `dtmf` events (RFC 4733 End-bit deduplication) — v1.0, v2.0
+- ✓ Automatic re-registration at server-granted Expires interval — v1.0 (refreshFrequency 90%), v2.0 (75% re-register goroutine)
+- ✓ Graceful SIGTERM shutdown — v2.0 (DrainAll BYE loop + UNREGISTER, exits within 10s)
+- ✓ `GET /health` returns JSON with registered status and active call count — v2.0
+- ✓ `GET /metrics` returns Prometheus exposition with 5 key counters — v2.0
 
 ### Active
 
-- [ ] Complete Go rewrite with 1:1 feature parity to v1.0 (SIP bridge + WS bridge + resilience)
-- [ ] `GET /health` returns JSON with registration status and active call count (OBS-02)
-- [ ] `GET /metrics` returns Prometheus exposition format with key counters (OBS-03)
-- [ ] Static Go binary Docker image — no Node.js runtime
+- [ ] Human E2E verification: live SIP registration, audio quality, concurrent calls, DTMF roundtrip
+- [ ] SIP OPTIONS keepalive to detect silent registration loss (EXT-02)
 
 ### Out of Scope
 
-- Outbound call initiation — inbound only (different state machine, v2 candidate)
+- Outbound call initiation — inbound only (different state machine)
 - Web UI or management dashboard — config is env-only
 - Call recording or storage — audio is streamed, not persisted
 - Multiple target URLs / routing logic — single fixed WebSocket URL (dumb pipe by design)
-- SRTP / media encryption — plain RTP assumed for internal infrastructure use
+- SRTP / media encryption — plain RTP for internal infrastructure use
 - Multi-codec support (G.722, Opus) — PCMU only; transcoding belongs in WS consumer
-- Outbound calls — v2 candidate
 
 ## Context
 
-**Shipped v1.0** with 1,648 LOC TypeScript, 39 files.
+**v1.0** shipped 2026-03-03 with 1,648 TypeScript LOC, 39 files (preserved in `node/`).
+**v2.0** shipped 2026-03-05 with ~2,900 Go LOC, 15 files.
 
-**Tech stack:** Node.js 22, TypeScript 5.9 (NodeNext ESM), SIP.js 0.21.2, pino 10.3.1, ws 8.19.0, Zod 4.3.6, tsup, tsx, Docker node:22-alpine.
-
-**Known issues / tech debt:**
-- `src/logger/index.ts:4` reads `LOG_LEVEL` directly from `process.env` instead of validated `config.LOG_LEVEL` (M-01)
-- `callManager.ts:461` DTMF handler lacks `wsReconnecting` gate (cosmetic, functionally safe) (M-02)
-- 11 human verification items require live sipgate credentials and network (E2E test gap)
-
-**Next milestone focus:** Phase 4 Observability — HTTP health + Prometheus metrics endpoints.
+**Drop-in compatibility:** All env var names identical to v1.0. Same Twilio Media Streams protocol.
 
 ## Constraints
 
-- **Tech Stack**: Node.js + TypeScript — no compiled sidecar processes
-- **Language**: Go — deterministic GC, goroutines, direct syscall UDP access
-- **SIP Library**: TBD (research needed — sipgo/emiago is the main candidate)
-- **Transport**: UDP/TCP SIP, RTP audio
-- **Config**: Environment variables only — no config files, suitable for Docker/K8s secrets
-- **Backwards compat**: Same env var names as v1.0, same WS protocol — drop-in replacement
+- **Language:** Go — deterministic GC, goroutines, direct syscall UDP access
+- **SIP Library:** emiago/sipgo v1.2.0
+- **Transport:** UDP/TCP SIP, RTP audio
+- **Config:** Environment variables only — no config files, suitable for Docker/K8s secrets
+- **Backwards compat:** Same env var names as v1.0, same WS protocol — drop-in replacement
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| SIP.js over drachtio | No C++ sidecar, simpler Docker setup | ✓ Good — works in Node.js with ws polyfill |
+| SIP.js over drachtio (v1.0) | No C++ sidecar, simpler Docker setup | ✓ Good — works in Node.js with ws polyfill |
 | Twilio Media Streams format | Drop-in compatibility with existing AI voice backends | ✓ Good — validated full protocol (connected/start/media/stop/dtmf) |
 | Reject call if WS unavailable | Fail fast is cleaner than silently dropping audio | ✓ Good — 503 rejection implemented |
-| Reconnect on WS drop, hold call | Better UX than forcing caller to redial on transient WS issues | ✓ Good — backoff loop + silence injection |
+| Reconnect on WS drop, hold call | Better UX than forcing caller to redial on transient WS issues | ✓ Good — backoff loop in both v1.0 and v2.0 |
 | network_mode: host for Docker | RTP requires no NAT; Docker port-proxy adds ~10ms UDP jitter | ✓ Good — essential for RTP timing |
-| Zod 4 for config validation | Single-source-of-truth env var schema with fail-fast | ✓ Good — note: logger bypasses this for LOG_LEVEL (M-01) |
-| Drop RTP during WS reconnect (not buffer) | Bounded memory; audio gap is brief and acceptable | ✓ Good — consistent with protocol design |
-| pnpm fetch layer in Dockerfile | Cache layer invalidates only on lockfile change, not source | ✓ Good — fast rebuilds |
+| Zod 4 for config validation (v1.0) | Single-source-of-truth env var schema with fail-fast | ✓ Good |
+| Drop RTP during WS reconnect (not buffer) | Bounded memory; audio gap is brief and acceptable | ✓ Good — consistent across v1.0 and v2.0 |
+| Go rewrite for v2.0 | Eliminate GC-induced jitter, shrink Docker image, add observability | ✓ Good — ~1 MB image, goroutine-based determinism |
+| emiago/sipgo v1.2.0 | Pure Go, stable v1.x, production-proven via LiveKit | ✓ Good — Digest Auth + dialog cache work correctly |
+| FROM scratch Docker image | ~1 MB vs 180 MB Node.js Alpine; no shell, no runtime attack surface | ✓ Good — achieved 1.06 MB |
+| No diago higher-level RTP | Raw RTP byte access needed for Twilio base64 encoding | ✓ Good — diago abstraction fights this use case |
+| Custom prometheus.Registry | Excludes Go runtime noise from /metrics scrape | ✓ Good — only 5 audio-dock metrics exposed |
+| wsSignal with sync.Once | Double-close-safe signaling when multiple goroutines can fail | ✓ Good — prevents panic on simultaneous failures |
+| pnpm fetch layer in Dockerfile (v1.0) | Cache layer invalidates only on lockfile change | ✓ Good — fast rebuilds |
 
 ---
-*Last updated: 2026-03-03 after v1.0 milestone; v2.0 Go Rewrite started*
+*Last updated: 2026-03-05 after v2.0 milestone*
