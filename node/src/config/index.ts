@@ -14,6 +14,7 @@ const configSchema = z
     RTP_PORT_MAX: z.coerce.number().int().min(1025).max(65535).default(10099),
     SDP_CONTACT_IP: z.ipv4().optional(),
     SIP_EXPIRES: z.coerce.number().int().positive().default(120),
+    SIP_OPTIONS_INTERVAL: z.coerce.number().int().positive().default(30),
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
     HTTP_PORT: z.coerce.number().int().min(1).max(65535).default(9090),
   })
