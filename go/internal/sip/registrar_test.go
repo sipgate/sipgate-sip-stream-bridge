@@ -9,7 +9,7 @@ import (
 
 	siplib "github.com/emiago/sipgo/sip"
 	"github.com/rs/zerolog"
-	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 // TestRegistrar_NilClientReturnsError verifies that constructing a Registrar

@@ -4,7 +4,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Metrics holds all Prometheus metrics for audio-dock.
+// Metrics holds all Prometheus metrics for sipgate-sip-stream-bridge.
 // Passed to CallManager and Registrar at construction; never registered globally.
 // Metric names match REQUIREMENTS.md OBS-03 exactly.
 // NOTE: active_calls_total is a Gauge (goes up/down with sessions) — the _total suffix
@@ -24,7 +24,7 @@ type Metrics struct {
 
 // NewMetrics creates a custom registry and registers all five required metrics.
 // Uses prometheus.NewRegistry() (NOT prometheus.DefaultRegisterer) to exclude Go runtime metrics
-// from the /metrics scrape output — only audio-dock metrics are exposed (Research anti-pattern note).
+// from the /metrics scrape output — only sipgate-sip-stream-bridge metrics are exposed (Research anti-pattern note).
 func NewMetrics() *Metrics {
 	reg := prometheus.NewRegistry()
 

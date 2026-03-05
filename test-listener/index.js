@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Minimal Twilio Media Streams listener for testing audio-dock.
+// Minimal Twilio Media Streams listener for testing sipgate-sip-stream-bridge.
 // Usage: node test-listener.js [port]   (default: 8080)
 //
 // Set WS_TARGET_URL=ws://localhost:8080 in your .env and run:

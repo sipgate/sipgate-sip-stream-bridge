@@ -14,8 +14,8 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/pion/rtp"
 	"github.com/rs/zerolog"
-	"github.com/sipgate/audio-dock/internal/config"
-	"github.com/sipgate/audio-dock/internal/observability"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
 )
 
 // packetQueueSize is the maximum number of 20 ms PCMU frames buffered for the RTP pacer.

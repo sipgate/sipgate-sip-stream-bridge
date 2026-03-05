@@ -1,6 +1,6 @@
 # test-listener
 
-Minimal Twilio Media Streams WebSocket server for local testing of audio-dock.
+Minimal Twilio Media Streams WebSocket server for local testing of sipgate-sip-stream-bridge.
 
 ## Setup
 
@@ -14,7 +14,7 @@ npm install   # or: pnpm install / yarn
 node index.js [port]   # default port: 8080
 ```
 
-Set `WS_TARGET_URL=ws://localhost:8080` in your audio-dock `.env`, then start the listener before starting audio-dock.
+Set `WS_TARGET_URL=ws://localhost:8080` in your sipgate-sip-stream-bridge `.env`, then start the listener before starting sipgate-sip-stream-bridge.
 
 ## Modes
 
@@ -49,7 +49,7 @@ npm run tone     # MODE=tone
 | Service | Default port |
 |---------|-------------|
 | test-listener (WebSocket) | **8080** |
-| audio-dock Go `/health`+`/metrics` | **9090** |
-| audio-dock Node `/health`+`/metrics` | **9090** |
+| sipgate-sip-stream-bridge Go `/health`+`/metrics` | **9090** |
+| sipgate-sip-stream-bridge Node `/health`+`/metrics` | **9090** |
 
 Override with `PORT=<n> node index.js` or `node index.js <port>`.

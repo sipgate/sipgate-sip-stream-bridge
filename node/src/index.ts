@@ -10,7 +10,7 @@ const log = createChildLogger({ component: 'main' });
 
 log.info(
   { event: 'startup', sipUser: config.SIP_USER, sipDomain: config.SIP_DOMAIN },
-  'audio-dock starting'
+  'sipgate-sip-stream-bridge starting'
 );
 
 async function main(): Promise<void> {

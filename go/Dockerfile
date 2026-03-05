@@ -1,4 +1,4 @@
-# audio-dock Dockerfile — Go static binary (v2.0)
+# sipgate-sip-stream-bridge Dockerfile — Go static binary (v2.0)
 # Stage 1: Build — golang:1.26-alpine has musl libc + CA certs; produces statically-linked binary
 # Stage 2: Runtime — FROM scratch (empty filesystem); only the binary and CA certs are included
 
@@ -17,8 +17,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build \
     -ldflags="-s -w" \
     -trimpath \
-    -o /audio-dock \
-    ./cmd/audio-dock
+    -o /sipgate-sip-stream-bridge \
+    ./cmd/sipgate-sip-stream-bridge
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────────
 # FROM scratch = empty filesystem; only our binary and CA certs are present.
@@ -31,7 +31,7 @@ FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Copy the statically-linked binary
-COPY --from=builder /audio-dock /audio-dock
+COPY --from=builder /sipgate-sip-stream-bridge /sipgate-sip-stream-bridge
 
 # SIP ports — documented for reference; not required with network_mode: host
 # Note: DO NOT EXPOSE the RTP port range (10000-10099/udp) here —
@@ -40,4 +40,4 @@ COPY --from=builder /audio-dock /audio-dock
 EXPOSE 5060/udp
 EXPOSE 5060/tcp
 
-ENTRYPOINT ["/audio-dock"]
+ENTRYPOINT ["/sipgate-sip-stream-bridge"]

@@ -1,4 +1,4 @@
-# audio-dock — Go implementation (v2.0)
+# sipgate-sip-stream-bridge — Go implementation (v2.0)
 
 A Go service that bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) protocol. Drop-in compatible with any Twilio Media Streams consumer — AI voice bots, call recording, real-time transcription.
 
@@ -8,7 +8,7 @@ sipgate SIP trunk  ←───────────────────�
         │ SIP (UDP/TCP :5060)                                             RTP/UDP  │
         ▼                                                                          ▼
   ┌──────────────────────────────────────────────────────────────────────────────┐
-  │                             audio-dock (Go)                                   │
+  │                             sipgate-sip-stream-bridge (Go)                                   │
   │                                                                               │
   │   SIP Handler ──► CallManager ──► CallSession                                 │
   │                                       │                                       │
@@ -87,13 +87,13 @@ The service validates all variables at startup and exits immediately with a stru
 ```bash
 cd go
 cp ../.env.example ../.env   # fill in SIP credentials
-go run ./cmd/audio-dock       # run directly
-go build -o audio-dock ./cmd/audio-dock && ./audio-dock   # or build first
+go run ./cmd/sipgate-sip-stream-bridge       # run directly
+go build -o sipgate-sip-stream-bridge ./cmd/sipgate-sip-stream-bridge && ./sipgate-sip-stream-bridge   # or build first
 ```
 
 You should see:
 ```json
-{"level":"info","sip_user":"e12345p0","message":"audio-dock starting"}
+{"level":"info","sip_user":"e12345p0","message":"sipgate-sip-stream-bridge starting"}
 {"level":"info","registrar":"sipconnect.sipgate.de","server_expires_s":120,"message":"SIP registration successful"}
 {"level":"info","message":"SIP registration active — ready to accept inbound calls"}
 ```
@@ -106,8 +106,8 @@ You should see:
 # Terminal 1 — listener on port 8080
 node ../test-listener.js
 
-# Terminal 2 — audio-dock
-go run ./cmd/audio-dock
+# Terminal 2 — sipgate-sip-stream-bridge
+go run ./cmd/sipgate-sip-stream-bridge
 ```
 
 Then call your sipgate number. The listener logs `connected`, `start`, and `media` events.
@@ -127,7 +127,7 @@ go test ./... -race      # with race detector
 
 ```bash
 cd go
-docker build -t audio-dock:latest .
+docker build -t sipgate-sip-stream-bridge:latest .
 ```
 
 The Dockerfile uses a two-stage build:
@@ -139,7 +139,7 @@ The Dockerfile uses a two-stage build:
 ```bash
 cp ../.env.example ../.env   # fill in credentials
 docker compose up -d
-docker compose logs -f audio-dock
+docker compose logs -f sipgate-sip-stream-bridge
 docker compose down
 ```
 
@@ -149,7 +149,7 @@ The `docker-compose.yml` uses `network_mode: host`, which is required on Linux f
 
 ```yaml
 services:
-  audio-dock:
+  sipgate-sip-stream-bridge:
     network_mode: bridge
     ports:
       - "5060:5060/udp"
@@ -189,9 +189,9 @@ Prometheus exposition format. Metrics:
 
 ## WebSocket Protocol
 
-audio-dock implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to `WS_TARGET_URL`.
+sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to `WS_TARGET_URL`.
 
-### audio-dock → backend
+### sipgate-sip-stream-bridge → backend
 
 #### `connected`
 ```json
@@ -260,7 +260,7 @@ Sent after all preceding outbound audio frames have been delivered to the caller
 }
 ```
 
-### backend → audio-dock
+### backend → sipgate-sip-stream-bridge
 
 #### `media` (outbound audio to caller)
 ```json
@@ -280,7 +280,7 @@ Sent after all preceding outbound audio frames have been delivered to the caller
 }
 ```
 
-Requests a mark echo. audio-dock places a mark sentinel in the outbound audio queue. When all preceding audio frames have been sent to the caller, audio-dock sends a `mark` event back to the backend with the same name. If the queue is idle at the moment the mark arrives, the echo is sent immediately (fast-path, no enqueue).
+Requests a mark echo. sipgate-sip-stream-bridge places a mark sentinel in the outbound audio queue. When all preceding audio frames have been sent to the caller, sipgate-sip-stream-bridge sends a `mark` event back to the backend with the same name. If the queue is idle at the moment the mark arrives, the echo is sent immediately (fast-path, no enqueue).
 
 #### `clear`
 ```json
@@ -290,7 +290,7 @@ Requests a mark echo. audio-dock places a mark sentinel in the outbound audio qu
 }
 ```
 
-Instructs audio-dock to discard all buffered outbound audio immediately. Any pending mark sentinels in the queue are echoed back to the backend before the queue is flushed. The outbound RTP pacer continues running — silence is sent to the caller during the gap.
+Instructs sipgate-sip-stream-bridge to discard all buffered outbound audio immediately. Any pending mark sentinels in the queue are echoed back to the backend before the queue is flushed. The outbound RTP pacer continues running — silence is sent to the caller during the gap.
 
 ### WebSocket reconnect behaviour
 
@@ -300,7 +300,7 @@ If the backend disconnects during an active call:
 2. Inbound RTP from the caller is **dropped** (not buffered) during reconnect.
 3. Reconnect is retried with exponential backoff: **1 s → 2 s → 4 s** (capped), up to a **30-second budget**.
 4. On successful reconnect, the backend receives a fresh `connected` then `start` before any `media`.
-5. If the budget is exhausted, audio-dock sends SIP BYE and terminates the call.
+5. If the budget is exhausted, sipgate-sip-stream-bridge sends SIP BYE and terminates the call.
 
 ---
 
@@ -310,7 +310,7 @@ If the backend disconnects during an active call:
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| Entrypoint | `cmd/audio-dock/main.go` | Wires all components; signal handling; graceful shutdown sequence |
+| Entrypoint | `cmd/sipgate-sip-stream-bridge/main.go` | Wires all components; signal handling; graceful shutdown sequence |
 | Config | `internal/config/config.go` | go-simpler/env validated config; exits on missing vars |
 | SIP Agent | `internal/sip/agent.go` | sipgo UA/Server/Client setup |
 | SIP Handler | `internal/sip/handler.go` | INVITE/ACK/BYE/OPTIONS dispatch; shutdown guard (503 during drain) |
@@ -337,7 +337,7 @@ If the backend disconnects during an active call:
 
 ```
 go/
-├── cmd/audio-dock/
+├── cmd/sipgate-sip-stream-bridge/
 │   └── main.go                    # Entrypoint
 ├── internal/
 │   ├── config/

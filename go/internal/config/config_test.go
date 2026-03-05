@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 func TestLoad_AllRequired_ReturnsConfig(t *testing.T) {

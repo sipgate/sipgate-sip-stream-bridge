@@ -1,4 +1,4 @@
-# audio-dock — Node.js implementation (v1.0)
+# sipgate-sip-stream-bridge — Node.js implementation (v1.0)
 
 A Node.js/TypeScript service that bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) protocol. Drop-in compatible with any Twilio Media Streams consumer — AI voice bots, call recording, real-time transcription.
 
@@ -8,7 +8,7 @@ sipgate SIP trunk  ←───────────────────�
         │ SIP (UDP :5060)                                                 RTP/UDP  │
         ▼                                                                          ▼
   ┌──────────────────────────────────────────────────────────────────────────────┐
-  │                          audio-dock (Node.js)                                 │
+  │                          sipgate-sip-stream-bridge (Node.js)                                 │
   │                                                                               │
   │   SipUserAgent ──► CallManager ──► RtpHandler  (per-call UDP media socket)   │
   │                         │                                                     │
@@ -91,8 +91,8 @@ pnpm typecheck               # type-check without emitting
 
 You should see:
 ```json
-{"level":30,"service":"audio-dock","event":"startup","sipUser":"e12345p0","sipDomain":"sipconnect.sipgate.de"}
-{"level":30,"service":"audio-dock","event":"sip_registered","expires":120}
+{"level":30,"service":"sipgate-sip-stream-bridge","event":"startup","sipUser":"e12345p0","sipDomain":"sipconnect.sipgate.de"}
+{"level":30,"service":"sipgate-sip-stream-bridge","event":"sip_registered","expires":120}
 ```
 
 ### Quick integration test
@@ -104,7 +104,7 @@ You should see:
 MODE=log node ../test-listener.js      # log all events (default)
 MODE=echo node ../test-listener.js     # echo caller audio back
 
-# Terminal 2 — audio-dock
+# Terminal 2 — sipgate-sip-stream-bridge
 pnpm dev
 ```
 
@@ -118,7 +118,7 @@ Then call your sipgate number. The listener logs `connected`, `start`, and `medi
 
 ```bash
 cd node
-docker build -t audio-dock-node:latest .
+docker build -t sipgate-sip-stream-bridge-node:latest .
 ```
 
 The Dockerfile uses a four-stage build:
@@ -132,7 +132,7 @@ The Dockerfile uses a four-stage build:
 ```bash
 cp ../.env.example ../.env
 docker compose up -d
-docker compose logs -f audio-dock
+docker compose logs -f sipgate-sip-stream-bridge
 docker compose down
 ```
 
@@ -142,9 +142,9 @@ The `docker-compose.yml` uses `network_mode: host`, which is required on Linux f
 
 ## WebSocket Protocol
 
-audio-dock implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to `WS_TARGET_URL`.
+sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to `WS_TARGET_URL`.
 
-### audio-dock → backend
+### sipgate-sip-stream-bridge → backend
 
 #### `connected`
 ```json
@@ -214,7 +214,7 @@ Sent after all preceding outbound audio frames have been delivered to the caller
 }
 ```
 
-### backend → audio-dock
+### backend → sipgate-sip-stream-bridge
 
 #### `media` (outbound audio to caller)
 ```json
@@ -234,7 +234,7 @@ Sent after all preceding outbound audio frames have been delivered to the caller
 }
 ```
 
-Requests a mark echo. audio-dock places a mark sentinel in the outbound audio queue. When all preceding audio frames have been sent to the caller, audio-dock sends a `mark` event back to the backend with the same name. If the queue is idle at the moment the mark arrives, the echo is sent immediately (fast-path, no enqueue).
+Requests a mark echo. sipgate-sip-stream-bridge places a mark sentinel in the outbound audio queue. When all preceding audio frames have been sent to the caller, sipgate-sip-stream-bridge sends a `mark` event back to the backend with the same name. If the queue is idle at the moment the mark arrives, the echo is sent immediately (fast-path, no enqueue).
 
 #### `clear`
 ```json
@@ -244,7 +244,7 @@ Requests a mark echo. audio-dock places a mark sentinel in the outbound audio qu
 }
 ```
 
-Instructs audio-dock to discard all buffered outbound audio immediately. Any pending mark sentinels in the queue are echoed back to the backend before the queue is flushed.
+Instructs sipgate-sip-stream-bridge to discard all buffered outbound audio immediately. Any pending mark sentinels in the queue are echoed back to the backend before the queue is flushed.
 
 ### WebSocket reconnect behaviour
 
@@ -255,7 +255,7 @@ If the backend disconnects during an active call:
 3. Inbound RTP is **dropped** (not buffered) during reconnect.
 4. Reconnect retries with backoff: **1 s → 2 s → 4 s** (capped), up to a **30-second budget**.
 5. On reconnect, backend receives fresh `connected` + `start` before any `media`.
-6. If the budget is exhausted, audio-dock sends SIP BYE.
+6. If the budget is exhausted, sipgate-sip-stream-bridge sends SIP BYE.
 
 ---
 

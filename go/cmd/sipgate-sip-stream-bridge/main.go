@@ -11,10 +11,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
-	"github.com/sipgate/audio-dock/internal/bridge"
-	"github.com/sipgate/audio-dock/internal/config"
-	"github.com/sipgate/audio-dock/internal/observability"
-	"github.com/sipgate/audio-dock/internal/sip"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/bridge"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/sip"
 )
 
 func main() {
@@ -41,7 +41,7 @@ func main() {
 		Int("rtp_port_min", cfg.RTPPortMin).
 		Int("rtp_port_max", cfg.RTPPortMax).
 		Int("sip_expires", cfg.SIPExpires).
-		Msg("audio-dock starting")
+		Msg("sipgate-sip-stream-bridge starting")
 
 	// Create Prometheus metrics registry (OBS-02, OBS-03)
 	metrics := observability.NewMetrics()
