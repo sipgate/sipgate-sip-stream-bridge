@@ -96,13 +96,13 @@ Scanned `registrar.go`, `config.go`, `metrics.go`, `registrar_test.go`, `config_
 
 #### 1. Live sipgate OPTIONS Response
 
-**Test:** Start audio-dock with valid sipgate credentials. Watch logs for "OPTIONS keepalive: success" or "OPTIONS keepalive: 401/407 — server reachable" messages at 30s intervals.
+**Test:** Start sipgate-sip-stream-bridge with valid sipgate credentials. Watch logs for "OPTIONS keepalive: success" or "OPTIONS keepalive: 401/407 — server reachable" messages at 30s intervals.
 **Expected:** Log lines appear every 30s. If sipgate responds with 200/401/407, no re-registration is triggered. If sipgate returns 5xx or drops the request (timeout), the failure counter increments and after 2 consecutive failures a re-registration attempt is logged.
 **Why human:** Requires live sipgate credentials and a running service with network access to sipgate's SIP registrar.
 
 #### 2. SIGTERM Graceful Shutdown with Active Keepalive
 
-**Test:** Start audio-dock, confirm keepalive logs appear, then send SIGTERM. Check that the process exits cleanly (exit code 0 or expected signal exit) and no goroutine leak is reported via pprof `/debug/pprof/goroutine` before shutdown.
+**Test:** Start sipgate-sip-stream-bridge, confirm keepalive logs appear, then send SIGTERM. Check that the process exits cleanly (exit code 0 or expected signal exit) and no goroutine leak is reported via pprof `/debug/pprof/goroutine` before shutdown.
 **Expected:** `optionsKeepaliveLoop` goroutine exits within one ticker interval after SIGTERM propagates the cancelled context. No "goroutine leaked" warning from goleak or pprof.
 **Why human:** Requires a live process and signal delivery. `TestOptionsKeepalive_ContextCancel` covers the context-cancel path programmatically but cannot substitute for a real SIGTERM with the full application lifecycle.
 

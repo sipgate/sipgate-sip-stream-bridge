@@ -188,7 +188,7 @@ func (r *Registrar) optionsKeepaliveLoop(ctx context.Context, interval time.Dura
 func (r *Registrar) sendOptions(ctx context.Context) (*siplib.Response, error) {
     registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
     req := siplib.NewRequest(siplib.OPTIONS, registrarURI)
-    req.AppendHeader(siplib.NewHeader("User-Agent", "audio-dock/2.0"))
+    req.AppendHeader(siplib.NewHeader("User-Agent", "sipgate-sip-stream-bridge/2.0"))
     req.AppendHeader(siplib.NewHeader("Max-Forwards", "70"))
 
     aor := r.aorURI()
@@ -315,7 +315,7 @@ go r.optionsKeepaliveLoop(ctx, r.optionsInterval)
 
 ### Pitfall 1: From/To Headers Missing on OPTIONS Request
 
-**What goes wrong:** `client.Do(ctx, req, sipgo.ClientRequestBuild)` derives `From.User` from the sipgo UA name (the Go binary name, "audio-dock"), not from `r.user`. sipgate may reject or ignore an OPTIONS with the wrong AoR, or fail to correlate it as a legitimate keepalive from the registered identity.
+**What goes wrong:** `client.Do(ctx, req, sipgo.ClientRequestBuild)` derives `From.User` from the sipgo UA name (the Go binary name, "sipgate-sip-stream-bridge"), not from `r.user`. sipgate may reject or ignore an OPTIONS with the wrong AoR, or fail to correlate it as a legitimate keepalive from the registered identity.
 
 **Why it happens:** `ClientRequestBuild` sets From only if the header is absent (confirmed: `client.go:338-353`). If we don't set From and To before calling `Do`, the builder fills From.User from `c.UserAgent.name`.
 

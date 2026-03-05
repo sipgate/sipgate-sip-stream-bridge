@@ -10,9 +10,9 @@
 
 This is a **subsequent-milestone architecture document**. The v2.0 codebase is already shipped and verified. This document maps exactly three new features onto the existing goroutine and component architecture:
 
-1. **`mark` event** — WS server sends mark message → audio-dock echoes it when outbound audio playout reaches that point
-2. **`clear` event** — WS server sends clear → audio-dock flushes buffered outbound PCMU frames from `packetQueue`
-3. **SIP OPTIONS keepalive** — audio-dock sends periodic OPTIONS to sipgate; 408/503 response triggers re-registration
+1. **`mark` event** — WS server sends mark message → sipgate-sip-stream-bridge echoes it when outbound audio playout reaches that point
+2. **`clear` event** — WS server sends clear → sipgate-sip-stream-bridge flushes buffered outbound PCMU frames from `packetQueue`
+3. **SIP OPTIONS keepalive** — sipgate-sip-stream-bridge sends periodic OPTIONS to sipgate; 408/503 response triggers re-registration
 
 ---
 
@@ -71,7 +71,7 @@ other goroutine. gobwas/ws is not safe for concurrent writes.
 
 ### Protocol (Twilio Media Streams — official docs)
 
-**From WS server to audio-dock (inbound direction on wsToRTP):**
+**From WS server to sipgate-sip-stream-bridge (inbound direction on wsToRTP):**
 ```json
 {
   "event": "mark",
@@ -80,7 +80,7 @@ other goroutine. gobwas/ws is not safe for concurrent writes.
 }
 ```
 
-**From audio-dock to WS server (outbound direction from wsPacer — the echo):**
+**From sipgate-sip-stream-bridge to WS server (outbound direction from wsPacer — the echo):**
 ```json
 {
   "event": "mark",
@@ -90,7 +90,7 @@ other goroutine. gobwas/ws is not safe for concurrent writes.
 }
 ```
 
-**Semantics:** When the WS server sends a mark after a sequence of media frames, audio-dock must
+**Semantics:** When the WS server sends a mark after a sequence of media frames, sipgate-sip-stream-bridge must
 echo the mark back when the outbound audio playout reaches that point in the queue — i.e., when
 the mark arrives at the front of the draining packetQueue. This signals "I have played everything
 up to this label."
@@ -191,7 +191,7 @@ handoff to wsPacer preserves the invariant without any mutex.
 
 ### Protocol (Twilio Media Streams — official docs)
 
-**From WS server to audio-dock (inbound on wsToRTP):**
+**From WS server to sipgate-sip-stream-bridge (inbound on wsToRTP):**
 ```json
 {
   "event": "clear",
@@ -295,7 +295,7 @@ case "clear":
 
 Audio-dock sends an outbound OPTIONS request to `SIP_REGISTRAR` at a configurable interval (e.g.,
 30s). If the registrar replies with 200 OK, the registration is confirmed alive. If the reply
-is 408 (Timeout), 503 (Unavailable), or if no reply arrives within a timeout window, audio-dock
+is 408 (Timeout), 503 (Unavailable), or if no reply arrives within a timeout window, sipgate-sip-stream-bridge
 treats the registration as silently lost and triggers an immediate re-registration.
 
 This solves the case where sipgate drops the registration record silently (no REGISTER expiry
@@ -356,7 +356,7 @@ func (r *Registrar) sendOptions(ctx context.Context) error {
     fromH.Params.Add("tag", siplib.GenerateTagN(16))
     req.AppendHeader(fromH)
     req.AppendHeader(&siplib.ToHeader{Address: registrarURI})
-    req.AppendHeader(siplib.NewHeader("User-Agent", "audio-dock/2.0"))
+    req.AppendHeader(siplib.NewHeader("User-Agent", "sipgate-sip-stream-bridge/2.0"))
 
     optCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
     defer cancel()
@@ -400,8 +400,8 @@ only wiring change required.
 ### Response to inbound OPTIONS (existing handler.go)
 
 `handler.go` already handles inbound OPTIONS at line 168 (`onOptions` sends 200 OK). This
-is for OPTIONS probes sipgate sends TO audio-dock (checking if audio-dock is alive). The new
-feature is audio-dock sending OPTIONS TO sipgate (checking if the registration is still active).
+is for OPTIONS probes sipgate sends TO sipgate-sip-stream-bridge (checking if sipgate-sip-stream-bridge is alive). The new
+feature is sipgate-sip-stream-bridge sending OPTIONS TO sipgate (checking if the registration is still active).
 These are two distinct directions and require no changes to the existing inbound handler.
 
 ### New Components (Go)
@@ -418,7 +418,7 @@ These are two distinct directions and require no changes to the existing inbound
 |------|--------|
 | `go/internal/config/config.go` | Add `SIPOptionsInterval int` field |
 | `go/internal/sip/registrar.go` | Add `optionsInterval` field to struct; update `NewRegistrar`; add `optionsKeepaliveLoop` + `sendOptions`; start loop from `Register()` |
-| `go/cmd/audio-dock/main.go` | Pass `cfg.SIPOptionsInterval` to `NewRegistrar` (if interval is promoted to a parameter rather than read from cfg directly inside the registrar) |
+| `go/cmd/sipgate-sip-stream-bridge/main.go` | Pass `cfg.SIPOptionsInterval` to `NewRegistrar` (if interval is promoted to a parameter rather than read from cfg directly inside the registrar) |
 
 ---
 
@@ -436,7 +436,7 @@ The Node.js `wsClient.ts` already has `ws.on('message', ...)` in `onAudio()`. Th
 - When WS server sends mark, `wsToRTP` callback must enqueue a mark sentinel into the
   outbound drain queue (between the audio frames already queued there).
 - When the sentinel reaches the front of the drain (i.e., the `sendPacket` callback fires with
-  it), audio-dock sends the mark echo via `ws.send(...)`.
+  it), sipgate-sip-stream-bridge sends the mark echo via `ws.send(...)`.
 - Implementation: extend the `outboundDrain` queue element type from `Buffer` to
   `{ type: 'audio', payload: Buffer } | { type: 'mark', name: string }` and handle the mark
   type in the `sendPacket` callback inside `makeDrain`.
@@ -674,7 +674,7 @@ tick is safe because `doRegister` is stateless (constructs a new request each ti
 | Service | Integration Pattern | New in v2.1 |
 |---------|---------------------|-------------|
 | sipgate trunking (SIP) | `sipgo.Client.Do()` over UDP:5060 | OPTIONS keepalive added: new request type on same client |
-| AI voice-bot backend (WS) | gobwas/ws text frames, Twilio Media Streams JSON | mark echo (audio-dock → server) and mark/clear parsing (server → audio-dock) |
+| AI voice-bot backend (WS) | gobwas/ws text frames, Twilio Media Streams JSON | mark echo (sipgate-sip-stream-bridge → server) and mark/clear parsing (server → sipgate-sip-stream-bridge) |
 
 ### Internal Boundaries (changed/new in v2.1)
 
@@ -696,5 +696,5 @@ tick is safe because `doRegister` is stateless (constructs a new request each ti
 - Existing codebase — HIGH confidence; `session.go`, `ws.go`, `registrar.go`, `handler.go` read directly; goroutine model, queue types, and write invariants verified from source
 
 ---
-*Architecture research for: audio-dock v2.1 (mark/clear events + SIP OPTIONS keepalive)*
+*Architecture research for: sipgate-sip-stream-bridge v2.1 (mark/clear events + SIP OPTIONS keepalive)*
 *Researched: 2026-03-05*

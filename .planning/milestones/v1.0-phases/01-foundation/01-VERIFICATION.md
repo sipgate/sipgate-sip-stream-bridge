@@ -31,9 +31,9 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | pnpm dev with all required env vars emits a structured JSON startup log | VERIFIED | src/index.ts L7-10: log.info({ event: 'startup', sipUser, sipDomain }); pino base: { service: 'audio-dock' } |
+| 1 | pnpm dev with all required env vars emits a structured JSON startup log | VERIFIED | src/index.ts L7-10: log.info({ event: 'startup', sipUser, sipDomain }); pino base: { service: 'sipgate-sip-stream-bridge' } |
 | 2 | pnpm dev with any required env var absent exits with code 1 and a JSON error naming the missing variable | VERIFIED | src/config/index.ts L28-37: safeParse failure triggers console.error(JSON.stringify({level:'error',errors:fieldErrors})) then process.exit(1) |
-| 3 | Every log line is structured JSON containing service: audio-dock | VERIFIED | src/logger/index.ts L3-6: pino({ base: { service: 'audio-dock' } }); all logs via createChildLogger which calls rootLogger.child() |
+| 3 | Every log line is structured JSON containing service: sipgate-sip-stream-bridge | VERIFIED | src/logger/index.ts L3-6: pino({ base: { service: 'sipgate-sip-stream-bridge' } }); all logs via createChildLogger which calls rootLogger.child() |
 | 4 | createChildLogger accepts optional callId and streamSid bindings for Phase 2 per-call context | VERIFIED | src/logger/index.ts L8-13: bindings: { component: string; callId?: string; streamSid?: string } |
 | 5 | SIP.js UserAgent factory registers with sipgate and emits event:sip_registered on 200 OK | VERIFIED (wiring) | src/sip/userAgent.ts L40-43: stateChange.addListener emits sip_registered on RegistererState.Registered; LIVE CHECK REQUIRED |
 | 6 | Re-registration fires automatically before Expires timer lapses | VERIFIED (wiring) | src/sip/userAgent.ts L35-38: Registerer({ refreshFrequency: 90 }) — SIP.js handles timer at 90% expiry; LIVE CHECK REQUIRED |
@@ -52,7 +52,7 @@ human_verification:
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
 | `src/config/index.ts` | Zod-validated Config export; fail-fast exit on missing/invalid vars; exports config and Config | VERIFIED | 42 lines; exports Config type (L24) and config const (L41); Zod 4 named import { z }; safeParse with exit(1) on failure; z.ipv4() for SDP_CONTACT_IP (Zod 4 API); cross-field RTP port refinement (L19-22) |
-| `src/logger/index.ts` | pino root logger with service field; createChildLogger helper | VERIFIED | 14 lines; rootLogger with base: { service: 'audio-dock' } (L3-6); createChildLogger with component/callId?/streamSid? (L8-13) |
+| `src/logger/index.ts` | pino root logger with service field; createChildLogger helper | VERIFIED | 14 lines; rootLogger with base: { service: 'sipgate-sip-stream-bridge' } (L3-6); createChildLogger with component/callId?/streamSid? (L8-13) |
 | `src/index.ts` | Entry point: loads config first, then logger, calls createSipUserAgent, keeps process alive | VERIFIED | 22 lines; config imported L1 (fail-fast first), createChildLogger L2, createSipUserAgent L3; async main() with fatal catch exiting code 1 |
 | `src/sip/userAgent.ts` | ws polyfill first, UserAgent + Registerer, stateChange listener, transport onConnect/onDisconnect, exports createSipUserAgent and SipHandle | VERIFIED | 72 lines; ws polyfill on L2-3 before any SIP.js import; SipHandle interface L10-13; stateChange listener L40-50; transport.onConnect L52-57; transport.onDisconnect L59-65; ua.start() + registerer.register() L68-69 |
 | `package.json` | pnpm workspace with dev/build/start/typecheck scripts; all Phase 1 deps | VERIFIED | type: module; engines: { node: >=22 }; scripts: dev/build/start/typecheck all present; deps: pino, sip.js, ws, zod; devDeps: typescript, tsx, tsup, @types/node, @types/ws |
@@ -94,7 +94,7 @@ human_verification:
 | DCK-01 | 01-03 | Service packaged as Docker image using multi-stage build on node:22-alpine | SATISFIED | Dockerfile: 4-stage build (base/fetcher/builder/production); production stage FROM node:22-alpine; LIVE BUILD REQUIRED |
 | DCK-02 | 01-03 | Docker Compose provided with network_mode: host for Linux production | SATISFIED | docker-compose.yml L20: network_mode: host |
 | DCK-03 | 01-03 | Dockerfile documents RTP port range requirement in comments | SATISFIED | Dockerfile L37-51: RTP PORT RANGE REQUIREMENT comment block before EXPOSE 10000-10099/udp |
-| OBS-01 | 01-01 | Service logs structured JSON with callId and streamSid context | SATISFIED | src/logger/index.ts L8-13: createChildLogger({ component, callId?, streamSid? }) pattern established; pino base: { service: 'audio-dock' } ensures service field on every line |
+| OBS-01 | 01-01 | Service logs structured JSON with callId and streamSid context | SATISFIED | src/logger/index.ts L8-13: createChildLogger({ component, callId?, streamSid? }) pattern established; pino base: { service: 'sipgate-sip-stream-bridge' } ensures service field on every line |
 
 **All 11 Phase 1 requirements satisfied in code. SIP-01 and SIP-02 need live network confirmation.**
 
@@ -163,7 +163,7 @@ WS_TARGET_URL=ws://localhost:8080
 All 11 automated checks pass. The phase codebase is complete and correctly wired:
 
 - **Config module** (CFG-01..05): Zod 4 schema validates all 10 env vars. Fail-fast exit with structured JSON error naming missing fields is implemented and confirmed in code.
-- **Logger module** (OBS-01): pino root logger with `service: 'audio-dock'` base field; `createChildLogger` with optional `callId`/`streamSid` bindings established for Phase 2.
+- **Logger module** (OBS-01): pino root logger with `service: 'sipgate-sip-stream-bridge'` base field; `createChildLogger` with optional `callId`/`streamSid` bindings established for Phase 2.
 - **SIP factory** (SIP-01, SIP-02): `createSipUserAgent` correctly polyfills `globalThis.WebSocket` before SIP.js loads, constructs `UserAgent` and `Registerer` with `refreshFrequency: 90`, wires `stateChange.addListener` to emit `event:sip_registered` on 200 OK, and unconditionally re-registers in `transport.onConnect`.
 - **Docker** (DCK-01..03): 4-stage Dockerfile on node:22-alpine with pnpm fetch layer caching, non-root `USER node`, RTP comment block before `EXPOSE`, and `CMD ["node", "dist/index.js"]`. docker-compose.yml has `network_mode: host` and `env_file: .env`. `.env.example` documents all 10 vars.
 - **TypeScript**: `pnpm typecheck` exits 0 — no type errors.

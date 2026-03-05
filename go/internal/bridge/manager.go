@@ -12,9 +12,9 @@ import (
 	siplib "github.com/emiago/sipgo/sip"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"github.com/sipgate/audio-dock/internal/config"
-	"github.com/sipgate/audio-dock/internal/observability"
-	sip "github.com/sipgate/audio-dock/internal/sip"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
+	sip "github.com/sipgate/sipgate-sip-stream-bridge/internal/sip"
 )
 
 // PortPool is a bounded, channel-based RTP port pool.

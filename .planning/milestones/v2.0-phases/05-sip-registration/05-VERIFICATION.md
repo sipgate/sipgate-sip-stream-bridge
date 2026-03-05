@@ -7,7 +7,7 @@ score: 4/4 must-haves verified
 
 # Phase 5: SIP Registration Verification Report
 
-**Phase Goal:** Establish SIP registration with sipgate trunking so audio-dock can receive inbound calls
+**Phase Goal:** Establish SIP registration with sipgate trunking so sipgate-sip-stream-bridge can receive inbound calls
 **Verified:** 2026-03-03
 **Status:** PASSED
 **Re-verification:** No — initial verification
@@ -35,7 +35,7 @@ score: 4/4 must-haves verified
 |----------|----------|--------|---------|
 | `internal/sip/agent.go` | Agent struct with UA, Server, Client fields; NewAgent constructor wiring sipgo UA/Server/Client from Config | VERIFIED | Exists, 54 lines, non-trivial. Exports `Agent` struct (lines 16-20), `NewAgent` constructor (line 25). slog-zerolog bridge wired (lines 35-39). |
 | `internal/sip/registrar.go` | Registrar struct; Register/doRegister/Unregister/reregisterLoop implementation | VERIFIED | Exists, 160 lines, non-trivial. All four methods present and substantive. |
-| `cmd/audio-dock/main.go` | Entry point wired with Agent construction, listener goroutines, and blocking Register call | VERIFIED | `sip.NewAgent` called line 49, listeners started lines 59-68, `registrar.Register(ctx)` called line 73, `os.Exit(1)` on failure line 75. |
+| `cmd/sipgate-sip-stream-bridge/main.go` | Entry point wired with Agent construction, listener goroutines, and blocking Register call | VERIFIED | `sip.NewAgent` called line 49, listeners started lines 59-68, `registrar.Register(ctx)` called line 73, `os.Exit(1)` on failure line 75. |
 | `internal/sip/registrar_test.go` | 5 unit tests covering nil client, 403 error message, Expires fallback, ticker math | VERIFIED | Exists, 120 lines, 5 tests. All 5 pass: `go test ./internal/sip/... -v` = PASS |
 
 ---
@@ -44,8 +44,8 @@ score: 4/4 must-haves verified
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| `cmd/audio-dock/main.go` | `internal/sip/agent.go` | `sip.NewAgent(cfg, logger)` | WIRED | main.go line 49: `agent, err := sip.NewAgent(cfg, logger)` |
-| `cmd/audio-dock/main.go` | `internal/sip/registrar.go` | `sip.NewRegistrar(agent.Client, cfg, logger)` | WIRED | main.go line 72: `registrar := sip.NewRegistrar(agent.Client, cfg, logger)` |
+| `cmd/sipgate-sip-stream-bridge/main.go` | `internal/sip/agent.go` | `sip.NewAgent(cfg, logger)` | WIRED | main.go line 49: `agent, err := sip.NewAgent(cfg, logger)` |
+| `cmd/sipgate-sip-stream-bridge/main.go` | `internal/sip/registrar.go` | `sip.NewRegistrar(agent.Client, cfg, logger)` | WIRED | main.go line 72: `registrar := sip.NewRegistrar(agent.Client, cfg, logger)` |
 | `internal/sip/registrar.go` | `github.com/emiago/sipgo` | `client.Do + client.DoDigestAuth + ClientRequestRegisterBuild` | WIRED | registrar.go line 66, 72, 143, 148 — all three API calls present |
 | `internal/sip/registrar.go` | reregisterLoop goroutine | `go r.reregisterLoop(ctx, expiry) in Register()` | WIRED | registrar.go line 50: `go r.reregisterLoop(ctx, expiry)` — no goroutine nesting: loop calls `doRegister` not `Register` (lines 41, 119) |
 
@@ -79,7 +79,7 @@ No stub patterns, no placeholder implementations, no TODO/FIXME blockers found.
 
 #### 1. Live SIP Registration Against sipgate
 
-**Test:** With real sipgate trunk credentials set as environment variables (`SIP_USER`, `SIP_PASSWORD`, `SIP_DOMAIN=sipconnect.sipgate.de`, `SIP_REGISTRAR=sipconnect.sipgate.de`, `WS_TARGET_URL=ws://localhost:8080`, `SDP_CONTACT_IP=<your-ip>`), run `./audio-dock` and observe stdout.
+**Test:** With real sipgate trunk credentials set as environment variables (`SIP_USER`, `SIP_PASSWORD`, `SIP_DOMAIN=sipconnect.sipgate.de`, `SIP_REGISTRAR=sipconnect.sipgate.de`, `WS_TARGET_URL=ws://localhost:8080`, `SDP_CONTACT_IP=<your-ip>`), run `./sipgate-sip-stream-bridge` and observe stdout.
 **Expected:** A JSON log line containing `"message":"SIP registration successful"` with a `server_expires_s` field, followed by `"message":"SIP registration active — waiting for calls or shutdown signal"`.
 **Why human:** Requires live sipgate trunking credentials and network connectivity. Cannot be verified programmatically in CI without secrets.
 
@@ -122,7 +122,7 @@ No stub patterns, no placeholder implementations, no TODO/FIXME blockers found.
 | `8813b39` | feat(05-01): add sipgo/pion deps + create internal/sip/agent.go |
 | `71af332` | test(05-01): add failing Registrar unit tests (RED) |
 | `4b43835` | feat(05-01): implement Registrar with doRegister/reregisterLoop/Unregister (GREEN) |
-| `43171e4` | feat(05-01): wire SIP Agent + Registrar into cmd/audio-dock/main.go |
+| `43171e4` | feat(05-01): wire SIP Agent + Registrar into cmd/sipgate-sip-stream-bridge/main.go |
 | `140b6e3` | docs(05-01): complete SIP registration plan — SUMMARY, STATE, ROADMAP, REQUIREMENTS |
 
 TDD pattern confirmed: RED commit (`71af332`) precedes GREEN commit (`4b43835`).

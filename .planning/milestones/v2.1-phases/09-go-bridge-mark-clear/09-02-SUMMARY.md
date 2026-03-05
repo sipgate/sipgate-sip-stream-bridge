@@ -105,8 +105,8 @@ No new architectural decisions made. Plan followed exactly as written. Honored p
 
 ```
 $ cd go && go build ./... && go test ./internal/bridge/... ./internal/observability/...
-ok  github.com/sipgate/audio-dock/internal/bridge  0.012s
-?   github.com/sipgate/audio-dock/internal/observability  [no test files]
+ok  github.com/sipgate/sipgate-sip-stream-bridge/internal/bridge  0.012s
+?   github.com/sipgate/sipgate-sip-stream-bridge/internal/observability  [no test files]
 ```
 
 Build exits 0. All pre-existing bridge tests pass.

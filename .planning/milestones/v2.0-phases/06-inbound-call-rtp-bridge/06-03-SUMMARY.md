@@ -69,4 +69,4 @@ PortPool + CallManager + sip.NewHandler inserted before registrar.Register().
 - `internal/bridge/ws.go` — sendStart/sendStop signature updates
 - `internal/bridge/ws_test.go` — updated for new sendStart signature
 - `internal/bridge/session.go` — run() signature, rtpToWS blocking read, shutdown sequence
-- `cmd/audio-dock/main.go` — Phase 6 wiring (PortPool + CallManager + Handler)
+- `cmd/sipgate-sip-stream-bridge/main.go` — Phase 6 wiring (PortPool + CallManager + Handler)

@@ -8,7 +8,7 @@
 # For RTP testing on macOS, use docker-compose.override.yml:
 #
 #   services:
-#     audio-dock:
+#     sipgate-sip-stream-bridge:
 #       network_mode: bridge
 #       ports:
 #         - "5060:5060/udp"
@@ -19,9 +19,9 @@
 # large ranges causes Docker Desktop's port proxy to stall on startup.
 #
 services:
-  audio-dock:
+  sipgate-sip-stream-bridge:
     build: .
-    image: audio-dock:latest
+    image: sipgate-sip-stream-bridge:latest
     network_mode: host
     env_file:
       - .env

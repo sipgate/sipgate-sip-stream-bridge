@@ -8,7 +8,7 @@ import (
 	"github.com/emiago/sipgo"
 	"github.com/rs/zerolog"
 	slogzerolog "github.com/samber/slog-zerolog"
-	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 // Agent bundles the sipgo UserAgent, Server, and Client for the entire service lifetime.
@@ -25,7 +25,7 @@ type Agent struct {
 func NewAgent(cfg config.Config, log zerolog.Logger) (*Agent, error) {
 	ua, err := sipgo.NewUA(
 		sipgo.WithUserAgentHostname(cfg.SIPDomain),
-		sipgo.WithUserAgent("audio-dock/2.0"),
+		sipgo.WithUserAgent("sipgate-sip-stream-bridge/2.0"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create sipgo UserAgent: %w", err)

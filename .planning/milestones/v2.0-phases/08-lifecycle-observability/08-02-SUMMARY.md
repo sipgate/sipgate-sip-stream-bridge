@@ -6,7 +6,7 @@ tags: [prometheus, http, metrics, health-check, grafana]
 dependency_graph:
   requires: ["08-01"]
   provides: ["OBS-02", "OBS-03"]
-  affects: ["internal/observability", "internal/bridge", "internal/sip", "cmd/audio-dock"]
+  affects: ["internal/observability", "internal/bridge", "internal/sip", "cmd/sipgate-sip-stream-bridge"]
 tech_stack:
   added:
     - "github.com/prometheus/client_golang v1.23.2 — Prometheus metrics + promhttp handler"
@@ -23,9 +23,9 @@ key_files:
     - "internal/bridge/session.go — metrics field + RTPRx.Inc() + RTPTx.Inc() + WSReconnects.Inc()"
     - "internal/sip/registrar.go — metrics field + NewRegistrar signature + SIPRegStatus.Set(0/1)"
     - "internal/sip/registrar_test.go — updated NewRegistrar call to pass nil metrics"
-    - "cmd/audio-dock/main.go — metrics creation + HTTP server + httpServer.Shutdown in drain sequence"
+    - "cmd/sipgate-sip-stream-bridge/main.go — metrics creation + HTTP server + httpServer.Shutdown in drain sequence"
 decisions:
-  - "[08-02] Custom prometheus.Registry (not DefaultRegisterer) — excludes Go runtime/process metrics from scrape; only 5 audio-dock metrics exposed"
+  - "[08-02] Custom prometheus.Registry (not DefaultRegisterer) — excludes Go runtime/process metrics from scrape; only 5 sipgate-sip-stream-bridge metrics exposed"
   - "[08-02] active_calls_total as Gauge with _total suffix — OBS-03 specifies name literally; Gauge semantics correct (goes up/down); Prometheus client allows it"
   - "[08-02] nil-safe metrics guard in all hot paths — enables zero-value construction in tests without injecting a real registry"
   - "[08-02] RTPTx increments on silence frames too — rtpPacer sends silence for NAT traversal; all WriteTo successes counted as sent packets"
@@ -40,14 +40,14 @@ metrics:
 
 # Phase 08 Plan 02: HTTP Observability Layer Summary
 
-**One-liner:** Prometheus custom registry with 5 audio-dock metrics + /health JSON + /metrics endpoint wired into bridge/registrar hot paths and main.go graceful shutdown.
+**One-liner:** Prometheus custom registry with 5 sipgate-sip-stream-bridge metrics + /health JSON + /metrics endpoint wired into bridge/registrar hot paths and main.go graceful shutdown.
 
 ## Tasks Completed
 
 | # | Task | Commit | Key Files |
 |---|------|--------|-----------|
 | 1 | Create observability package, wire metric increments | 4bb6455 | internal/observability/metrics.go, manager.go, session.go, registrar.go, config.go |
-| 2 | Wire HTTP server with /health and /metrics into main.go | 56b2459 | cmd/audio-dock/main.go |
+| 2 | Wire HTTP server with /health and /metrics into main.go | 56b2459 | cmd/sipgate-sip-stream-bridge/main.go |
 
 ## What Was Built
 
@@ -63,7 +63,7 @@ metrics:
 - `ws_reconnect_attempts_total`: Inc at top of reconnect() for loop before backoff select
 - `sip_registration_status`: Set(1) alongside `r.registered.Store(true)` in doRegister; Set(0) alongside `r.registered.Store(false)` in reregisterLoop error path and Unregister
 
-**cmd/audio-dock/main.go HTTP server:**
+**cmd/sipgate-sip-stream-bridge/main.go HTTP server:**
 - `/health` returns `{"registered":bool,"activeCalls":int}` (always HTTP 200, Content-Type: application/json)
 - `/metrics` uses `promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})` — custom registry only
 - Server starts after SIP registration succeeds; logs `http_port` field
@@ -96,7 +96,7 @@ Files exist:
 - internal/bridge/manager.go: FOUND (metrics field + Inc/Dec)
 - internal/bridge/session.go: FOUND (metrics field + RTPRx/RTPTx/WSReconnects)
 - internal/sip/registrar.go: FOUND (metrics field + SIPRegStatus)
-- cmd/audio-dock/main.go: FOUND (httpServer + Shutdown)
+- cmd/sipgate-sip-stream-bridge/main.go: FOUND (httpServer + Shutdown)
 
 Commits exist:
 - 4bb6455: FOUND (Task 1)

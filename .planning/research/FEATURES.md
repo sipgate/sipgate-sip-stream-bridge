@@ -11,7 +11,7 @@
 This document covers the **three new features** for the v2.1 milestone, added on top of the complete v2.0 feature set. The v2.0 feature research (connected/start/media/stop/dtmf, WS reconnect, SIGTERM drain, /health, /metrics) is preserved in the "Previously Shipped" section for reference but is not re-analyzed.
 
 New features being researched:
-1. `mark` event — WS server labels a point in the outbound audio stream; audio-dock echoes it when playback reaches that point
+1. `mark` event — WS server labels a point in the outbound audio stream; sipgate-sip-stream-bridge echoes it when playback reaches that point
 2. `clear` event — WS server flushes the outbound audio buffer and cancels pending marks
 3. SIP OPTIONS keepalive — periodic out-of-dialog OPTIONS to sipgate to detect silent registration loss
 
@@ -27,7 +27,7 @@ Features that a Twilio Media Streams-compatible bidirectional bridge must have. 
 |---------|--------------|------------|-------|
 | `mark` echo: receive mark from WS server, echo it when packetQueue drains to that point | Any AI TTS backend using barge-in or play-and-wait depends on mark acknowledgment to know when audio finished playing | MEDIUM | Requires correlating a mark name with a queue drain event. The mark must be echoed AFTER the last queued audio frame before the mark was enqueued — not immediately on receipt. See protocol semantics below. |
 | `clear` flush: receive clear from WS server, drain packetQueue immediately | barge-in (caller interrupts TTS playback) requires flushing queued audio so the RTP pacer stops sending the old TTS audio | LOW | `clear` is a one-liner in principle: drain the buffered channel. The tricky part is concurrency — rtpPacer and wsToRTP both touch packetQueue. See edge cases below. |
-| `clear` triggers pending mark echoes: after clear, immediately echo all marks that were waiting for audio to drain | WS server tracks which marks were cleared vs played — incorrect mark echo timing corrupts its state machine | MEDIUM | Twilio spec: "If your server sends a clear message, Twilio empties the audio buffer and sends back mark messages matching any remaining mark messages from your server." audio-dock must mirror this: clear → drain packetQueue → echo all pending marks immediately. |
+| `clear` triggers pending mark echoes: after clear, immediately echo all marks that were waiting for audio to drain | WS server tracks which marks were cleared vs played — incorrect mark echo timing corrupts its state machine | MEDIUM | Twilio spec: "If your server sends a clear message, Twilio empties the audio buffer and sends back mark messages matching any remaining mark messages from your server." sipgate-sip-stream-bridge must mirror this: clear → drain packetQueue → echo all pending marks immediately. |
 | Unknown WS event types ignored gracefully (no crash, no reconnect) | Protocol extensibility — future Twilio events or WS server experiments must not break the bridge | LOW | Already handled in wsToRTP default case. Mark and clear must be added to the switch. |
 
 ### Differentiators (Beyond Minimum Protocol Compliance)
@@ -53,9 +53,9 @@ Features that a Twilio Media Streams-compatible bidirectional bridge must have. 
 
 ### mark Event
 
-**Direction: bidirectional.** WS server → audio-dock (outbound, received in wsToRTP). Audio-dock → WS server (echo, sent from wsPacer after queue drains).
+**Direction: bidirectional.** WS server → sipgate-sip-stream-bridge (outbound, received in wsToRTP). Audio-dock → WS server (echo, sent from wsPacer after queue drains).
 
-**WS server sends to audio-dock:**
+**WS server sends to sipgate-sip-stream-bridge:**
 ```json
 {
   "event": "mark",
@@ -65,7 +65,7 @@ Features that a Twilio Media Streams-compatible bidirectional bridge must have. 
   }
 }
 ```
-No `sequenceNumber` required on server-to-audio-dock direction. `mark.name` is an arbitrary string chosen by the WS server.
+No `sequenceNumber` required on server-to-sipgate-sip-stream-bridge direction. `mark.name` is an arbitrary string chosen by the WS server.
 
 **Audio-dock echoes back to WS server:**
 ```json
@@ -90,9 +90,9 @@ No `sequenceNumber` required on server-to-audio-dock direction. `mark.name` is a
 
 ### clear Event
 
-**Direction: WS server → audio-dock only.** Audio-dock does NOT echo a `clear` event back.
+**Direction: WS server → sipgate-sip-stream-bridge only.** Audio-dock does NOT echo a `clear` event back.
 
-**WS server sends to audio-dock:**
+**WS server sends to sipgate-sip-stream-bridge:**
 ```json
 {
   "event": "clear",
@@ -100,7 +100,7 @@ No `sequenceNumber` required on server-to-audio-dock direction. `mark.name` is a
 }
 ```
 
-**What audio-dock must do on receiving clear:**
+**What sipgate-sip-stream-bridge must do on receiving clear:**
 1. Drain all frames from `packetQueue` (the outbound RTP buffer). This stops the RTP pacer from playing the old TTS audio.
 2. Echo all pending marks immediately (marks that were waiting for audio to drain). This signals to the WS server which audio segments were cleared.
 3. Discard the marks from `markQueue` after echoing them.
@@ -334,7 +334,7 @@ Note: `clear` is never echoed. Only `mark` events are echoed back.
 ### New Go structs needed in ws.go
 
 ```go
-// MarkEvent is sent from audio-dock to WS server when outbound audio playback
+// MarkEvent is sent from sipgate-sip-stream-bridge to WS server when outbound audio playback
 // reaches the labeled point (echo of server's mark), or immediately after a clear.
 type MarkEvent struct {
     Event          string   `json:"event"`
@@ -347,14 +347,14 @@ type MarkBody struct {
     Name string `json:"name"` // echoes the name sent by the WS server
 }
 
-// InboundMarkMessage is the server→audio-dock mark message parsed from wsToRTP.
+// InboundMarkMessage is the server→sipgate-sip-stream-bridge mark message parsed from wsToRTP.
 type InboundMarkMessage struct {
     Mark struct {
         Name string `json:"name"`
     } `json:"mark"`
 }
 
-// InboundClearMessage is the server→audio-dock clear message (no body beyond event+streamSid).
+// InboundClearMessage is the server→sipgate-sip-stream-bridge clear message (no body beyond event+streamSid).
 // Parsed in wsToRTP; triggers packetQueue drain + markQueue flush.
 ```
 

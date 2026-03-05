@@ -1,4 +1,4 @@
-# Go SIP Library Research: audio-dock v2.0 Go Rewrite
+# Go SIP Library Research: sipgate-sip-stream-bridge v2.0 Go Rewrite
 
 **Researched:** 2026-03-03
 **Domain:** Go SIP libraries for SIP-to-WebSocket audio bridge (UAC registration + UAS incoming INVITE)
@@ -8,7 +8,7 @@
 
 ## Summary
 
-The audio-dock v2.0 Go rewrite requires a pure Go SIP library capable of: REGISTER with Digest Auth (UAC), incoming INVITE handling (UAS), full dialog lifecycle (100/180/200/ACK/BYE), OPTIONS keepalive responses, RFC 4733 DTMF via RTP, and both UDP/TCP transport — with zero CGo dependencies so the final binary can be built `FROM scratch`.
+The sipgate-sip-stream-bridge v2.0 Go rewrite requires a pure Go SIP library capable of: REGISTER with Digest Auth (UAC), incoming INVITE handling (UAS), full dialog lifecycle (100/180/200/ACK/BYE), OPTIONS keepalive responses, RFC 4733 DTMF via RTP, and both UDP/TCP transport — with zero CGo dependencies so the final binary can be built `FROM scratch`.
 
 **`emiago/sipgo` v1.2.0 is the definitive choice.** It is the only Go SIP library that is:
 (a) actively maintained with a stable v1.x API as of early 2025,
@@ -65,7 +65,7 @@ go get github.com/rs/zerolog@latest
 ### Recommended Project Structure
 
 ```
-cmd/audio-dock/
+cmd/sipgate-sip-stream-bridge/
 └── main.go               # flag parsing, config validation, signal handling (SIGTERM/SIGINT)
 
 internal/
@@ -307,7 +307,7 @@ func buildSDPAnswer(ourIP string, ourRTPPort int, offerBytes []byte) []byte {
             AddressType:    "IP4",
             UnicastAddress: ourIP,
         },
-        SessionName: sdp.SessionName("audio-dock"),
+        SessionName: sdp.SessionName("sipgate-sip-stream-bridge"),
         ConnectionInformation: &sdp.ConnectionInformation{
             NetworkType: "IN",
             AddressType: "IP4",
@@ -667,7 +667,7 @@ func buildSDPAnswer(ourIP string, ourPort int) []byte {
             SessionVersion: uint64(time.Now().UnixNano()),
             NetworkType: "IN", AddressType: "IP4", UnicastAddress: ourIP,
         },
-        SessionName: "audio-dock",
+        SessionName: "sipgate-sip-stream-bridge",
         ConnectionInformation: &pionsdp.ConnectionInformation{
             NetworkType: "IN", AddressType: "IP4",
             Address: &pionsdp.Address{Address: ourIP},
@@ -808,7 +808,7 @@ The evidence is conclusive:
 
 5. `emiago/diago` is available as an upgrade path for v3 requirements (ADV-03 multi-codec) without changing the SIP layer.
 
-**Do not use diago for v2.0.** The audio-dock bridge requires raw byte access to RTP payloads for the Twilio Media Streams base64 encoding. Diago's AudioReader/AudioWriter abstraction sits above that level and would require bypassing it — adding complexity without benefit.
+**Do not use diago for v2.0.** The sipgate-sip-stream-bridge bridge requires raw byte access to RTP payloads for the Twilio Media Streams base64 encoding. Diago's AudioReader/AudioWriter abstraction sits above that level and would require bypassing it — adding complexity without benefit.
 
 ---
 

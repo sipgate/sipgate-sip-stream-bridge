@@ -8,7 +8,7 @@ tags: [pnpm, typescript, nodenext, zod, pino, esm]
 requires: []
 provides:
   - "Zod 4 validated config with fail-fast exit on missing env vars"
-  - "pino root logger with service:audio-dock base field and createChildLogger helper"
+  - "pino root logger with service:sipgate-sip-stream-bridge base field and createChildLogger helper"
   - "NodeNext ESM TypeScript project scaffold with pnpm workspace"
   - "src/index.ts entrypoint that validates config then logs structured startup line"
 affects: [02-foundation, 03-foundation, all-phases]
@@ -51,7 +51,7 @@ key-decisions:
 patterns-established:
   - "Config-first import in entrypoint: config imports must come before logger to ensure fail-fast"
   - "createChildLogger({ component, callId?, streamSid? }) — all log statements in Phase 2+ use this pattern"
-  - "Structured JSON always includes service:audio-dock via pino base field"
+  - "Structured JSON always includes service:sipgate-sip-stream-bridge via pino base field"
 
 requirements-completed: [CFG-01, CFG-02, CFG-03, CFG-04, CFG-05, OBS-01]
 
@@ -75,7 +75,7 @@ completed: 2026-03-03
 ## Accomplishments
 - NodeNext ESM TypeScript project with pnpm, tsup, tsx and all Phase 1+2 dependencies installed
 - Zod 4 config schema validates 5 required + 5 optional env vars with cross-field RTP port range refinement; exits code 1 with JSON field errors on failure
-- pino root logger with `service: 'audio-dock'` base field; `createChildLogger` helper accepting `component`, optional `callId`, optional `streamSid` (OBS-01 pattern established for Phase 2+)
+- pino root logger with `service: 'sipgate-sip-stream-bridge'` base field; `createChildLogger` helper accepting `component`, optional `callId`, optional `streamSid` (OBS-01 pattern established for Phase 2+)
 - Entrypoint loads config first (fail-fast), then creates child logger, emits structured JSON startup line
 
 ## Task Commits

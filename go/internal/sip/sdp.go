@@ -81,7 +81,7 @@ func BuildSDPAnswer(ourIP string, ourRTPPort int, callerDTMFPT uint8) []byte {
 			AddressType:    "IP4",
 			UnicastAddress: ourIP,
 		},
-		SessionName: sdp.SessionName("audio-dock"),
+		SessionName: sdp.SessionName("sipgate-sip-stream-bridge"),
 		ConnectionInformation: &sdp.ConnectionInformation{
 			NetworkType: "IN",
 			AddressType: "IP4",

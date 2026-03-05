@@ -60,7 +60,7 @@ export interface CallSession {
   silenceInterval: ReturnType<typeof setInterval> | null;
 }
 
-const USER_AGENT = 'audio-dock/0.1.0';
+const USER_AGENT = 'sipgate-sip-stream-bridge/0.1.0';
 
 // ── Internal SIP helpers ──────────────────────────────────────────────────────
 

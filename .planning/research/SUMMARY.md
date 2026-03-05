@@ -1,13 +1,13 @@
 # Project Research Summary
 
-**Project:** audio-dock v2.1
+**Project:** sipgate-sip-stream-bridge v2.1
 **Domain:** SIP-to-WebSocket audio bridge — Twilio Media Streams mark/clear protocol + SIP OPTIONS keepalive
 **Researched:** 2026-03-05
 **Confidence:** HIGH
 
 ## Executive Summary
 
-audio-dock v2.1 adds three protocol-completion features to an already-shipped Go + Node.js SIP media gateway. The v2.0 codebase is complete and stable; this milestone is purely additive logic with zero new dependencies for either implementation. The Go implementation is the primary deliverable; the Node.js implementation is a reference that follows the same semantic patterns under a different concurrency model. All three features are fully specified in official sources and map cleanly onto the existing goroutine architecture without requiring new files or structural reorganization.
+sipgate-sip-stream-bridge v2.1 adds three protocol-completion features to an already-shipped Go + Node.js SIP media gateway. The v2.0 codebase is complete and stable; this milestone is purely additive logic with zero new dependencies for either implementation. The Go implementation is the primary deliverable; the Node.js implementation is a reference that follows the same semantic patterns under a different concurrency model. All three features are fully specified in official sources and map cleanly onto the existing goroutine architecture without requiring new files or structural reorganization.
 
 The recommended implementation strategy is sequential: first complete the Go mark/clear changes in the bridge layer, then add SIP OPTIONS keepalive in the SIP/config layer, then mirror both in Node.js. This ordering minimizes blast radius by keeping bridge-layer goroutine changes isolated before SIP-layer changes add more surface area. The single highest-risk change is the `packetQueue` type change from `chan []byte` to `chan outboundFrame` — it touches the most call sites and should be a standalone commit verified against existing tests before the logic additions follow.
 
@@ -185,10 +185,10 @@ Phases with well-documented patterns (skip additional research):
 - [RFC 3261 §11](https://www.rfc-editor.org/rfc/rfc3261#section-11) — SIP OPTIONS method semantics, out-of-dialog use for capability probing
 - [RFC 6223](https://www.rfc-editor.org/rfc/rfc6223) — Indication of Support for Keep-Alive in SIP
 - [emiago/sipgo pkg.go.dev](https://pkg.go.dev/github.com/emiago/sipgo) — `Client.Do()`, `ClientRequestBuild`, `siplib.OPTIONS` method type confirmed; v1.2.0 confirmed latest (Feb 7, 2025)
-- audio-dock v2.0 source: `go/internal/bridge/session.go`, `go/internal/bridge/ws.go` — goroutine model, sole-writer invariant, `dtmfQueue` channel pattern as direct model for `markEchoQueue`
-- audio-dock v2.0 source: `go/internal/sip/registrar.go`, `go/internal/sip/handler.go` — `reregisterLoop` pattern, `client.Do()` usage, existing inbound OPTIONS handler
-- audio-dock Node.js source: `node/src/ws/wsClient.ts` — mark/clear gap documented at line 259; `WsClient` interface structure
-- audio-dock Node.js source: `node/src/sip/userAgent.ts` — OPTIONS inbound handler at lines 236-254; `dgram` socket and SIP string-builder pattern already present
+- sipgate-sip-stream-bridge v2.0 source: `go/internal/bridge/session.go`, `go/internal/bridge/ws.go` — goroutine model, sole-writer invariant, `dtmfQueue` channel pattern as direct model for `markEchoQueue`
+- sipgate-sip-stream-bridge v2.0 source: `go/internal/sip/registrar.go`, `go/internal/sip/handler.go` — `reregisterLoop` pattern, `client.Do()` usage, existing inbound OPTIONS handler
+- sipgate-sip-stream-bridge Node.js source: `node/src/ws/wsClient.ts` — mark/clear gap documented at line 259; `WsClient` interface structure
+- sipgate-sip-stream-bridge Node.js source: `node/src/sip/userAgent.ts` — OPTIONS inbound handler at lines 236-254; `dgram` socket and SIP string-builder pattern already present
 
 ### Secondary (MEDIUM confidence)
 - [emiago/sipgo client.go](https://github.com/emiago/sipgo/blob/main/client.go) — `Do()` implementation, CSeq auto-increment, header auto-population behavior

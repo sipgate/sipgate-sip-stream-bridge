@@ -7,11 +7,11 @@ tags: [go, zerolog, env, config, structured-logging]
 # Dependency graph
 requires: []
 provides:
-  - go module github.com/sipgate/audio-dock with zerolog and go-simpler/env
+  - go module github.com/sipgate/sipgate-sip-stream-bridge with zerolog and go-simpler/env
   - typed Config struct with all 10 env var fields matching v1.0 names exactly
   - zerolog JSON logger pattern (zerolog.New(os.Stdout).With().Timestamp().Logger())
   - fail-fast config validation: JSON error to stderr + exit(1) on misconfiguration
-  - compilable audio-dock binary that exits on missing env vars or emits startup log
+  - compilable sipgate-sip-stream-bridge binary that exits on missing env vars or emits startup log
 affects: [05-sip-ua, 06-bridge, 07-http, 08-lifecycle]
 
 # Tech tracking
@@ -31,7 +31,7 @@ key-files:
     - go.sum
     - internal/config/config.go
     - internal/config/config_test.go
-    - cmd/audio-dock/main.go
+    - cmd/sipgate-sip-stream-bridge/main.go
   modified: []
 
 key-decisions:
@@ -67,9 +67,9 @@ completed: 2026-03-03
 
 ## Accomplishments
 
-- Go module initialized at `github.com/sipgate/audio-dock` with go 1.25.0, zerolog v1.34.0, go-simpler/env v0.12.0
+- Go module initialized at `github.com/sipgate/sipgate-sip-stream-bridge` with go 1.25.0, zerolog v1.34.0, go-simpler/env v0.12.0
 - `internal/config/config.go`: Config struct with all 10 env var fields using exact v1.0 names; Load() exits with JSON error on missing required vars or invalid RTP port range
-- `cmd/audio-dock/main.go`: Entry point with zerolog JSON logger to stdout, startup log with all config fields, signal handling scaffold
+- `cmd/sipgate-sip-stream-bridge/main.go`: Entry point with zerolog JSON logger to stdout, startup log with all config fields, signal handling scaffold
 
 ## Task Commits
 
@@ -88,7 +88,7 @@ _Note: TDD task 2 has two commits (test RED -> feat GREEN)_
 - `go.sum` - Dependency checksums
 - `internal/config/config.go` - Config struct + Load() with fail-fast validation
 - `internal/config/config_test.go` - 4 TDD tests (happy path, missing SIP_USER, inverted RTP ports, missing SDP_CONTACT_IP)
-- `cmd/audio-dock/main.go` - Entry point with zerolog logger, startup log, signal handling
+- `cmd/sipgate-sip-stream-bridge/main.go` - Entry point with zerolog logger, startup log, signal handling
 
 ## Decisions Made
 
@@ -126,7 +126,7 @@ None - no external service configuration required.
 - FOUND: go.sum
 - FOUND: internal/config/config.go
 - FOUND: internal/config/config_test.go
-- FOUND: cmd/audio-dock/main.go
+- FOUND: cmd/sipgate-sip-stream-bridge/main.go
 - FOUND: .planning/phases/04-go-scaffold/04-01-SUMMARY.md
 - FOUND commit: f1e104c (chore: Go module init)
 - FOUND commit: 3753818 (test: failing config tests)

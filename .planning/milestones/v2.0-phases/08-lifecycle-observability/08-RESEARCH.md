@@ -56,7 +56,7 @@ The HTTP server must be shut down gracefully alongside everything else: `httpSer
 
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
-| Custom `prometheus.NewRegistry()` | `prometheus.DefaultRegisterer` | Default registry includes Go runtime/process metrics; custom registry exposes only audio-dock metrics |
+| Custom `prometheus.NewRegistry()` | `prometheus.DefaultRegisterer` | Default registry includes Go runtime/process metrics; custom registry exposes only sipgate-sip-stream-bridge metrics |
 | `atomic.Bool` for `isRegistered` | Mutex-protected bool | `atomic.Bool` is simpler and zero-allocation; sufficient for a single flag |
 | Separate HTTP server goroutine | Embedding in main goroutine | Separate goroutine allows `httpServer.Shutdown()` to be called from shutdown sequence cleanly |
 | `promhttp.Handler()` (global registry) | `promhttp.HandlerFor(reg, opts)` | `HandlerFor` with a custom registry avoids polluting metrics with Go runtime stats |
@@ -74,7 +74,7 @@ go get github.com/prometheus/client_golang/prometheus/promhttp
 ### Recommended File Changes for Phase 8
 
 ```
-cmd/audio-dock/
+cmd/sipgate-sip-stream-bridge/
 └── main.go                     # MODIFY: shutdownFlag, HTTP server start, drain sequence
 
 internal/bridge/
@@ -344,7 +344,7 @@ _ = httpServer.Shutdown(httpShutCtx)
 
 - **Calling Unregister before DrainAll completes:** Unregistering while calls are still active is valid per RFC 3261 but confuses sipgate's routing — active calls may lose their route. Always BYE-drain first, then Unregister.
 - **Closing `agent.UA` before DrainAll:** `ua.Close()` terminates the SIP transport, which can prevent BYE responses from being received. Keep UA alive through the entire drain.
-- **Using the default prometheus registry:** `prometheus.DefaultRegisterer` pre-registers Go runtime metrics (goroutines, GC, etc.). Using a custom `NewRegistry()` gives a clean scrape output with only audio-dock metrics.
+- **Using the default prometheus registry:** `prometheus.DefaultRegisterer` pre-registers Go runtime metrics (goroutines, GC, etc.). Using a custom `NewRegistry()` gives a clean scrape output with only sipgate-sip-stream-bridge metrics.
 - **Storing `*CallSession` in sync.Map but exposing it for external mutation:** `DrainAll` should call `dlg.Bye()` only; it should not cancel the session context directly (that is the session's responsibility via `dlg.Context()` cancellation).
 - **Registering metrics inside CallSession:** Metrics are registered once at startup. CallSession receives counter references and calls `.Inc()` — it never registers or unregisters metrics.
 
@@ -581,7 +581,7 @@ _ = json.NewEncoder(w).Encode(HealthResponse{
 - `internal/bridge/manager.go` (current) — `sessions sync.Map`, `defer m.sessions.Delete(callID)` in StartSession confirmed; BYE-by-range pattern is sound
 - `internal/sip/registrar.go` (current) — `Unregister()` already exists and handles Digest Auth; `doRegister()` structure confirmed for flag insertion points
 - `internal/sip/handler.go` (current) — `onInvite` structure confirmed; shutdownFlag check location identified
-- `cmd/audio-dock/main.go` (current) — `signal.NotifyContext` already wired; `registrar.Unregister` already called; `defer agent.UA.Close()` confirmed
+- `cmd/sipgate-sip-stream-bridge/main.go` (current) — `signal.NotifyContext` already wired; `registrar.Unregister` already called; `defer agent.UA.Close()` confirmed
 - `github.com/prometheus/client_golang` releases page — v1.23.2 confirmed as latest stable (2025-09-05)
 
 ### Secondary (MEDIUM confidence)

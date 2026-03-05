@@ -78,7 +78,7 @@ The `wsPacer` is the sole WS writer — mark echoes must go through `wsPacer`, n
 
 ### Twilio mark/clear protocol (verified from official docs)
 
-**Inbound mark (WS server → audio-dock):**
+**Inbound mark (WS server → sipgate-sip-stream-bridge):**
 ```json
 {
   "event": "mark",
@@ -87,7 +87,7 @@ The `wsPacer` is the sole WS writer — mark echoes must go through `wsPacer`, n
 }
 ```
 
-**Outbound mark echo (audio-dock → WS server, when playout reaches mark):**
+**Outbound mark echo (sipgate-sip-stream-bridge → WS server, when playout reaches mark):**
 ```json
 {
   "event": "mark",
@@ -97,14 +97,14 @@ The `wsPacer` is the sole WS writer — mark echoes must go through `wsPacer`, n
 }
 ```
 
-**Inbound clear (WS server → audio-dock):**
+**Inbound clear (WS server → sipgate-sip-stream-bridge):**
 ```json
 {
   "event": "clear",
   "streamSid": "MZxxx"
 }
 ```
-Upon clear: audio-dock flushes `packetQueue`, then sends back `mark` echoes for every undelivered mark that was in the buffer. This allows the WS server to know which marks were cancelled.
+Upon clear: sipgate-sip-stream-bridge flushes `packetQueue`, then sends back `mark` echoes for every undelivered mark that was in the buffer. This allows the WS server to know which marks were cancelled.
 
 ---
 
@@ -148,7 +148,7 @@ if (msg.event === 'clear') {
 
 ### What needs to change
 
-The current `go/internal/sip/registrar.go` handles inbound OPTIONS in `go/internal/sip/handler.go` (line 168: `onOptions` returns 200 OK). But there is no outbound OPTIONS ping from audio-dock to sipgate. Silent registration loss (sipgate drops the binding without sending a failure response) goes undetected until the next re-REGISTER tick.
+The current `go/internal/sip/registrar.go` handles inbound OPTIONS in `go/internal/sip/handler.go` (line 168: `onOptions` returns 200 OK). But there is no outbound OPTIONS ping from sipgate-sip-stream-bridge to sipgate. Silent registration loss (sipgate drops the binding without sending a failure response) goes undetected until the next re-REGISTER tick.
 
 **No new libraries needed.** The existing `sipgo.Client` already supports outgoing OPTIONS via `client.Do()`.
 
@@ -206,7 +206,7 @@ keepaliveLoop(ctx):
 
 ### What needs to change
 
-`node/src/sip/userAgent.ts` already handles inbound OPTIONS from sipgate (lines 236-254). For outbound OPTIONS (audio-dock probing sipgate), the same raw `dgram.Socket` already present in the module is used.
+`node/src/sip/userAgent.ts` already handles inbound OPTIONS from sipgate (lines 236-254). For outbound OPTIONS (sipgate-sip-stream-bridge probing sipgate), the same raw `dgram.Socket` already present in the module is used.
 
 **No new npm packages needed.** Node.js `dgram` (stdlib) and the existing SIP message builder pattern (used by `buildRegister`) is sufficient.
 
@@ -221,7 +221,7 @@ function buildOptions(p: { user: string; domain: string; registrar: string;
     'Max-Forwards: 70',
     `From: <sip:${p.user}@${p.domain}>;tag=${randomHex(6)}`,
     `To: <sip:${p.registrar}>`,
-    `Call-ID: ${randomHex(10)}@audio-dock`,
+    `Call-ID: ${randomHex(10)}@sipgate-sip-stream-bridge`,
     `CSeq: ${p.cseq} OPTIONS`,
     'Content-Length: 0',
     '',
@@ -304,5 +304,5 @@ All needed capabilities are already in the module:
 
 ---
 
-*Stack research for: audio-dock v2.1 — mark/clear + SIP OPTIONS keepalive*
+*Stack research for: sipgate-sip-stream-bridge v2.1 — mark/clear + SIP OPTIONS keepalive*
 *Researched: 2026-03-05*

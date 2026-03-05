@@ -3,7 +3,7 @@ package observability_test
 import (
 	"testing"
 
-	"github.com/sipgate/audio-dock/internal/observability"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
 )
 
 func TestNewMetrics_SIPOptionsFailures_NotNil(t *testing.T) {

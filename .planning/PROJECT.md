@@ -1,4 +1,4 @@
-# audio-dock
+# sipgate-sip-stream-bridge
 
 ## What This Is
 
@@ -13,7 +13,7 @@ Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket end
 **Tech stack:** Go 1.26, emiago/sipgo v1.2.0, pion/sdp v3.0.18, pion/rtp v1.10.1, rs/zerolog, gobwas/ws, prometheus/client_golang v1.23.2. Docker: golang:1.26-alpine builder + FROM scratch runtime. Node.js: TypeScript, SIP.js, Vitest 4.0.18.
 
 **Codebase:** ~17 Go source files, ~3,300 LOC. Layout:
-- `go/cmd/audio-dock/main.go` — entrypoint, wiring, graceful drain
+- `go/cmd/sipgate-sip-stream-bridge/main.go` — entrypoint, wiring, graceful drain
 - `go/internal/config/` — env var schema + validation (incl. SIPOptionsInterval)
 - `go/internal/sip/` — Agent, Registrar (incl. optionsKeepaliveLoop), Handler, SDP parsing
 - `go/internal/bridge/` — PortPool, CallManager, CallSession, WS bridge (incl. mark/clear)
@@ -46,8 +46,8 @@ Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket end
 - ✓ Graceful SIGTERM shutdown — v2.0 (DrainAll BYE loop + UNREGISTER, exits within 10s)
 - ✓ `GET /health` returns JSON with registered status and active call count — v2.0
 - ✓ `GET /metrics` returns Prometheus exposition with key counters — v2.0
-- ✓ `mark` event: WS server sends mark, audio-dock echoes it when outbound audio playout reaches that point — v2.1 (Go + Node.js)
-- ✓ `clear` event: WS server sends clear, audio-dock flushes buffered outbound RTP audio and echoes pending marks — v2.1 (Go + Node.js)
+- ✓ `mark` event: WS server sends mark, sipgate-sip-stream-bridge echoes it when outbound audio playout reaches that point — v2.1 (Go + Node.js)
+- ✓ `clear` event: WS server sends clear, sipgate-sip-stream-bridge flushes buffered outbound RTP audio and echoes pending marks — v2.1 (Go + Node.js)
 - ✓ SIP OPTIONS keepalive: periodic OPTIONS ping to sipgate to detect silent registration loss (2-failure threshold triggers re-registration) — v2.1 (Go + Node.js)
 
 ### Active
@@ -97,7 +97,7 @@ Incoming SIP calls from sipgate trunking are reliably bridged to a WebSocket end
 | emiago/sipgo v1.2.0 | Pure Go, stable v1.x, production-proven via LiveKit | ✓ Good — Digest Auth + dialog cache work correctly |
 | FROM scratch Docker image | ~1 MB vs 180 MB Node.js Alpine; no shell, no runtime attack surface | ✓ Good — achieved 1.06 MB |
 | No diago higher-level RTP | Raw RTP byte access needed for Twilio base64 encoding | ✓ Good — diago abstraction fights this use case |
-| Custom prometheus.Registry | Excludes Go runtime noise from /metrics scrape | ✓ Good — only 5 audio-dock metrics exposed |
+| Custom prometheus.Registry | Excludes Go runtime noise from /metrics scrape | ✓ Good — only 5 sipgate-sip-stream-bridge metrics exposed |
 | wsSignal with sync.Once | Double-close-safe signaling when multiple goroutines can fail | ✓ Good — prevents panic on simultaneous failures |
 | outboundFrame tagged union (v2.1) | Separate audio/mark fields over magic-byte sentinel — idiomatic nil check for silence fallback | ✓ Good — enables clear/mark routing without encoding coupling |
 | wsPacer sole-writer invariant (v2.1) | Only wsPacer writes to wsConn — mark echoes route via markEchoQueue channel | ✓ Good — no concurrent write races on WebSocket |

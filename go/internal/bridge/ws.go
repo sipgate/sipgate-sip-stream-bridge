@@ -45,7 +45,7 @@ type MediaFormat struct {
 	Channels   int    `json:"channels"`
 }
 
-// MediaEvent carries a single audio frame (WSB-03 — audio-dock to WS server direction).
+// MediaEvent carries a single audio frame (WSB-03 — sipgate-sip-stream-bridge to WS server direction).
 // Schema: {"event":"media","sequenceNumber":"N","streamSid":"MZxxx","media":{...}}
 type MediaEvent struct {
 	Event          string    `json:"event"`
@@ -199,7 +199,7 @@ func sendDTMF(conn net.Conn, streamSid, digit string, seqNo uint32) error {
 	})
 }
 
-// MarkEvent is the Twilio Media Streams `mark` event (WS server → audio-dock outbound echo).
+// MarkEvent is the Twilio Media Streams `mark` event (WS server → sipgate-sip-stream-bridge outbound echo).
 // Schema: {"event":"mark","sequenceNumber":"N","streamSid":"MZxxx","mark":{"name":"label"}}
 // Sent by wsPacer only (sole-writer invariant). Called from markEchoQueue consumer in wsPacer.
 // Reference: https://www.twilio.com/docs/voice/media-streams/websocket-messages#mark

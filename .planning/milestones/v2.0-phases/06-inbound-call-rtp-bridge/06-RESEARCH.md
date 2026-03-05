@@ -29,7 +29,7 @@
 
 ## Summary
 
-Phase 6 is the core functional phase of audio-dock. It adds three interdependent subsystems that must be implemented in lock-step: the SIP INVITE handler (UAS dialog), the CallManager/CallSession (per-call resource and goroutine lifecycle), and the WebSocket bridge (Twilio Media Streams protocol).
+Phase 6 is the core functional phase of sipgate-sip-stream-bridge. It adds three interdependent subsystems that must be implemented in lock-step: the SIP INVITE handler (UAS dialog), the CallManager/CallSession (per-call resource and goroutine lifecycle), and the WebSocket bridge (Twilio Media Streams protocol).
 
 The SIP layer uses `sipgo.DialogServerCache` with `ReadInvite`, `RespondSDP`, `ReadAck`, and `ReadBye`. The dialog context (`dlg.Context()`) is the lifecycle anchor for each call — it is cancelled when BYE arrives from either side. The SDP layer uses `pion/sdp/v3` to parse the caller's offer (extracting their RTP address, port, and DTMF payload type) and build the answer (advertising PCMU PT 0 + telephone-event with the DTMF PT mirrored from the offer). Per-call RTP uses a `net.UDPConn` bound to a port from the configured pool (CFG-03), with two goroutines per session: one reading RTP and writing to WebSocket, one reading WebSocket and writing RTP. The WebSocket bridge implements the Twilio Media Streams protocol exactly: `connected` then `start` on connect, `media` events for audio in both directions, and `stop` on teardown. `gobwas/ws` is already in go.mod from the Phase 5 scaffold and is the preferred WebSocket library since it avoids adding gorilla as a dependency.
 
@@ -120,8 +120,8 @@ import (
     "github.com/emiago/sipgo"
     siplib "github.com/emiago/sipgo/sip"
     "github.com/rs/zerolog"
-    "github.com/sipgate/audio-dock/internal/bridge"
-    "github.com/sipgate/audio-dock/internal/config"
+    "github.com/sipgate/sipgate-sip-stream-bridge/internal/bridge"
+    "github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 type Handler struct {
@@ -246,7 +246,7 @@ import (
     "github.com/emiago/sipgo"
     siplib "github.com/emiago/sipgo/sip"
     "github.com/rs/zerolog"
-    "github.com/sipgate/audio-dock/internal/config"
+    "github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 // CallSession owns all resources for a single active call.
@@ -409,7 +409,7 @@ func BuildSDPAnswer(ourIP string, ourRTPPort int, callerDTMFPT uint8) []byte {
             AddressType:    "IP4",
             UnicastAddress: ourIP,
         },
-        SessionName: sdp.SessionName("audio-dock"),
+        SessionName: sdp.SessionName("sipgate-sip-stream-bridge"),
         ConnectionInformation: &sdp.ConnectionInformation{
             NetworkType: "IN",
             AddressType: "IP4",
@@ -462,7 +462,7 @@ import (
 // ---- JSON message structs (Twilio Media Streams protocol) ----
 
 // ConnectedEvent is the first message sent after WS connection is established (WSB-01).
-// Direction: audio-dock → WebSocket server
+// Direction: sipgate-sip-stream-bridge → WebSocket server
 type ConnectedEvent struct {
     Event    string `json:"event"`    // "connected"
     Protocol string `json:"protocol"` // "Call"
@@ -976,7 +976,7 @@ Verified patterns from official sources:
 ### Twilio Media Streams: `media` Event (inbound audio, WS→Server)
 
 ```json
-// Direction: audio-dock → WebSocket server (WSB-03)
+// Direction: sipgate-sip-stream-bridge → WebSocket server (WSB-03)
 {
   "event": "media",
   "sequenceNumber": "2",
@@ -993,7 +993,7 @@ Verified patterns from official sources:
 ### Twilio Media Streams: `media` Event (outbound audio, Server→WS)
 
 ```json
-// Direction: WebSocket server → audio-dock (WSB-05)
+// Direction: WebSocket server → sipgate-sip-stream-bridge (WSB-05)
 {
   "event": "media",
   "streamSid": "MZxxxxxxxx",
@@ -1122,7 +1122,7 @@ agent.Server.OnBye(func(req *sip.Request, tx sip.ServerTransaction) {
 4. **What is the correct format for `callSid` in Twilio Media Streams events?**
    - What we know: Twilio uses their own Call SID format (e.g., `CAxxxxxxxx`). We do not have a Twilio account. The requirement (WSB-06) says to use SIP Call-ID.
    - What's unclear: Whether WS consumers built for Twilio will accept a SIP Call-ID string where they expect `CA...` format.
-   - Recommendation: Use the SIP `Call-ID` header value verbatim as `callSid` and also expose it in `customParameters["CallSid"]`. WS consumers built for audio-dock will use `customParameters` for the SIP-specific identifiers.
+   - Recommendation: Use the SIP `Call-ID` header value verbatim as `callSid` and also expose it in `customParameters["CallSid"]`. WS consumers built for sipgate-sip-stream-bridge will use `customParameters` for the SIP-specific identifiers.
 
 ---
 
@@ -1145,7 +1145,7 @@ agent.Server.OnBye(func(req *sip.Request, tx sip.ServerTransaction) {
 - `gobwas/ws` pkg.go.dev — https://pkg.go.dev/github.com/gobwas/ws — `ws.Dial(ctx, url)`, `wsutil.WriteClientText`, `wsutil.ReadServerData` API verified
 - `.planning/research/sip-library-research.md` — prior research; Dialog lifecycle patterns, DTMF PT issue, SDP pitfalls
 - `.planning/phases/05-sip-registration/05-RESEARCH.md` — Phase 5 patterns; confirmed go.mod deps, registered sipgo API
-- `internal/sip/agent.go`, `registrar.go`, `cmd/audio-dock/main.go` — actual Phase 5 implementation; Agent struct fields, NewAgent signature confirmed
+- `internal/sip/agent.go`, `registrar.go`, `cmd/sipgate-sip-stream-bridge/main.go` — actual Phase 5 implementation; Agent struct fields, NewAgent signature confirmed
 
 ### Secondary (MEDIUM confidence)
 
@@ -1159,7 +1159,7 @@ agent.Server.OnBye(func(req *sip.Request, tx sip.ServerTransaction) {
 - sipgate SDP exact format (session-level vs media-level `c=`) — assumed session-level based on common SIP trunk behavior; unverified without live traffic
 - sipgate DTMF PT 113 — confirmed from v1.0 implementation comment; not verified against current sipgate SDP trace
 - `OnInvite` goroutine model in sipgo v1.2.0 — assumed one goroutine per transaction based on standard SIP transaction model; not verified from source
-- Twilio `callSid` format compatibility — audio-dock WS consumers are not real Twilio; using SIP Call-ID as callSid is reasonable but untested
+- Twilio `callSid` format compatibility — sipgate-sip-stream-bridge WS consumers are not real Twilio; using SIP Call-ID as callSid is reasonable but untested
 
 ---
 

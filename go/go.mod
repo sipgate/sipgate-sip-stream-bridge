@@ -1,4 +1,4 @@
-module github.com/sipgate/audio-dock
+module github.com/sipgate/sipgate-sip-stream-bridge
 
 go 1.25.0
 

@@ -11,8 +11,8 @@ import (
 	"github.com/emiago/sipgo"
 	siplib "github.com/emiago/sipgo/sip"
 	"github.com/rs/zerolog"
-	"github.com/sipgate/audio-dock/internal/config"
-	"github.com/sipgate/audio-dock/internal/observability"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
 )
 
 // Registrar manages SIP REGISTER lifecycle for a single AoR (SIP_USER@SIP_DOMAIN).
@@ -90,7 +90,7 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 	registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
 	req := siplib.NewRequest(siplib.REGISTER, registrarURI)
 	req.AppendHeader(siplib.NewHeader("Expires", strconv.Itoa(r.expires)))
-	req.AppendHeader(siplib.NewHeader("User-Agent", "audio-dock/2.0"))
+	req.AppendHeader(siplib.NewHeader("User-Agent", "sipgate-sip-stream-bridge/2.0"))
 
 	// Pre-set From and To with the correct AoR (sip:user@domain).
 	// ClientRequestRegisterBuild skips From/To when already present, but if we don't set them
@@ -223,7 +223,7 @@ func (r *Registrar) sendOptions(ctx context.Context) (*siplib.Response, error) {
 
 	registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
 	req := siplib.NewRequest(siplib.OPTIONS, registrarURI)
-	req.AppendHeader(siplib.NewHeader("User-Agent", "audio-dock/2.0"))
+	req.AppendHeader(siplib.NewHeader("User-Agent", "sipgate-sip-stream-bridge/2.0"))
 	req.AppendHeader(siplib.NewHeader("Max-Forwards", "70"))
 
 	aor := r.aorURI()

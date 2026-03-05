@@ -32,7 +32,7 @@ key-files:
     - internal/sip/handler.go
     - internal/bridge/manager.go
     - internal/sip/registrar.go
-    - cmd/audio-dock/main.go
+    - cmd/sipgate-sip-stream-bridge/main.go
 
 key-decisions:
   - "[08-01] 503 (not 480) for INVITE reject during shutdown — RFC 3261 §21.5.4 defines 503 for server-draining"
@@ -80,7 +80,7 @@ Each task was committed atomically:
 - `internal/sip/handler.go` - Added `shutdown atomic.Bool` field, `SetShutdown()` method, 503 guard at top of `onInvite`
 - `internal/bridge/manager.go` - Added `ActiveCount() int` and `DrainAll(ctx context.Context)` methods to CallManager
 - `internal/sip/registrar.go` - Added `registered atomic.Bool` field, `IsRegistered() bool` method, Store(true/false) at success/failure/unregister points
-- `cmd/audio-dock/main.go` - Captured handler return from sip.NewHandler; replaced shutdown block with full 3-step drain sequence
+- `cmd/sipgate-sip-stream-bridge/main.go` - Captured handler return from sip.NewHandler; replaced shutdown block with full 3-step drain sequence
 
 ## Decisions Made
 - 503 (not 480) for rejected INVITEs during shutdown: RFC 3261 §21.5.4 — 503 is the correct status when server is draining
@@ -108,7 +108,7 @@ None - no external service configuration required.
 - FOUND: internal/sip/handler.go
 - FOUND: internal/bridge/manager.go
 - FOUND: internal/sip/registrar.go
-- FOUND: cmd/audio-dock/main.go
+- FOUND: cmd/sipgate-sip-stream-bridge/main.go
 - FOUND: .planning/phases/08-lifecycle-observability/08-01-SUMMARY.md
 - FOUND commit: 70a7f4d (Task 1)
 - FOUND commit: 9fa9999 (Task 2)

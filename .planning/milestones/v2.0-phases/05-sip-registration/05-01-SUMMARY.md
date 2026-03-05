@@ -12,7 +12,7 @@ requires:
 provides:
   - "internal/sip/agent.go — Agent struct (UA+Server+Client) + NewAgent constructor"
   - "internal/sip/registrar.go — Registrar struct with Register/doRegister/reregisterLoop/Unregister"
-  - "cmd/audio-dock/main.go — SIP wiring: listeners started before Register, blocking Register call, SIGTERM/SIGINT shutdown"
+  - "cmd/sipgate-sip-stream-bridge/main.go — SIP wiring: listeners started before Register, blocking Register call, SIGTERM/SIGINT shutdown"
   - "go.mod — emiago/sipgo@v1.2.0, pion/sdp/v3@v3.0.18, pion/rtp@v1.10.1, samber/slog-zerolog@v1.0.0"
 
 affects: [06-call-handling, 07-audio-bridge, 08-lifecycle]
@@ -39,7 +39,7 @@ key-files:
     - "internal/sip/registrar.go — Registrar: Register/doRegister/reregisterLoop/Unregister"
     - "internal/sip/registrar_test.go — 5 unit tests (nil client, 403 message, Expires fallback, ticker math)"
   modified:
-    - "cmd/audio-dock/main.go — Phase 4 scaffold replaced with Phase 5 SIP wiring"
+    - "cmd/sipgate-sip-stream-bridge/main.go — Phase 4 scaffold replaced with Phase 5 SIP wiring"
     - "go.mod / go.sum — sipgo, pion/sdp, pion/rtp, slog-zerolog added"
 
 key-decisions:
@@ -99,7 +99,7 @@ _Note: TDD Task 2 has two commits (RED test → GREEN implementation)_
 - `internal/sip/agent.go` - Agent struct; NewAgent creates UA/Server/Client with slog-zerolog bridge
 - `internal/sip/registrar.go` - Registrar; Register/doRegister/reregisterLoop/Unregister
 - `internal/sip/registrar_test.go` - 5 unit tests covering nil client, 403 error, Expires fallback, ticker math
-- `cmd/audio-dock/main.go` - Phase 4 scaffold replaced with Phase 5 SIP wiring
+- `cmd/sipgate-sip-stream-bridge/main.go` - Phase 4 scaffold replaced with Phase 5 SIP wiring
 - `go.mod` / `go.sum` - sipgo@v1.2.0, pion/sdp/v3@v3.0.18, pion/rtp@v1.10.1, slog-zerolog@v1.0.0 added
 
 ## Decisions Made

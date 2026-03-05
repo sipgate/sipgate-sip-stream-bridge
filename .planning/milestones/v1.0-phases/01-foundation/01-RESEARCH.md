@@ -205,7 +205,7 @@ import type { Logger } from 'pino';
 
 export const rootLogger: Logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
-  base: { service: 'audio-dock' },
+  base: { service: 'sipgate-sip-stream-bridge' },
 });
 
 export function createChildLogger(bindings: {
@@ -346,7 +346,7 @@ CMD ["node", "dist/index.js"]
 
 ```yaml
 services:
-  audio-dock:
+  sipgate-sip-stream-bridge:
     build: .
     network_mode: host   # Linux only — gives container direct access to host network
     environment:
@@ -469,7 +469,7 @@ const config = Object.freeze(result.data);
 // Source: https://github.com/pinojs/pino/blob/main/docs/child-loggers.md (HIGH confidence)
 import pino from 'pino';
 
-const root = pino({ level: 'info', base: { service: 'audio-dock' } });
+const root = pino({ level: 'info', base: { service: 'sipgate-sip-stream-bridge' } });
 
 // Phase 1: no live calls yet; bind component only
 const sipLog = root.child({ component: 'sip' });
@@ -516,7 +516,7 @@ await registerer.register();
 # Source: Docker documentation + sipgate trunking community configs (MEDIUM confidence)
 # docker-compose.yml — Linux production
 services:
-  audio-dock:
+  sipgate-sip-stream-bridge:
     build: .
     network_mode: host     # Linux only — bypasses Docker NAT for RTP/SIP
     # On macOS: remove network_mode, add explicit port publish:

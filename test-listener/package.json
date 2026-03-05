@@ -1,7 +1,7 @@
 {
-  "name": "audio-dock-test-listener",
+  "name": "sipgate-sip-stream-bridge-test-listener",
   "version": "1.0.0",
-  "description": "Minimal Twilio Media Streams WebSocket listener for testing audio-dock",
+  "description": "Minimal Twilio Media Streams WebSocket listener for testing sipgate-sip-stream-bridge",
   "type": "module",
   "main": "index.js",
   "scripts": {

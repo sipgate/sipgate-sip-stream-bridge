@@ -7,9 +7,9 @@ tags: [docker, go, static-binary, from-scratch, ca-certs, docker-compose]
 # Dependency graph
 requires:
   - phase: 04-01
-    provides: go module github.com/sipgate/audio-dock with cmd/audio-dock entry point
+    provides: go module github.com/sipgate/sipgate-sip-stream-bridge with cmd/sipgate-sip-stream-bridge entry point
 provides:
-  - Docker image audio-dock:latest at ~1.06 MB (FROM scratch, statically-linked Go binary)
+  - Docker image sipgate-sip-stream-bridge:latest at ~1.06 MB (FROM scratch, statically-linked Go binary)
   - Dockerfile: two-stage golang:1.26-alpine builder + FROM scratch runtime
   - CA certificates at /etc/ssl/certs/ca-certificates.crt in final image (Phase 6 TLS readiness)
   - docker-compose.yml with network_mode: host and macOS override documentation
@@ -99,9 +99,9 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 
-- Phase 5 (SIP UA): can build and run via `docker build -t audio-dock:latest . && docker run --rm -e ... audio-dock:latest`
+- Phase 5 (SIP UA): can build and run via `docker build -t sipgate-sip-stream-bridge:latest . && docker run --rm -e ... sipgate-sip-stream-bridge:latest`
 - Phase 6 (Bridge/RTP): Dockerfile already has CA certs — no changes needed to support wss:// connections
-- CI/CD: `docker build -t audio-dock:latest .` is the full build command; no Node.js, no pnpm, no transpile step
+- CI/CD: `docker build -t sipgate-sip-stream-bridge:latest .` is the full build command; no Node.js, no pnpm, no transpile step
 
 ---
 *Phase: 04-go-scaffold*

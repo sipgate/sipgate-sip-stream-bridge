@@ -6,7 +6,7 @@ import (
 	"github.com/emiago/sipgo"
 	siplib "github.com/emiago/sipgo/sip"
 	"github.com/rs/zerolog"
-	"github.com/sipgate/audio-dock/internal/config"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 // CallManagerIface is satisfied by bridge.CallManager (defined in 06-02).

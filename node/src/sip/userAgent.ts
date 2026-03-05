@@ -23,7 +23,7 @@ export interface SipHandle {
   unregister(): Promise<void>;
 }
 
-const USER_AGENT = 'audio-dock/0.1.0';
+const USER_AGENT = 'sipgate-sip-stream-bridge/0.1.0';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -127,7 +127,7 @@ export async function createSipUserAgent(
   const [registrarIp] = await dns.resolve4(registrar);
   const localIp = config.SDP_CONTACT_IP ?? getLocalIp();
   const localPort = 5060;
-  const callId = `${randomHex(10)}@audio-dock`;
+  const callId = `${randomHex(10)}@sipgate-sip-stream-bridge`;
   const fromTag = randomHex(6);
   let cseq = 1;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;

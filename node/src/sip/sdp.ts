@@ -1,5 +1,5 @@
 /**
- * SDP offer/answer helpers for audio-dock.
+ * SDP offer/answer helpers for sipgate-sip-stream-bridge.
  * Pure functions — no side effects, no I/O.
  */
 
@@ -40,8 +40,8 @@ export function parseSdpOffer(sdpBody: string): SdpOffer | null {
 export function buildSdpAnswer(localIp: string, localRtpPort: number): string {
   const lines = [
     'v=0',
-    `o=audio-dock 0 0 IN IP4 ${localIp}`,
-    's=audio-dock',
+    `o=sipgate-sip-stream-bridge 0 0 IN IP4 ${localIp}`,
+    's=sipgate-sip-stream-bridge',
     `c=IN IP4 ${localIp}`,
     't=0 0',
     `m=audio ${localRtpPort} RTP/AVP 0 113`,

@@ -17,9 +17,9 @@ The `mark` echo (incoming from the WS server) arrives in `wsToRTP` as a received
 The mark echo is a read-side event (arrives from WS server → `wsToRTP`). The clear event is a write-side action (must be sent to WS server → `wsPacer`). Developers wire both together and write back to the conn from the read goroutine — a common WebSocket concurrency mistake.
 
 **How to avoid:**
-The mark echo is inbound-only — audio-dock reads it and stores state (e.g., the pending mark name), but does NOT write anything back in response. Mark echoes flow: WS server → `wsToRTP` → stores pending mark name in a channel or sync.Map → `wsPacer` may read that channel if it needs to track playout position.
+The mark echo is inbound-only — sipgate-sip-stream-bridge reads it and stores state (e.g., the pending mark name), but does NOT write anything back in response. Mark echoes flow: WS server → `wsToRTP` → stores pending mark name in a channel or sync.Map → `wsPacer` may read that channel if it needs to track playout position.
 
-For outbound mark events (audio-dock echoing a mark *to* the WS server after outbound audio playout), the echo must be sent **exclusively from `wsPacer`**, just like `sendDTMF`. Use the same `dtmfQueue` pattern: add a `markEchoQueue chan string` and drain it in `wsPacer`'s select.
+For outbound mark events (sipgate-sip-stream-bridge echoing a mark *to* the WS server after outbound audio playout), the echo must be sent **exclusively from `wsPacer`**, just like `sendDTMF`. Use the same `dtmfQueue` pattern: add a `markEchoQueue chan string` and drain it in `wsPacer`'s select.
 
 ```go
 // In wsPacer select — add alongside existing dtmfQueue case:
@@ -43,7 +43,7 @@ case markName := <-s.markEchoQueue:
 ### Pitfall 2: clear Flushes the packetQueue but Does Not Reset the RTP Pacer Timestamp — Audio Glitch After Clear
 
 **What goes wrong:**
-The clear event from the WS server instructs audio-dock to discard all buffered outbound audio (drain `packetQueue`). If `packetQueue` is drained but `rtpPacer` continues sending silence frames at the same RTP timestamp progression, the call is fine. However, if the implementation stops the pacer during clear and then restarts it (common mistake when trying to "pause" audio), the RTP timestamp and sequence number jump. The caller's jitter buffer detects a sequence discontinuity, flushes its buffer, and the caller hears a ~200ms click or pop.
+The clear event from the WS server instructs sipgate-sip-stream-bridge to discard all buffered outbound audio (drain `packetQueue`). If `packetQueue` is drained but `rtpPacer` continues sending silence frames at the same RTP timestamp progression, the call is fine. However, if the implementation stops the pacer during clear and then restarts it (common mistake when trying to "pause" audio), the RTP timestamp and sequence number jump. The caller's jitter buffer detects a sequence discontinuity, flushes its buffer, and the caller hears a ~200ms click or pop.
 
 **Why it happens:**
 Developers naturally think "pause playback = stop the RTP stream". But the RTP pacer must send at exactly 20ms/frame continuously — the silence frames between real audio are what keep the NAT traversal hole open and what keep the jitter buffer in a steady state. Stopping and restarting the pacer introduces a gap that jitter buffers detect as packet loss.
@@ -82,7 +82,7 @@ The RTP pacer sees an empty queue and sends silence — no timestamp reset, no s
 ### Pitfall 3: Outbound mark Message Schema — Missing streamSid Causes Silent Failure
 
 **What goes wrong:**
-The outbound `mark` message sent **from audio-dock to the WS server** (echoing that outbound audio playout has reached a mark point) requires a `streamSid` field. If `streamSid` is omitted, Twilio-compatible WS consumers silently ignore the mark event — no error is returned, but the consumer never fires the callback that was waiting for the mark. Features built on mark-based synchronization (barge-in, playback confirmation) break without any error signal.
+The outbound `mark` message sent **from sipgate-sip-stream-bridge to the WS server** (echoing that outbound audio playout has reached a mark point) requires a `streamSid` field. If `streamSid` is omitted, Twilio-compatible WS consumers silently ignore the mark event — no error is returned, but the consumer never fires the callback that was waiting for the mark. Features built on mark-based synchronization (barge-in, playback confirmation) break without any error signal.
 
 **Why it happens:**
 The Twilio docs show two different mark schemas:
@@ -92,7 +92,7 @@ The Twilio docs show two different mark schemas:
 Developers add `sequenceNumber` (which they see on incoming marks) to outgoing marks, but forget `streamSid` (which is on all other outgoing events like `media`). The JSON is valid; the consumer just doesn't match it.
 
 **How to avoid:**
-Outgoing mark schema (audio-dock → WS server):
+Outgoing mark schema (sipgate-sip-stream-bridge → WS server):
 ```json
 {
   "event": "mark",
@@ -116,7 +116,7 @@ No `sequenceNumber` needed on outgoing marks. Always include `streamSid`. Add a 
 ### Pitfall 4: clear Event Must Also Echo All Pending mark Names Back to the WS Server
 
 **What goes wrong:**
-Per the Twilio Media Streams spec: "If your server sends a clear message, Twilio empties the audio buffer and sends back mark messages matching any remaining mark messages." In the audio-dock inversion, audio-dock is the bridge — when it receives a `clear` from the WS server and flushes `packetQueue`, it must also send back mark echoes for any marks that were queued in `packetQueue` but never reached playout. If these pending marks are not echoed, the WS consumer's barge-in state machine gets stuck waiting for marks that will never arrive.
+Per the Twilio Media Streams spec: "If your server sends a clear message, Twilio empties the audio buffer and sends back mark messages matching any remaining mark messages." In the sipgate-sip-stream-bridge inversion, sipgate-sip-stream-bridge is the bridge — when it receives a `clear` from the WS server and flushes `packetQueue`, it must also send back mark echoes for any marks that were queued in `packetQueue` but never reached playout. If these pending marks are not echoed, the WS consumer's barge-in state machine gets stuck waiting for marks that will never arrive.
 
 **Why it happens:**
 Developers implement clear as a simple queue drain without tracking which marks were interspersed with audio frames. If marks are queued separately (e.g., on a mark channel alongside packetQueue), they must also be drained and echoed.
@@ -241,7 +241,7 @@ func (r *Registrar) sendOptions(ctx context.Context) {
 ### Pitfall 7: OPTIONS Keepalive Interval Too Aggressive — Sipgate Rate-Limits or Blacklists
 
 **What goes wrong:**
-An OPTIONS keepalive interval of < 10 seconds generates 6+ requests per minute per registered UA. At scale (multiple audio-dock instances), or during testing where OPTIONS intervals are set to 1–2 seconds for faster feedback, sipgate may rate-limit or block the source IP. The registration itself may then fail because REGISTER traffic from the same IP is also rate-limited.
+An OPTIONS keepalive interval of < 10 seconds generates 6+ requests per minute per registered UA. At scale (multiple sipgate-sip-stream-bridge instances), or during testing where OPTIONS intervals are set to 1–2 seconds for faster feedback, sipgate may rate-limit or block the source IP. The registration itself may then fail because REGISTER traffic from the same IP is also rate-limited.
 
 **Why it happens:**
 Developers set the keepalive interval low during development to get fast feedback on the detection logic. They forget to increase it before deploying. The default in production VOIP systems is 30–60 seconds.
@@ -455,8 +455,8 @@ Inside `createWsClient`, handle `mark` and `clear` in the same `ws.on('message')
 - RFC 3261 §11 — SIP OPTIONS request semantics; out-of-dialog use for capability probing: https://www.rfc-editor.org/rfc/rfc3261 (HIGH confidence — normative RFC)
 - RFC 6223 — Indication of Support for Keep-Alive in SIP: https://www.rfc-editor.org/rfc/rfc6223 (HIGH confidence — normative RFC)
 - Cisco CUBE documentation — out-of-dialog OPTIONS ping group, response code interpretation for registration loss detection: https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/voice/cube_sipsip/configuration/15-mt/cube-sipsip-15-mt-book/voi-out-of-dialog.html (MEDIUM confidence — vendor documentation; response code table is consistent with RFC 3261)
-- audio-dock v2.0 source — `wsPacer` sole-writer invariant, `wsSignal` pattern, `dtmfQueue` pattern (direct model for `markEchoQueue`): `go/internal/bridge/session.go` and `go/internal/bridge/ws.go` (HIGH confidence — production code)
-- audio-dock v1.0 source — `wsClient.ts` `onAudio` listener with "Ignore non-media events (mark, clear, etc.)" comment: `node/src/ws/wsClient.ts` (HIGH confidence — production code, documents the gap to fill)
+- sipgate-sip-stream-bridge v2.0 source — `wsPacer` sole-writer invariant, `wsSignal` pattern, `dtmfQueue` pattern (direct model for `markEchoQueue`): `go/internal/bridge/session.go` and `go/internal/bridge/ws.go` (HIGH confidence — production code)
+- sipgate-sip-stream-bridge v1.0 source — `wsClient.ts` `onAudio` listener with "Ignore non-media events (mark, clear, etc.)" comment: `node/src/ws/wsClient.ts` (HIGH confidence — production code, documents the gap to fill)
 
 ---
 *Pitfalls research for: mark/clear Twilio Media Streams events + SIP OPTIONS keepalive — v2.1 milestone additions*

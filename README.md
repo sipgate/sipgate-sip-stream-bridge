@@ -1,4 +1,4 @@
-# audio-dock
+# sipgate-sip-stream-bridge
 
 A service that bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) protocol. Drop-in compatible with any Twilio Media Streams consumer — AI voice bots, call recording, real-time transcription.
 
@@ -8,7 +8,7 @@ sipgate SIP trunk  ←───────────────────�
         │ SIP (UDP :5060)                                                 RTP/UDP  │
         ▼                                                                          ▼
   ┌──────────────────────────────────────────────────────────────────────────────┐
-  │                             audio-dock                                        │
+  │                             sipgate-sip-stream-bridge                                        │
   │                                                                               │
   │              SIP Handler ──► CallManager ──► per-call RTP socket             │
   │                                                      │                        │
@@ -56,7 +56,7 @@ Two implementations are available in this repository:
 ```bash
 cp .env.example .env   # fill in SIP credentials
 cd go
-go run ./cmd/audio-dock
+go run ./cmd/sipgate-sip-stream-bridge
 ```
 
 ### Node.js
@@ -102,8 +102,8 @@ MODE=echo node index.js   # echo caller audio back
 MODE=tone node index.js   # send a synthetic tone (simulates TTS)
 MODE=timing node index.js # print inter-arrival time per packet (jitter check)
 
-# Terminal 2 — start audio-dock (Go example)
-cd go && go run ./cmd/audio-dock
+# Terminal 2 — start sipgate-sip-stream-bridge (Go example)
+cd go && go run ./cmd/sipgate-sip-stream-bridge
 ```
 
 Then call your sipgate number. The listener logs `connected`, `start`, `media`, and `stop` events.
@@ -115,7 +115,7 @@ Set `WS_TARGET_URL=ws://localhost:8080` in `.env` (the listener's default port).
 ## Repository Layout
 
 ```
-audio-dock/
+sipgate-sip-stream-bridge/
 ├── go/               # Go v2.0 implementation
 │   ├── cmd/          # Entrypoint
 │   ├── internal/     # SIP, bridge, observability packages

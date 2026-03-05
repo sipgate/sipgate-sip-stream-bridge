@@ -244,8 +244,8 @@ function parseSdpOffer(sdpBody: string): {
 function buildSdpAnswer(localIp: string, localRtpPort: number): string {
   const lines = [
     'v=0',
-    `o=audio-dock 0 0 IN IP4 ${localIp}`,
-    's=audio-dock',
+    `o=sipgate-sip-stream-bridge 0 0 IN IP4 ${localIp}`,
+    's=sipgate-sip-stream-bridge',
     `c=IN IP4 ${localIp}`,
     't=0 0',
     `m=audio ${localRtpPort} RTP/AVP 0 101`,
@@ -390,7 +390,7 @@ function makeStartEvent(p: {
     sequenceNumber: String(p.sequenceNumber),
     start: {
       streamSid: p.streamSid,
-      accountSid: '',      // not applicable for audio-dock; empty string
+      accountSid: '',      // not applicable for sipgate-sip-stream-bridge; empty string
       callSid: p.callSid,
       tracks: ['inbound', 'outbound'],
       customParameters: {

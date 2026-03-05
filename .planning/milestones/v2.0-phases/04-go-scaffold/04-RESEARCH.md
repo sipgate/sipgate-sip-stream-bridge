@@ -10,11 +10,11 @@
 
 Phase 4 establishes the skeleton of the Go rewrite: a runnable binary that validates all required environment variables at startup, logs structured JSON with zerolog, exits with a descriptive error on misconfiguration, and ships as a `FROM scratch` static binary image under 20 MB. This phase has no SIP, RTP, or WebSocket logic — it is purely the scaffold that later phases build on.
 
-The standard Go project layout for a self-contained service places all implementation packages under `internal/` and the `main.go` entry point under `cmd/audio-dock/`. The v1.0 TypeScript reference uses Zod for env-var validation with a fail-fast schema; the Go equivalent is `go-simpler.org/env` (struct tags, required fields, typed integer parsing, clear error messages naming the missing variable). Logging uses `rs/zerolog` v1.34.0 (Mar 2025), which writes zero-allocation JSON to stdout out of the box and supports child loggers carrying per-call fields like `callId` and `streamSid` — critical for later phases.
+The standard Go project layout for a self-contained service places all implementation packages under `internal/` and the `main.go` entry point under `cmd/sipgate-sip-stream-bridge/`. The v1.0 TypeScript reference uses Zod for env-var validation with a fail-fast schema; the Go equivalent is `go-simpler.org/env` (struct tags, required fields, typed integer parsing, clear error messages naming the missing variable). Logging uses `rs/zerolog` v1.34.0 (Mar 2025), which writes zero-allocation JSON to stdout out of the box and supports child loggers carrying per-call fields like `callId` and `streamSid` — critical for later phases.
 
 The Docker pattern is a two-stage build: `golang:1.26-alpine` builder stage compiles with `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -trimpath`, producing a statically-linked binary. The scratch stage copies only the binary (plus CA certs if HTTPS calls are ever needed). Typical output image is 5–15 MB, well under the 20 MB requirement. Docker Compose must carry over the v1.0 `network_mode: host` setting with an env_file reference.
 
-**Primary recommendation:** Use `go-simpler.org/env` for config validation, `rs/zerolog` for structured logging, and a two-stage `golang:1.26-alpine` + `FROM scratch` Dockerfile. The Go module path should be `github.com/sipgate/audio-dock` (or a private equivalent) with `go 1.25` declared in `go.mod` (the default when using Go 1.26 toolchain).
+**Primary recommendation:** Use `go-simpler.org/env` for config validation, `rs/zerolog` for structured logging, and a two-stage `golang:1.26-alpine` + `FROM scratch` Dockerfile. The Go module path should be `github.com/sipgate/sipgate-sip-stream-bridge` (or a private equivalent) with `go 1.25` declared in `go.mod` (the default when using Go 1.26 toolchain).
 
 ---
 
@@ -29,7 +29,7 @@ The Docker pattern is a two-stage build: `golang:1.26-alpine` builder stage comp
 | CFG-04 | External/reachable IP for SDP contact line configured via env var | `SDP_CONTACT_IP` field; validated non-empty; used in SDP answer in later phases |
 | CFG-05 | Service fails to start with a descriptive error if any required config is missing | `env.Load()` returns `*NotSetError` naming the missing variable; `log.Fatal()` prints it as structured JSON then exits non-zero |
 | OBS-01 | Structured JSON log with callId/streamSid context on each relevant line (zerolog) | `zerolog.New(os.Stdout).With().Timestamp().Logger()` outputs JSON; child loggers via `.With().Str("callId", id).Logger()` carry per-call context; this phase establishes the base logger only |
-| DCK-01 | Static Go binary with `CGO_ENABLED=0` — no Node.js runtime | `CGO_ENABLED=0 go build` in Dockerfile builder stage; verified by `file ./audio-dock` showing "statically linked" |
+| DCK-01 | Static Go binary with `CGO_ENABLED=0` — no Node.js runtime | `CGO_ENABLED=0 go build` in Dockerfile builder stage; verified by `file ./sipgate-sip-stream-bridge` showing "statically linked" |
 | DCK-02 | Docker Compose file with `network_mode: host` for Linux production | Update existing `docker-compose.yml`: change image/command to Go binary, keep `network_mode: host` and `env_file: .env` |
 | DCK-03 | Dockerfile enforces `CGO_ENABLED=0`; final image `FROM scratch` or distroless (~8–15 MB) | Two-stage Dockerfile: `golang:1.26-alpine` builder + `FROM scratch` runtime; `-ldflags="-s -w" -trimpath` reduces binary size |
 </phase_requirements>
@@ -77,20 +77,20 @@ go get github.com/rs/zerolog@v1.34.0
 ### Recommended Project Structure
 
 ```
-audio-dock/                       # repo root (existing — contains Node.js v1.0)
+sipgate-sip-stream-bridge/                       # repo root (existing — contains Node.js v1.0)
 ├── go.mod                        # new — Go module definition
 ├── go.sum                        # new — dependency checksums
 ├── Dockerfile                    # replace Node.js Dockerfile with Go version
 ├── docker-compose.yml            # update to use Go binary
 ├── cmd/
-│   └── audio-dock/
+│   └── sipgate-sip-stream-bridge/
 │       └── main.go               # entry point: load config, init logger, wire components, wait for signal
 └── internal/
     └── config/
         └── config.go             # Config struct, env.Load(), fail-fast validation
 ```
 
-Later phases (5–8) will add `internal/sip/`, `internal/bridge/`, `internal/obs/`. This phase creates only `cmd/audio-dock/main.go` and `internal/config/config.go`.
+Later phases (5–8) will add `internal/sip/`, `internal/bridge/`, `internal/obs/`. This phase creates only `cmd/sipgate-sip-stream-bridge/main.go` and `internal/config/config.go`.
 
 ### Pattern 1: go.mod Initialization
 
@@ -99,9 +99,9 @@ Later phases (5–8) will add `internal/sip/`, `internal/bridge/`, `internal/obs
 **Example:**
 ```bash
 # Run from repo root
-go mod init github.com/sipgate/audio-dock
+go mod init github.com/sipgate/sipgate-sip-stream-bridge
 # Creates go.mod with:
-#   module github.com/sipgate/audio-dock
+#   module github.com/sipgate/sipgate-sip-stream-bridge
 #   go 1.25
 go get go-simpler.org/env@v0.12.0
 go get github.com/rs/zerolog@v1.34.0
@@ -130,7 +130,7 @@ import (
     "go-simpler.org/env"
 )
 
-// Config holds all environment-variable configuration for audio-dock.
+// Config holds all environment-variable configuration for sipgate-sip-stream-bridge.
 // Field names match v1.0 env var names exactly (CFG-01 through CFG-04).
 type Config struct {
     // SIP credentials (CFG-01)
@@ -179,7 +179,7 @@ func Load() Config {
 
 ```go
 // Source: https://pkg.go.dev/github.com/rs/zerolog v1.34.0
-// cmd/audio-dock/main.go
+// cmd/sipgate-sip-stream-bridge/main.go
 
 package main
 
@@ -187,7 +187,7 @@ import (
     "os"
 
     "github.com/rs/zerolog"
-    "github.com/sipgate/audio-dock/internal/config"
+    "github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 func main() {
@@ -205,7 +205,7 @@ func main() {
         Str("sip_domain", cfg.SIPDomain).
         Int("rtp_port_min", cfg.RTPPortMin).
         Int("rtp_port_max", cfg.RTPPortMax).
-        Msg("audio-dock starting")
+        Msg("sipgate-sip-stream-bridge starting")
 
     // 3. Per-component loggers (used in later phases)
     // sipLog := logger.With().Str("component", "sip").Logger()
@@ -255,8 +255,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build \
     -ldflags="-s -w" \
     -trimpath \
-    -o /audio-dock \
-    ./cmd/audio-dock
+    -o /sipgate-sip-stream-bridge \
+    ./cmd/sipgate-sip-stream-bridge
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────────
 # FROM scratch = empty filesystem; only our binary runs
@@ -265,14 +265,14 @@ FROM scratch
 # Copy CA certificates for any HTTPS calls (not needed in Phase 4, included for later phases)
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-COPY --from=builder /audio-dock /audio-dock
+COPY --from=builder /sipgate-sip-stream-bridge /sipgate-sip-stream-bridge
 
 # SIP port (used in later phases — documented here for reference)
 # No EXPOSE needed with network_mode: host; included for dev/documentation
 EXPOSE 5060/udp
 EXPOSE 5060/tcp
 
-ENTRYPOINT ["/audio-dock"]
+ENTRYPOINT ["/sipgate-sip-stream-bridge"]
 ```
 
 **Build flags explained:**
@@ -283,9 +283,9 @@ ENTRYPOINT ["/audio-dock"]
 
 **Verify static linkage:**
 ```bash
-docker run --rm audio-dock:latest /audio-dock --version || true
+docker run --rm sipgate-sip-stream-bridge:latest /sipgate-sip-stream-bridge --version || true
 # Or on the build host:
-file ./audio-dock  # should show "statically linked"
+file ./sipgate-sip-stream-bridge  # should show "statically linked"
 ```
 
 ### Pattern 5: Docker Compose Update (DCK-02)
@@ -296,9 +296,9 @@ The existing `docker-compose.yml` is largely correct; it just needs the image ta
 # docker-compose.yml — replaces Node.js version
 # network_mode: host is REQUIRED for RTP (decision from v1.0 PROJECT.md)
 services:
-  audio-dock:
+  sipgate-sip-stream-bridge:
     build: .
-    image: audio-dock:latest
+    image: sipgate-sip-stream-bridge:latest
     network_mode: host
     env_file:
       - .env
@@ -385,13 +385,13 @@ if cfg.RTPPortMin >= cfg.RTPPortMax {
 
 ### Pitfall 5: `go mod init` Module Path Matters for Internal Imports
 
-**What goes wrong:** If the module path doesn't match expectations (e.g., `go mod init audio-dock` instead of `github.com/sipgate/audio-dock`), internal import paths diverge from the canonical form and later refactoring is more painful.
+**What goes wrong:** If the module path doesn't match expectations (e.g., `go mod init sipgate-sip-stream-bridge` instead of `github.com/sipgate/sipgate-sip-stream-bridge`), internal import paths diverge from the canonical form and later refactoring is more painful.
 
 **Why it happens:** `go mod init` accepts any path; there's no enforcement beyond consistency.
 
-**How to avoid:** Use the repository's GitHub path (`github.com/sipgate/audio-dock`) as the module path even for private repos. This makes the code portable and consistent with Go conventions.
+**How to avoid:** Use the repository's GitHub path (`github.com/sipgate/sipgate-sip-stream-bridge`) as the module path even for private repos. This makes the code portable and consistent with Go conventions.
 
-**Warning signs:** Import paths look like `audio-dock/internal/config` instead of `github.com/sipgate/audio-dock/internal/config`.
+**Warning signs:** Import paths look like `sipgate-sip-stream-bridge/internal/config` instead of `github.com/sipgate/sipgate-sip-stream-bridge/internal/config`.
 
 ### Pitfall 6: zerolog Global Logger vs Explicit Logger
 
@@ -412,7 +412,7 @@ Verified patterns from official sources:
 ### Complete main.go Scaffold
 
 ```go
-// Source: cmd/audio-dock/main.go
+// Source: cmd/sipgate-sip-stream-bridge/main.go
 // Pattern follows https://go.dev/doc/modules/layout (service layout)
 // Zerolog API: https://pkg.go.dev/github.com/rs/zerolog v1.34.0
 
@@ -425,7 +425,7 @@ import (
     "syscall"
 
     "github.com/rs/zerolog"
-    "github.com/sipgate/audio-dock/internal/config"
+    "github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 )
 
 func main() {
@@ -442,7 +442,7 @@ func main() {
         Str("sdp_contact_ip", cfg.SDPContactIP).
         Int("rtp_port_min", cfg.RTPPortMin).
         Int("rtp_port_max", cfg.RTPPortMax).
-        Msg("audio-dock starting")
+        Msg("sipgate-sip-stream-bridge starting")
 
     // Signal handling for graceful shutdown (full implementation in Phase 8 — LCY-01)
     ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -546,10 +546,10 @@ s.log.Info().Str("rtp_port", strconv.Itoa(s.rtpPort)).Msg("call started")
 
 ## Open Questions
 
-1. **Module path: `github.com/sipgate/audio-dock` vs a private/internal path**
-   - What we know: The repo is at `sipgate/audio-dock` on GitHub. The module path should be the canonical GitHub URL.
+1. **Module path: `github.com/sipgate/sipgate-sip-stream-bridge` vs a private/internal path**
+   - What we know: The repo is at `sipgate/sipgate-sip-stream-bridge` on GitHub. The module path should be the canonical GitHub URL.
    - What's unclear: Whether the repo is public or private; whether the module will ever be imported externally.
-   - Recommendation: Use `github.com/sipgate/audio-dock` — it's a self-contained service (all in `internal/`), so the public/private distinction is irrelevant for import purposes. Consistent with Go conventions.
+   - Recommendation: Use `github.com/sipgate/sipgate-sip-stream-bridge` — it's a self-contained service (all in `internal/`), so the public/private distinction is irrelevant for import purposes. Consistent with Go conventions.
 
 2. **`SDP_CONTACT_IP`: required vs optional with auto-detection fallback**
    - What we know: v1.0 marks `SDP_CONTACT_IP` as optional (`z.ipv4().optional()`) — the service worked without it (likely defaulted or the caller's IP was used). REQUIREMENTS.md (CFG-04) says it's configured via env var but doesn't say required.
@@ -576,7 +576,7 @@ s.log.Info().Str("rtp_port", strconv.Itoa(s.rtpPort)).Msg("call started")
 - Go 1.26 Release Notes — https://go.dev/doc/go1.26 — `go mod init` default version behavior, toolchain line change
 - Go Modules Layout — https://go.dev/doc/modules/layout — canonical cmd/ + internal/ structure for services
 - `dasroot.net` Go container guide (Feb 2026) — https://dasroot.net/posts/2026/02/building-minimal-go-containers-high-throughput-apis/ — FROM scratch Dockerfile pattern, build flags
-- v1.0 `src/config/index.ts` — `/Users/rotmanov/git/sipgate/audio-dock/src/config/index.ts` — reference for env var names and validation model
+- v1.0 `src/config/index.ts` — `/Users/rotmanov/git/sipgate/sipgate-sip-stream-bridge/src/config/index.ts` — reference for env var names and validation model
 
 ### Secondary (MEDIUM confidence)
 - `github.com/rs/zerolog` GitHub — https://github.com/rs/zerolog — v1.34.0 release confirmed; README examples for child loggers

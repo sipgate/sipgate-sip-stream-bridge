@@ -10,7 +10,7 @@ import (
 	"go-simpler.org/env"
 )
 
-// Config holds all environment-variable configuration for audio-dock.
+// Config holds all environment-variable configuration for sipgate-sip-stream-bridge.
 // Field names match v1.0 env var names exactly for drop-in compatibility (CFG-01 through CFG-04).
 type Config struct {
 	// SIP credentials (CFG-01)

@@ -48,7 +48,7 @@ re_verification: false
 | `internal/sip/handler.go` | shutdown atomic.Bool + SetShutdown() + 503 guard in onInvite | VERIFIED | Lines 27, 31-33, 80-83 — all three present and wired |
 | `internal/bridge/manager.go` | DrainAll(ctx) + ActiveCount() + metrics field | VERIFIED | Lines 66, 70, 81, 91 — field in struct, constructors updated, both methods substantive |
 | `internal/sip/registrar.go` | IsRegistered() bool + registered atomic.Bool + metrics field | VERIFIED | Lines 27-28, 34-36, 39 — field, method, and constructor all present |
-| `cmd/audio-dock/main.go` | Full drain sequence + HTTP server + httpServer.Shutdown | VERIFIED | Lines 141-163 — SetShutdown → DrainAll(8s) → Unregister(5s) → Shutdown(2s) in order |
+| `cmd/sipgate-sip-stream-bridge/main.go` | Full drain sequence + HTTP server + httpServer.Shutdown | VERIFIED | Lines 141-163 — SetShutdown → DrainAll(8s) → Unregister(5s) → Shutdown(2s) in order |
 | `internal/observability/metrics.go` | Metrics struct + NewMetrics() + 5 metrics on custom registry | VERIFIED | Lines 13-20, 25-60 — all five metrics, NewRegistry() (not DefaultRegisterer), MustRegister |
 | `internal/config/config.go` | HTTPPort string with env:"HTTP_PORT" default:"8080" | VERIFIED | Line 37 — field present with correct tag and default |
 | `internal/bridge/session.go` | metrics field + RTPRx/RTPTx/WSReconnects increments | VERIFIED | Grep confirms: WSReconnects.Inc() at 210, RTPRx.Inc() at 295, RTPTx.Inc() at 541 |
@@ -59,13 +59,13 @@ re_verification: false
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| cmd/audio-dock/main.go | internal/sip/handler.go | handler.SetShutdown() after ctx.Done() | WIRED | main.go:141 calls handler.SetShutdown() |
-| cmd/audio-dock/main.go | internal/bridge/manager.go | callManager.DrainAll(drainCtx) | WIRED | main.go:146 calls callManager.DrainAll(drainCtx) |
+| cmd/sipgate-sip-stream-bridge/main.go | internal/sip/handler.go | handler.SetShutdown() after ctx.Done() | WIRED | main.go:141 calls handler.SetShutdown() |
+| cmd/sipgate-sip-stream-bridge/main.go | internal/bridge/manager.go | callManager.DrainAll(drainCtx) | WIRED | main.go:146 calls callManager.DrainAll(drainCtx) |
 | internal/sip/registrar.go | registered atomic.Bool | r.registered.Store(true/false) in doRegister and Unregister | WIRED | Lines 136, 159, 207 confirmed by grep |
 | internal/observability/metrics.go | internal/bridge/manager.go | Metrics passed to NewCallManager; stored as metrics field | WIRED | manager.go:66 field, :70 constructor accepts *observability.Metrics, main.go:88 passes metrics |
 | internal/observability/metrics.go | internal/sip/registrar.go | Metrics passed to NewRegistrar; stored as metrics field | WIRED | registrar.go:28 field, :39 constructor accepts *observability.Metrics, main.go:96 passes metrics |
 | internal/bridge/session.go | internal/observability/metrics.go | CallSession.metrics.RTPRx.Inc() / RTPTx.Inc() | WIRED | session.go:295 and 541 confirmed |
-| cmd/audio-dock/main.go | net/http | httpServer.ListenAndServe() + httpServer.Shutdown() | WIRED | main.go:124-128 goroutine start; main.go:161 Shutdown in drain sequence |
+| cmd/sipgate-sip-stream-bridge/main.go | net/http | httpServer.ListenAndServe() + httpServer.Shutdown() | WIRED | main.go:124-128 goroutine start; main.go:161 Shutdown in drain sequence |
 
 ---
 
@@ -97,7 +97,7 @@ The following behaviors cannot be verified programmatically and should be confir
 
 #### 1. End-to-End SIGTERM Drain Under Load
 
-**Test:** Start audio-dock with an active SIP call in progress. Send SIGTERM. Observe on the SIP peer side that a BYE is received before the process exits.
+**Test:** Start sipgate-sip-stream-bridge with an active SIP call in progress. Send SIGTERM. Observe on the SIP peer side that a BYE is received before the process exits.
 **Expected:** Peer receives BYE; dialog terminated cleanly; no lingering dialog state on sipgate's end.
 **Why human:** Requires a live SIP peer and network; cannot be verified by static analysis.
 
@@ -110,7 +110,7 @@ The following behaviors cannot be verified programmatically and should be confir
 #### 3. /metrics Prometheus Scrape Format
 
 **Test:** `curl -s http://localhost:8080/metrics` and validate with a Prometheus scraper or `promtool check metrics`.
-**Expected:** Valid text exposition format; only the 5 audio-dock metrics present (no Go runtime noise); values update during calls.
+**Expected:** Valid text exposition format; only the 5 sipgate-sip-stream-bridge metrics present (no Go runtime noise); values update during calls.
 **Why human:** Requires running process; format validity best confirmed by real scraper.
 
 ---
