@@ -123,7 +123,18 @@ go test ./... -race      # with race detector
 
 ## Docker
 
-### Build
+### Published image
+
+Pre-built images are published to the GitHub Container Registry on every push to `main`:
+
+```bash
+docker pull ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest
+docker run --env-file ../.env --network host ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest
+```
+
+Available tags: `latest`, `main`, `sha-<commit>`, `v<semver>`.
+
+### Build locally
 
 ```bash
 cd go
