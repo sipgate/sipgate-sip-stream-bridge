@@ -105,3 +105,37 @@ func TestLoad_MissingSDPContactIP_DefaultsToLocalIP(t *testing.T) {
 		t.Fatalf("expected zero exit (auto-detect), got error: %v\noutput: %s", err, out)
 	}
 }
+
+func TestLoad_SIPOptionsInterval_DefaultIs30s(t *testing.T) {
+	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_PASSWORD", "secret")
+	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
+	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
+	t.Setenv("WS_TARGET_URL", "wss://example.com/ws")
+	t.Setenv("SDP_CONTACT_IP", "1.2.3.4")
+	// SIP_OPTIONS_INTERVAL not set — default should be 30s
+
+	cfg := config.Load()
+
+	const want = 30e9 // 30 * time.Second in nanoseconds
+	if cfg.SIPOptionsInterval != want {
+		t.Errorf("SIPOptionsInterval = %v, want 30s", cfg.SIPOptionsInterval)
+	}
+}
+
+func TestLoad_SIPOptionsInterval_Override1m(t *testing.T) {
+	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_PASSWORD", "secret")
+	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
+	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
+	t.Setenv("WS_TARGET_URL", "wss://example.com/ws")
+	t.Setenv("SDP_CONTACT_IP", "1.2.3.4")
+	t.Setenv("SIP_OPTIONS_INTERVAL", "1m")
+
+	cfg := config.Load()
+
+	const want = 60e9 // 60 * time.Second in nanoseconds
+	if cfg.SIPOptionsInterval != want {
+		t.Errorf("SIPOptionsInterval = %v, want 1m (60s)", cfg.SIPOptionsInterval)
+	}
+}
