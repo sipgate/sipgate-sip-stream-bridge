@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Twilio Media Streams - Complete Protocol
-status: in_progress
-stopped_at: "Completed 09-01-PLAN.md"
-last_updated: "2026-03-05"
-last_activity: "2026-03-05 — Completed Phase 9 Plan 01: type foundation (outboundFrame, new channels, new counters)"
+status: executing
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-03-05T10:54:57.663Z"
+last_activity: "2026-03-05 — Completed 09-01: outboundFrame type foundation (chan outboundFrame, markEchoQueue, clearSignal, MarkEchoed, ClearReceived counters)"
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 9
-  completed_plans: 1
+  total_plans: 3
+  completed_plans: 2
   percent: 11
 ---
 
@@ -50,6 +50,7 @@ Progress: [#░░░░░░░░░] 11%
 | 8. Lifecycle + Observability | 2/2 | Complete |
 
 *v2.1 metrics tracked from Phase 9 onward*
+| Phase 09 P02 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,9 @@ From 09-01 execution (2026-03-05):
 - **outboundFrame tagged union**: separate audio/mark fields preferred over magic byte sentinel — idiomatic nil check for silence fallback, no encoding coupling
 - **Incremental plan strategy**: Plan 01 leaves mark routing unimplemented so codebase always compiles between plan commits — Plan 02 adds routing without ever breaking build
 - **clearSignal buffered(1)**: single-slot prevents wsToRTP from blocking if rtpPacer has not consumed the previous signal
+- [Phase 09]: All mark/clear log calls use Debug level (protocol noise, not error signal)
+- [Phase 09]: wsPacer is sole WS writer for mark echoes — markEchoQueue routes from rtpPacer/wsToRTP to wsPacer
+- [Phase 09]: rtpPacer never stops during clear — only packetQueue is drained; seqNo and timestamp advance on sentinel frames to prevent RTP gaps
 
 ### Pending Todos
 
@@ -80,6 +84,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-05
-Stopped at: Completed 09-01-PLAN.md — ready to execute 09-02 (mark sentinel routing + clearSignal drain)
+Last session: 2026-03-05T10:54:57.660Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None
