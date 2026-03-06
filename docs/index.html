@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sipgate SIP Stream Bridge — Weg von Twilio. Rein nach Deutschland.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Playfair+Display:ital,wght@0,400;0,700;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --white:      #FFFFFF;
+    --black:      #121212;
+    --grey-light: #F7F7F7;
+    --grey:       #E7E6E6;
+    --grey-dark:  #818885;
+    --electric-lime:       #DEFF00;
+    --electric-lime-light: #F2FFB1;
+    --electric-lime-dark:  #202500;
+    --soft-lime:           #EFFDC1;
+    --mint:       #D1E6D1;
+    --mint-dark:  #006660;
+    --mint-light: #F1F7F7;
+    --cornflower:       #AABCFF;
+    --cornflower-light: #D6DFFF;
+    --soft-cornflower:  #EDF2FF;
+    --lavender:      #E2D8FF;
+    --soft-lavender: #F3F0FF;
+    --clementine:    #FF7200;
+    --font-primary:  'Space Grotesk', sans-serif;
+    --font-headline: 'Playfair Display', serif;
+    --radius-sm: 8px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+    --radius-xl: 32px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    font-family: var(--font-primary);
+    background: var(--white);
+    color: var(--black);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── NAV ─────────────────────────────── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(18,18,18,0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    height: 64px;
+    display: flex;
+    align-items: center;
+    padding: 0 clamp(24px, 5vw, 80px);
+  }
+
+  .nav-inner {
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+  }
+
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+
+  .nav-logo-mark {
+    width: 32px;
+    height: 32px;
+    background: var(--electric-lime);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--black);
+    letter-spacing: -0.5px;
+  }
+
+  .nav-logo-text {
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--white);
+    letter-spacing: -0.3px;
+  }
+
+  .nav-logo-text span {
+    color: var(--electric-lime);
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    font-family: var(--font-primary);
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    transition: color 0.2s;
+    position: relative;
+  }
+
+  .nav-links a::after {
+    content: '';
+    position: absolute;
+    bottom: 2px; left: 12px; right: 12px;
+    height: 2px;
+    background: var(--electric-lime);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  .nav-links a:hover { color: var(--white); }
+  .nav-links a:hover::after { transform: scaleX(1); }
+
+  .nav-cta {
+    background: var(--electric-lime);
+    color: var(--black) !important;
+    font-weight: 700 !important;
+    padding: 8px 20px !important;
+    border-radius: 100px !important;
+    transition: box-shadow 0.25s, transform 0.2s !important;
+    color: var(--black);
+  }
+
+  .nav-cta::after { display: none !important; }
+
+  .nav-cta:hover {
+    box-shadow: 0 0 0 4px rgba(222,255,0,0.25), 0 4px 16px rgba(222,255,0,0.3) !important;
+    transform: translateY(-1px);
+    color: var(--black);
+  }
+
+  .hamburger {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 4px;
+  }
+
+  .hamburger span {
+    display: block;
+    width: 24px;
+    height: 2px;
+    background: var(--white);
+    border-radius: 2px;
+    transition: transform 0.3s, opacity 0.3s;
+  }
+
+  .hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .hamburger.open span:nth-child(2) { opacity: 0; }
+  .hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  .mobile-menu {
+    display: none;
+    position: fixed;
+    top: 64px; left: 0; right: 0;
+    background: var(--black);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding: 16px 24px 24px;
+    z-index: 99;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mobile-menu.open { display: flex; }
+
+  .mobile-menu a {
+    font-family: var(--font-primary);
+    font-size: 16px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.8);
+    text-decoration: none;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .mobile-menu a:last-child {
+    border-bottom: none;
+    margin-top: 8px;
+    color: var(--black);
+    background: var(--electric-lime);
+    text-align: center;
+    border-radius: 100px;
+    padding: 12px 24px;
+    font-weight: 700;
+  }
+
+  /* ── HERO ────────────────────────────── */
+  .hero {
+    background: var(--black);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 120px clamp(24px,5vw,80px) 80px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-dot-grid {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 80%);
+  }
+
+  .hero-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    width: 100%;
+    text-align: center;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(222,255,0,0.1);
+    border: 1px solid rgba(222,255,0,0.3);
+    border-radius: 100px;
+    padding: 6px 16px;
+    margin-bottom: 40px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--electric-lime);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .hero-badge-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--electric-lime);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .hero-headline {
+    font-size: clamp(48px, 8vw, 96px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 28px;
+  }
+
+  .hero-headline .line-1 {
+    display: block;
+    font-family: var(--font-primary);
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .hero-headline .line-2 {
+    display: block;
+    font-family: var(--font-headline);
+    font-weight: 300;
+    font-style: italic;
+    color: var(--electric-lime);
+    font-size: 0.96em;
+    letter-spacing: 0.02em;
+  }
+
+  .hero-sub {
+    font-size: clamp(16px, 2.5vw, 20px);
+    line-height: 1.6;
+    color: rgba(255,255,255,0.65);
+    max-width: 620px;
+    margin: 0 auto 48px;
+    font-weight: 400;
+  }
+
+  .hero-ctas {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 64px;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--electric-lime);
+    color: var(--black);
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 100px;
+    text-decoration: none;
+    transition: box-shadow 0.25s, transform 0.2s;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 0 0 4px rgba(222,255,0,0.25), 0 8px 24px rgba(222,255,0,0.35);
+    transform: translateY(-2px);
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    color: rgba(255,255,255,0.8);
+    font-family: var(--font-primary);
+    font-weight: 600;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 100px;
+    border: 1.5px solid rgba(255,255,255,0.2);
+    text-decoration: none;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    cursor: pointer;
+  }
+
+  .btn-ghost:hover {
+    border-color: rgba(255,255,255,0.5);
+    color: var(--white);
+    background: rgba(255,255,255,0.05);
+  }
+
+  .hero-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+
+  .flow-box {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: var(--radius-md);
+    padding: 16px 24px;
+    text-align: center;
+    min-width: 160px;
+  }
+
+  .flow-box.bridge {
+    border-color: var(--electric-lime);
+    background: rgba(222,255,0,0.06);
+    box-shadow: 0 0 24px rgba(222,255,0,0.1);
+  }
+
+  .flow-box-flag { font-size: 28px; margin-bottom: 6px; }
+  .flow-box-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--grey-dark);
+    margin-bottom: 4px;
+  }
+  .flow-box-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--white);
+  }
+  .flow-box.bridge .flow-box-name { color: var(--electric-lime); }
+
+  .flow-arrow {
+    font-size: 20px;
+    color: rgba(255,255,255,0.3);
+    padding: 0 12px;
+    flex-shrink: 0;
+  }
+
+  /* ── WHAT IS IT ──────────────────────── */
+  .section-what {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--white);
+  }
+
+  .section-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mint-dark);
+    margin-bottom: 16px;
+  }
+
+  .section-h2 {
+    font-family: var(--font-headline);
+    font-weight: 400;
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin-bottom: 24px;
+    color: var(--black);
+  }
+
+  .lead {
+    font-size: clamp(16px, 2vw, 19px);
+    line-height: 1.7;
+    color: #444;
+    max-width: 680px;
+    margin-bottom: 48px;
+  }
+
+  .what-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+
+  .what-text p {
+    font-size: 17px;
+    line-height: 1.75;
+    color: #444;
+    margin-bottom: 20px;
+  }
+
+  .what-text strong { color: var(--black); font-weight: 700; }
+
+  .what-visual {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    background: var(--grey-light);
+    border-radius: var(--radius-xl);
+    padding: 40px 32px;
+    border: 1px solid var(--grey);
+  }
+
+  .what-flow-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .wf-box {
+    background: var(--white);
+    border: 1.5px solid var(--grey);
+    border-radius: var(--radius-md);
+    padding: 14px 18px;
+    text-align: center;
+    flex: 1;
+    max-width: 160px;
+  }
+
+  .wf-box.lime {
+    border-color: var(--electric-lime);
+    background: var(--soft-lime);
+    box-shadow: 0 4px 16px rgba(222,255,0,0.15);
+  }
+
+  .wf-flag { font-size: 24px; margin-bottom: 4px; }
+  .wf-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--grey-dark);
+    margin-bottom: 2px;
+  }
+  .wf-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--black);
+  }
+  .wf-box.lime .wf-name { color: #665a00; }
+
+  .wf-arrow {
+    font-size: 18px;
+    color: var(--grey-dark);
+    flex-shrink: 0;
+  }
+
+  .what-caption {
+    font-size: 12px;
+    color: var(--grey-dark);
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  /* ── WHY SIPGATE ─────────────────────── */
+  .section-why {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--grey-light);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .section-why::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(0,102,96,0.06) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
+  }
+
+  .why-header {
+    text-align: center;
+    margin-bottom: 64px;
+    position: relative;
+  }
+
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    position: relative;
+  }
+
+  .bento-card {
+    background: var(--white);
+    border-radius: var(--radius-xl);
+    padding: 40px;
+    border: 1px solid var(--grey);
+    transition: transform 0.3s, box-shadow 0.3s;
+  }
+
+  .bento-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.08);
+  }
+
+  .bento-icon {
+    font-size: 40px;
+    margin-bottom: 20px;
+    display: block;
+  }
+
+  .bento-title {
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 20px;
+    margin-bottom: 12px;
+    color: var(--black);
+    line-height: 1.3;
+  }
+
+  .bento-text {
+    font-size: 15px;
+    line-height: 1.7;
+    color: #555;
+  }
+
+  .bento-card.featured {
+    background: var(--black);
+    border-color: transparent;
+    grid-column: span 1;
+  }
+
+  .bento-card.featured .bento-title { color: var(--white); }
+  .bento-card.featured .bento-text { color: rgba(255,255,255,0.6); }
+
+  .bento-tag {
+    display: inline-block;
+    background: var(--electric-lime);
+    color: var(--black);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 100px;
+    margin-top: 16px;
+  }
+
+  /* ── HOW IT WORKS ────────────────────── */
+  .section-how {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--black);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .how-dot-bg {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(222,255,0,0.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black, transparent);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black, transparent);
+  }
+
+  .how-header {
+    text-align: center;
+    margin-bottom: 72px;
+    position: relative;
+  }
+
+  .how-header .section-h2 { color: var(--white); }
+  .how-header .eyebrow { color: var(--electric-lime); opacity: 0.7; }
+
+  .steps-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .steps-grid::before { display: none; }
+
+  .step-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-xl);
+    padding: 36px 28px 32px;
+    position: relative;
+    z-index: 1;
+    transition: border-color 0.3s;
+  }
+
+  .step-card:hover { border-color: rgba(222,255,0,0.3); }
+
+  .step-number {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid var(--electric-lime);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--electric-lime);
+    margin-bottom: 24px;
+    background: rgba(222,255,0,0.06);
+  }
+
+  .step-title {
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--white);
+    margin-bottom: 16px;
+  }
+
+  .code-block {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: rgba(255,255,255,0.7);
+    overflow-x: auto;
+    position: relative;
+  }
+
+  .code-block .k { color: var(--electric-lime); font-weight: 600; }
+  .code-block .v { color: var(--mint); }
+  .code-block .c { color: rgba(255,255,255,0.35); }
+
+  .copy-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    color: rgba(255,255,255,0.5);
+    font-family: var(--font-primary);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .copy-btn:hover { background: rgba(255,255,255,0.15); color: var(--white); }
+  .copy-btn.copied { color: var(--electric-lime); }
+
+  .step-desc {
+    font-size: 14px;
+    line-height: 1.7;
+    color: rgba(255,255,255,0.55);
+    margin-top: 14px;
+  }
+
+  .how-tagline {
+    text-align: center;
+    margin-top: 64px;
+    font-family: var(--font-headline);
+    font-style: italic;
+    font-size: clamp(22px, 3vw, 32px);
+    color: var(--electric-lime);
+    position: relative;
+  }
+
+  /* ── COMPARISON TABLE ────────────────── */
+  .section-compare {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--white);
+  }
+
+  .compare-header { text-align: center; margin-bottom: 64px; }
+
+  .compare-table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--grey);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.06);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+  }
+
+  thead tr {
+    background: var(--black);
+  }
+
+  thead th {
+    padding: 24px 28px;
+    text-align: left;
+    font-family: var(--font-primary);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+  }
+
+  thead th:first-child { color: rgba(255,255,255,0.3); }
+
+  thead th.col-sipgate {
+    color: var(--electric-lime);
+    background: rgba(222,255,0,0.06);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--grey);
+    transition: background 0.2s;
+  }
+
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--grey-light); }
+
+  tbody td {
+    padding: 20px 28px;
+    vertical-align: middle;
+    color: #444;
+    line-height: 1.4;
+  }
+
+  tbody td:first-child {
+    font-weight: 600;
+    color: var(--black);
+  }
+
+  tbody td.col-twilio { color: var(--grey-dark); }
+
+  tbody td.col-sipgate {
+    font-weight: 700;
+    color: var(--mint-dark);
+    background: rgba(222,255,0,0.03);
+  }
+
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .check-mark {
+    width: 20px;
+    height: 20px;
+    background: var(--mint-dark);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--white);
+    flex-shrink: 0;
+  }
+
+  /* ── DOCKER IMAGES ───────────────────── */
+  .section-docker {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--soft-lime);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .section-docker::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(0,0,0,0.05) 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.6;
+  }
+
+  .docker-header { text-align: center; margin-bottom: 56px; position: relative; }
+
+  .docker-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin-bottom: 48px;
+    position: relative;
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .docker-card {
+    background: var(--white);
+    border-radius: var(--radius-xl);
+    padding: 36px 32px;
+    border: 1.5px solid rgba(0,0,0,0.08);
+    transition: transform 0.3s, box-shadow 0.3s;
+  }
+
+  .docker-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.1);
+  }
+
+  .docker-card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--electric-lime);
+    color: var(--black);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 100px;
+    margin-bottom: 20px;
+  }
+
+  .docker-card-title {
+    font-weight: 700;
+    font-size: 22px;
+    color: var(--black);
+    margin-bottom: 8px;
+  }
+
+  .docker-card-sub {
+    font-size: 14px;
+    color: var(--grey-dark);
+    margin-bottom: 24px;
+  }
+
+  .docker-cmd {
+    background: var(--black);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    color: var(--electric-lime);
+    word-break: break-all;
+    line-height: 1.6;
+    position: relative;
+    margin-bottom: 20px;
+  }
+
+  .docker-cmd .cmd-dim { color: rgba(255,255,255,0.35); }
+
+  .docker-stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .docker-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--mint-dark);
+    font-weight: 600;
+  }
+
+  .docker-stat::before {
+    content: '✓';
+    width: 18px;
+    height: 18px;
+    background: var(--mint);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--mint-dark);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .tags-table-wrap {
+    background: var(--white);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    border: 1.5px solid rgba(0,0,0,0.08);
+    position: relative;
+  }
+
+  .tags-table-title {
+    padding: 24px 32px 0;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--black);
+    margin-bottom: 0;
+  }
+
+  .tags-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .tags-table thead tr { background: var(--grey-light); }
+  .tags-table thead th {
+    padding: 14px 32px;
+    text-align: left;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--grey-dark);
+    border-bottom: 1px solid var(--grey);
+  }
+  .tags-table tbody tr { border-bottom: 1px solid var(--grey); }
+  .tags-table tbody tr:last-child { border-bottom: none; }
+  .tags-table tbody td { padding: 16px 32px; color: #444; }
+  .tags-table tbody td:first-child {
+    font-family: 'SF Mono', monospace;
+    font-size: 13px;
+    color: var(--mint-dark);
+    font-weight: 600;
+  }
+
+  /* ── FEATURES ────────────────────────── */
+  .section-features {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--white);
+  }
+
+  .features-header { text-align: center; margin-bottom: 64px; }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .feature-chip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--grey-light);
+    border: 1px solid var(--grey);
+    border-radius: var(--radius-lg);
+    padding: 18px 22px;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--black);
+    transition: background 0.2s, transform 0.2s;
+  }
+
+  .feature-chip:hover {
+    background: var(--soft-lime);
+    border-color: rgba(222,255,0,0.4);
+    transform: translateX(4px);
+  }
+
+  .feature-check {
+    width: 24px;
+    height: 24px;
+    background: var(--electric-lime);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--black);
+    flex-shrink: 0;
+  }
+
+  .feature-code {
+    font-family: 'SF Mono', monospace;
+    font-size: 13px;
+    color: var(--mint-dark);
+  }
+
+  /* ── FAQ ─────────────────────────────── */
+  .section-faq {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--grey-light);
+  }
+
+  .faq-header { text-align: center; margin-bottom: 64px; }
+
+  .faq-list {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .faq-item {
+    background: var(--white);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--grey);
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+
+  .faq-item.open { box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+
+  .faq-question {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 28px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--black);
+    user-select: none;
+    gap: 16px;
+  }
+
+  .faq-question:hover { color: var(--mint-dark); }
+
+  .faq-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1.5px solid var(--grey);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.3s, border-color 0.2s, background 0.2s;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--grey-dark);
+  }
+
+  .faq-item.open .faq-icon {
+    transform: rotate(45deg);
+    border-color: var(--electric-lime);
+    background: var(--electric-lime);
+    color: var(--black);
+  }
+
+  .faq-answer {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  .faq-answer-inner {
+    padding: 0 28px 24px;
+    font-size: 15px;
+    line-height: 1.75;
+    color: #555;
+  }
+
+  .faq-answer-inner a {
+    color: var(--mint-dark);
+    font-weight: 600;
+  }
+
+  /* ── FINAL CTA ───────────────────────── */
+  .section-cta {
+    padding: 120px clamp(24px,5vw,80px);
+    background: var(--black);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta-glow {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(ellipse, rgba(222,255,0,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-inner { position: relative; z-index: 1; }
+
+  .cta-eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(222,255,0,0.6);
+    margin-bottom: 24px;
+  }
+
+  .cta-headline {
+    font-size: clamp(44px, 7vw, 88px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 56px;
+  }
+
+  .cta-headline .l1 {
+    display: block;
+    font-family: var(--font-primary);
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .cta-headline .l2 {
+    display: block;
+    font-family: var(--font-headline);
+    font-weight: 300;
+    font-style: italic;
+    color: var(--electric-lime);
+    font-size: 0.96em;
+    letter-spacing: 0.02em;
+  }
+
+  .terminal {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-xl);
+    max-width: 680px;
+    margin: 0 auto 48px;
+    overflow: hidden;
+  }
+
+  .terminal-bar {
+    background: rgba(255,255,255,0.06);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .terminal-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+  }
+
+  .terminal-title {
+    font-size: 12px;
+    color: rgba(255,255,255,0.3);
+    margin-left: 8px;
+    font-family: 'SF Mono', monospace;
+  }
+
+  .terminal-body {
+    padding: 24px 28px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 14px;
+    line-height: 1.8;
+    text-align: left;
+    position: relative;
+  }
+
+  .terminal-prompt {
+    color: var(--electric-lime);
+    margin-right: 12px;
+    user-select: none;
+  }
+
+  .terminal-cmd { color: var(--white); }
+  .terminal-flag { color: var(--cornflower); }
+  .terminal-img { color: var(--mint); }
+
+  .cta-links {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .cta-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 28px;
+    border-radius: 100px;
+    font-family: var(--font-primary);
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .cta-link.lime {
+    background: var(--electric-lime);
+    color: var(--black);
+  }
+
+  .cta-link.lime:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(222,255,0,0.3);
+  }
+
+  .cta-link.outline {
+    border: 1.5px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.75);
+  }
+
+  .cta-link.outline:hover {
+    border-color: rgba(255,255,255,0.5);
+    color: var(--white);
+    transform: translateY(-2px);
+  }
+
+  footer {
+    background: var(--black);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 32px clamp(24px,5vw,80px);
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255,255,255,0.3);
+    font-weight: 500;
+  }
+
+  footer span { color: rgba(255,255,255,0.15); margin: 0 12px; }
+
+  /* ── SCROLL ANIMATIONS ───────────────── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(32px);
+    transition: opacity 0.65s cubic-bezier(0.4,0,0.2,1), transform 0.65s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  .reveal.visible { opacity: 1; transform: none; }
+
+  .reveal-delay-1 { transition-delay: 0.1s; }
+  .reveal-delay-2 { transition-delay: 0.2s; }
+  .reveal-delay-3 { transition-delay: 0.3s; }
+  .reveal-delay-4 { transition-delay: 0.4s; }
+
+  /* ── RESPONSIVE ──────────────────────── */
+  @media (max-width: 900px) {
+    .what-grid { grid-template-columns: 1fr; }
+    .bento-grid { grid-template-columns: 1fr; }
+    .steps-grid { grid-template-columns: 1fr; }
+    .steps-grid::before { display: none; }
+    .docker-cards { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .nav-links { display: none; }
+    .hamburger { display: flex; }
+    .flow-box { min-width: 100px; padding: 12px 14px; }
+    .flow-box-flag { font-size: 22px; }
+    .flow-box-name { font-size: 12px; }
+    .flow-arrow { padding: 0 6px; font-size: 16px; }
+    .hero-flow { gap: 4px; }
+    .compare-table-wrap { font-size: 13px; }
+    thead th, tbody td { padding: 14px 16px; }
+  }
+
+  @media (max-width: 480px) {
+    .hero-ctas { flex-direction: column; }
+    .btn-primary, .btn-ghost { width: 100%; justify-content: center; }
+    .cta-links { flex-direction: column; align-items: stretch; }
+    .cta-link { justify-content: center; }
+    .hero-flow { flex-direction: column; align-items: center; }
+    .flow-arrow { transform: rotate(90deg); padding: 4px 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <div class="nav-logo-mark">sg</div>
+      <span class="nav-logo-text">sipgate <span>SIP Stream Bridge</span></span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#was">Über die Bridge</a></li>
+      <li><a href="#warum">Warum sipgate</a></li>
+      <li><a href="#faq">FAQ</a></li>
+      <li><a href="#how" class="nav-cta">Kostenlos starten</a></li>
+    </ul>
+    <button class="hamburger" id="hamburger" aria-label="Menü öffnen">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<div class="mobile-menu" id="mobile-menu">
+  <a href="#was">Über die Bridge</a>
+  <a href="#warum">Warum sipgate</a>
+  <a href="#faq">FAQ</a>
+  <a href="#how">Kostenlos starten</a>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-dot-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-badge reveal">
+      <div class="hero-badge-dot"></div>
+      Made in Germany
+    </div>
+    <h1 class="hero-headline reveal reveal-delay-1">
+      <span class="line-1">Weg von Twilio.</span>
+      <span class="line-2">Rein nach Deutschland.</span>
+    </h1>
+    <p class="hero-sub reveal reveal-delay-2">
+      Die sipgate SIP Stream Bridge lässt dich echte deutsche Telefonnummern statt Twilio nutzen — ohne eine einzige Zeile Code zu ändern.
+    </p>
+    <div class="hero-ctas reveal reveal-delay-3">
+      <a href="#how" class="btn-primary">Jetzt kostenlos loslegen</a>
+    </div>
+    <div class="hero-flow reveal reveal-delay-4">
+      <div class="flow-box">
+        <div class="flow-box-flag">🇺🇸</div>
+        <div class="flow-box-label">Deine App</div>
+        <div class="flow-box-name">Twilio API</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box bridge">
+        <div class="flow-box-flag">🌉</div>
+        <div class="flow-box-label">Bridge</div>
+        <div class="flow-box-name">SIP Stream Bridge</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">
+        <div class="flow-box-flag">🇩🇪</div>
+        <div class="flow-box-label">Telefonie</div>
+        <div class="flow-box-name">sipgate</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHAT IS IT -->
+<section class="section-what" id="was">
+  <div class="section-inner">
+    <div class="what-grid">
+      <div class="what-text">
+        <div class="eyebrow reveal">Was ist das?</div>
+        <h2 class="section-h2 reveal reveal-delay-1">Eine Brücke zwischen deiner App und Deutschland.</h2>
+        <p class="reveal reveal-delay-2">
+          Stell dir vor, du hast eine App gebaut, die telefonieren kann. Die App spricht eine bestimmte Sprache — die Sprache von Twilio. Das Problem: Twilio ist eine amerikanische Firma. Deine Telefongespräche gehen durch Server in den USA.
+        </p>
+        <p class="reveal reveal-delay-2">
+          <strong>Die sipgate SIP Stream Bridge ist die Lösung.</strong> Sie übersetzt die Twilio-Sprache deiner App in echte deutsche Telefonie — über sipgate, einem Anbieter aus Düsseldorf.
+        </p>
+        <p class="reveal reveal-delay-3">
+          Deine App merkt nichts davon. Sie denkt immer noch, sie redet mit Twilio. Aber in Wirklichkeit telefoniert sie über Deutschland. <strong>Kein Code anfassen. Kein Risiko. Volle Kontrolle.</strong>
+        </p>
+      </div>
+      <div class="what-visual reveal reveal-delay-2">
+        <div class="what-flow-row">
+          <div class="wf-box">
+            <div class="wf-flag">🇺🇸</div>
+            <div class="wf-label">Dein Backend</div>
+            <div class="wf-name">spricht Twilio</div>
+          </div>
+        </div>
+        <div style="font-size:24px;color:var(--grey-dark);">↓</div>
+        <div class="what-flow-row">
+          <div class="wf-box lime" style="max-width:200px;">
+            <div class="wf-flag">🌉</div>
+            <div class="wf-label">SIP Stream Bridge</div>
+            <div class="wf-name">übersetzt &amp; vermittelt</div>
+          </div>
+        </div>
+        <div style="font-size:24px;color:var(--grey-dark);">↓</div>
+        <div class="what-flow-row">
+          <div class="wf-box">
+            <div class="wf-flag">🇩🇪</div>
+            <div class="wf-label">sipgate Anlage</div>
+            <div class="wf-name">spricht SIP / Telefon</div>
+          </div>
+        </div>
+        <p class="what-caption">Dein Backend kommuniziert mit der Bridge wie mit Twilio.<br>Die Bridge spricht echtes SIP mit sipgate.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY SIPGATE -->
+<section class="section-why" id="warum">
+  <div class="section-inner">
+    <div class="why-header">
+      <div class="eyebrow reveal">Warum sipgate?</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Vier gute Gründe,<br>den Wechsel zu machen.</h2>
+    </div>
+    <div class="bento-grid">
+      <div class="bento-card featured reveal">
+        <span class="bento-icon">🇩🇪</span>
+        <div class="bento-title">Daten bleiben in Deutschland</div>
+        <div class="bento-text">Twilio ist US-amerikanisch. Deine Telefongespräche verlassen Europa und landen auf amerikanischen Servern, die amerikanischem Recht unterliegen. Mit sipgate bleibt alles in Deutschland — kein Umweg über den Atlantik, kein Datenschutzproblem.</div>
+        <span class="bento-tag">Serverstandort: Deutschland</span>
+      </div>
+      <div class="bento-card reveal reveal-delay-1">
+        <span class="bento-icon">🔒</span>
+        <div class="bento-title">DSGVO — kein Kopfschmerz mehr</div>
+        <div class="bento-text">Kein Auftragsverarbeitungsvertrag mit einem US-Unternehmen. Keine Standardvertragsklauseln. Kein Anwalt, der das prüfen muss. Deutsches Unternehmen, deutsches Recht. DSGVO-Compliance ohne Kopfrechnen. Fertig.</div>
+      </div>
+      <div class="bento-card reveal reveal-delay-2">
+        <span class="bento-icon">💶</span>
+        <div class="bento-title">Günstigere Telefonie, direkt</div>
+        <div class="bento-text">Echte deutsche Festnetz- und Mobilfunknummern zu fairen Preisen — direkt, ohne Umweg über einen amerikanischen Vermittler. Die Bridge selbst ist komplett kostenlos.</div>
+      </div>
+      <div class="bento-card reveal reveal-delay-3">
+        <span class="bento-icon">🤝</span>
+        <div class="bento-title">Support, der dich versteht</div>
+        <div class="bento-text">sipgate ist seit über 20 Jahren in Deutschland. Deutschsprachiger Support. Deutsche Mentalität. Wenn etwas nicht klappt, rufst du einfach an — auf Deutsch, ohne Ticketsystem.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section-how" id="how">
+  <div class="how-dot-bg"></div>
+  <div class="section-inner">
+    <div class="how-header">
+      <div class="eyebrow reveal">Der Umstieg</div>
+      <h2 class="section-h2 reveal reveal-delay-1">So einfach ist der Umstieg.</h2>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card reveal">
+        <div class="step-number">1</div>
+        <div class="step-title">sipgate Zugangsdaten eintragen</div>
+        <div class="code-block" id="code1">
+          <button class="copy-btn" onclick="copyCode('code1',this)">Kopieren</button>
+<span class="k">SIP_USER</span>=<span class="v">1234567t0</span>
+<span class="k">SIP_PASSWORD</span>=<span class="v">meinPasswort</span>
+<span class="k">SIP_DOMAIN</span>=<span class="v">sipconnect.sipgate.de</span>
+<span class="k">SIP_REGISTRAR</span>=<span class="v">sipconnect.sipgate.de</span>
+<span class="k">WS_TARGET_URL</span>=<span class="v">ws://mein-backend.example.com</span>
+<span class="k">SDP_CONTACT_IP</span>=<span class="v">1.2.3.4</span></div>
+        <p class="step-desc">Eine .env-Datei mit deinen sipgate SIP-Zugangsdaten. Bekommst du unter <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a></p>
+      </div>
+      <div class="step-card reveal reveal-delay-1">
+        <div class="step-number">2</div>
+        <div class="step-title">Docker Image starten</div>
+        <div class="code-block" id="code2">
+          <button class="copy-btn" onclick="copyCode('code2',this)">Kopieren</button>
+<span class="c"># Go-Version (empfohlen)</span>
+docker run \
+  --env-file <span class="v">.env</span> \
+  --network <span class="v">host</span> \
+  <span class="k">ghcr.io/sipgate/</span><span class="v">sipgate-sip-stream-bridge-go:latest</span></div>
+        <p class="step-desc">Ein einzelner Docker-Befehl. Das Image ist ~10 MB groß und startet in Millisekunden.</p>
+      </div>
+      <div class="step-card reveal reveal-delay-2">
+        <div class="step-number">3</div>
+        <div class="step-title">Fertig ✓</div>
+        <div style="background:rgba(222,255,0,0.06);border:1px solid rgba(222,255,0,0.2);border-radius:var(--radius-md);padding:24px 20px;margin-bottom:14px;text-align:center;">
+          <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+          <div style="font-family:var(--font-primary);font-weight:700;font-size:16px;color:var(--electric-lime);margin-bottom:6px;">Backend läuft weiter.</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.5);">Unverändert. Wie gehabt.</div>
+        </div>
+        <p class="step-desc">Dein bestehendes Backend läuft weiter — unverändert. Nur die Telefonie kommt jetzt aus Deutschland.</p>
+      </div>
+    </div>
+    <div class="how-tagline reveal">
+      Drei Schritte. Fünf Minuten. Kein Code anfassen.
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON TABLE -->
+<section class="section-compare" id="vergleich">
+  <div class="section-inner">
+    <div class="compare-header">
+      <div class="eyebrow reveal">Der Vergleich</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Twilio vs. sipgate — auf einen Blick.</h2>
+    </div>
+    <div class="compare-table-wrap reveal reveal-delay-1">
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Twilio</th>
+            <th class="col-sipgate">sipgate + Bridge</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>🌍 Serverstandort</td>
+            <td class="col-twilio">USA 🇺🇸</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Deutschland 🇩🇪</span></td>
+          </tr>
+          <tr>
+            <td>🔒 DSGVO</td>
+            <td class="col-twilio">Aufwändig, Standardvertragsklauseln nötig</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Eingebaut, kein Extra-Aufwand</span></td>
+          </tr>
+          <tr>
+            <td>📞 Rufnummern</td>
+            <td class="col-twilio">International</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Deutsche Festnetz &amp; Mobilfunk</span></td>
+          </tr>
+          <tr>
+            <td>💬 Support</td>
+            <td class="col-twilio">Englisch, Ticketsystem</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Deutsch, direkt</span></td>
+          </tr>
+          <tr>
+            <td>💻 Code-Änderungen</td>
+            <td class="col-twilio">—</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Keine — Backend bleibt wie es ist</span></td>
+          </tr>
+          <tr>
+            <td>🐳 Deployment</td>
+            <td class="col-twilio">—</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Ein Docker-Befehl</span></td>
+          </tr>
+          <tr>
+            <td>💰 Bridge-Kosten</td>
+            <td class="col-twilio">—</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Kostenlos</span></td>
+          </tr>
+          <tr>
+            <td>🖥️ Image-Größe</td>
+            <td class="col-twilio">—</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> ~10 MB (Go-Version)</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- DOCKER IMAGES -->
+<section class="section-docker" id="docker">
+  <div class="section-inner">
+    <div class="docker-header">
+      <div class="eyebrow reveal">Docker Images</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Direkt und kostenlos.</h2>
+      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">Die Images werden automatisch gebaut und sind jederzeit abrufbar — kostenlos, ohne Account, direkt aus der GitHub Container Registry.</p>
+    </div>
+    <div class="docker-cards">
+      <div class="docker-card reveal">
+        <div class="docker-card-badge">⭐ Empfohlen</div>
+        <div class="docker-card-title">Go-Version</div>
+        <div class="docker-card-sub">Winzig, schnell, stabil — für den Produktionseinsatz.</div>
+        <div class="docker-cmd" id="code3">
+          <button class="copy-btn" onclick="copyCode('code3',this)">Kopieren</button>
+          <span class="cmd-dim">docker pull </span>ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest
+        </div>
+        <div class="docker-stats">
+          <span class="docker-stat">~10 MB Image</span>
+          <span class="docker-stat">Startet in Millisekunden</span>
+          <span class="docker-stat">Stabil über Wochen</span>
+        </div>
+      </div>
+      <div class="docker-card reveal reveal-delay-1">
+        <div class="docker-card-badge" style="background:var(--cornflower);color:var(--black);">Node.js</div>
+        <div class="docker-card-title">Node.js-Version</div>
+        <div class="docker-card-sub">Referenz-Implementation — ideal zum Anpassen.</div>
+        <div class="docker-cmd" id="code4">
+          <button class="copy-btn" onclick="copyCode('code4',this)">Kopieren</button>
+          <span class="cmd-dim">docker pull </span>ghcr.io/sipgate/sipgate-sip-stream-bridge-node:latest
+        </div>
+        <div class="docker-stats">
+          <span class="docker-stat">Selbe Features</span>
+          <span class="docker-stat">Lesbarer Code</span>
+          <span class="docker-stat">Anpassbar</span>
+        </div>
+      </div>
+    </div>
+    <div class="tags-table-wrap reveal reveal-delay-2">
+      <div class="tags-table-title">Verfügbare Tags</div>
+      <table class="tags-table">
+        <thead>
+          <tr>
+            <th>Tag</th>
+            <th>Bedeutung</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>latest</td>
+            <td>Immer die neueste stabile Version — für die meisten Anwendungsfälle</td>
+          </tr>
+          <tr>
+            <td>main</td>
+            <td>Aktuellster Stand aus dem Hauptbranch</td>
+          </tr>
+          <tr>
+            <td>sha-abc1234</td>
+            <td>Exakt ein bestimmter Commit — für vollständige Reproduzierbarkeit</td>
+          </tr>
+          <tr>
+            <td>v1.2.3</td>
+            <td>Festgepinnte Version — empfohlen für Produktion</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section-features" id="features">
+  <div class="section-inner">
+    <div class="features-header">
+      <div class="eyebrow reveal">Protokoll-Unterstützung</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Was bleibt gleich? Alles.</h2>
+      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">Alles, was dein Backend schon kann — bleibt. Die Bridge unterstützt das vollständige Twilio Media Streams Protokoll.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-chip reveal">
+        <div class="feature-check">✓</div>
+        <span>Eingehende &amp; ausgehende Audiospuren</span>
+      </div>
+      <div class="feature-chip reveal reveal-delay-1">
+        <div class="feature-check">✓</div>
+        <span>DTMF-Töne (Tastatureingaben)</span>
+      </div>
+      <div class="feature-chip reveal reveal-delay-2">
+        <div class="feature-check">✓</div>
+        <span>Mark / Clear (präzise Audiokontrolle)</span>
+      </div>
+      <div class="feature-chip reveal">
+        <div class="feature-check">✓</div>
+        <span>Automatisches Reconnect</span>
+      </div>
+      <div class="feature-chip reveal reveal-delay-1">
+        <div class="feature-check">✓</div>
+        <span>Bis zu 100 parallele Gespräche</span>
+      </div>
+      <div class="feature-chip reveal reveal-delay-2">
+        <div class="feature-check">✓</div>
+        <span>Health Check <span class="feature-code">/health</span></span>
+      </div>
+      <div class="feature-chip reveal">
+        <div class="feature-check">✓</div>
+        <span>Prometheus Metriken <span class="feature-code">/metrics</span></span>
+      </div>
+      <div class="feature-chip reveal reveal-delay-1">
+        <div class="feature-check">✓</div>
+        <span>Selbst gehostet — volle Kontrolle</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section-faq" id="faq">
+  <div class="section-inner">
+    <div class="faq-header">
+      <div class="eyebrow reveal">FAQ</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Häufige Fragen.</h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item reveal">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Muss ich meinen Code umschreiben?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Nein. Die Bridge spricht exakt dieselbe Sprache wie Twilio Media Streams. Dein Backend merkt keinen Unterschied — du musst keinen einzigen Code anfassen.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-1">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Brauche ich einen sipgate Account?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Ja — du brauchst einen sipgate trunking-Anschluss. Den bekommst du unter <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a>. Die Bridge selbst ist kostenlos und open source.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-2">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Ist das wirklich DSGVO-konform?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">sipgate ist ein deutsches Unternehmen mit deutschen Servern. Deine Telefondaten verlassen Deutschland nicht. Das ist ein erheblicher Vorteil gegenüber US-Anbietern wie Twilio, bei denen du Standardvertragsklauseln und einen Auftragsverarbeitungsvertrag brauchst.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Was kostet die Bridge?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Die Bridge ist komplett kostenlos und open source. Du hostest sie selbst — aber keine Sorge: Das Docker-Image ist nur ~10 MB groß und läuft problemlos auf dem kleinsten Cloud-Server (1 vCPU, 512 MB RAM). Du zahlst nur für deinen sipgate-Anschluss.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-1">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Wie viele Anrufe kann die Bridge gleichzeitig verarbeiten?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Standardmäßig bis zu 100 parallele Gespräche — konfigurierbar nach oben. Läuft stabil über Wochen ohne Neustart.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-2">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Läuft das auch ohne Linux?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Für Produktion empfehlen wir Linux mit <code style="font-family:monospace;background:var(--grey);padding:1px 6px;border-radius:4px;">--network host</code>. Lokal auf macOS oder Windows funktioniert Docker Desktop ebenfalls.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="section-cta" id="start">
+  <div class="cta-glow"></div>
+  <div class="cta-inner section-inner">
+    <div class="cta-eyebrow reveal">Bereit loszulegen?</div>
+    <h2 class="cta-headline reveal reveal-delay-1">
+      <span class="l1">Los geht's.</span>
+      <span class="l2">Direkt starten.</span>
+    </h2>
+    <div class="terminal reveal reveal-delay-2">
+      <div class="terminal-bar">
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <span class="terminal-title">terminal</span>
+      </div>
+      <div class="terminal-body" id="terminal-main">
+        <button class="copy-btn" style="top:12px;right:12px;" onclick="copyCode('terminal-main',this)">Kopieren</button>
+        <div><span class="terminal-prompt">$</span><span class="terminal-cmd">docker pull </span><span class="terminal-img">ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest</span></div>
+        <div style="margin-top:8px;"><span class="terminal-prompt">$</span><span class="terminal-cmd">docker run </span><span class="terminal-flag">--env-file </span><span class="terminal-img">.env </span><span class="terminal-flag">--network host </span><span class="terminal-img">ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest</span></div>
+      </div>
+    </div>
+    <div class="cta-links reveal reveal-delay-3">
+      <a href="https://www.sipgatetrunking.de" class="cta-link outline" target="_blank">sipgate trunking buchen</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  sipgate SIP Stream Bridge — Made in Germany 🇩🇪
+  <span>|</span>
+  <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" style="color:rgba(255,255,255,0.35);text-decoration:none;">GitHub</a>
+  <span>|</span>
+  Open Source
+</footer>
+
+<script>
+  // Hamburger menu
+  const hamburger = document.getElementById('hamburger');
+  const mobileMenu = document.getElementById('mobile-menu');
+  hamburger.addEventListener('click', () => {
+    hamburger.classList.toggle('open');
+    mobileMenu.classList.toggle('open');
+  });
+  mobileMenu.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      hamburger.classList.remove('open');
+      mobileMenu.classList.remove('open');
+    });
+  });
+
+  // Scroll reveal
+  const revealEls = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+  revealEls.forEach(el => observer.observe(el));
+
+  // Trigger hero immediately
+  document.querySelectorAll('.hero .reveal').forEach((el, i) => {
+    setTimeout(() => el.classList.add('visible'), i * 100);
+  });
+
+  // FAQ accordion
+  function toggleFaq(btn) {
+    const item = btn.closest('.faq-item');
+    const answer = item.querySelector('.faq-answer');
+    const isOpen = item.classList.contains('open');
+    // Close all
+    document.querySelectorAll('.faq-item').forEach(i => {
+      i.classList.remove('open');
+      i.querySelector('.faq-answer').style.maxHeight = null;
+    });
+    // Open clicked if was closed
+    if (!isOpen) {
+      item.classList.add('open');
+      answer.style.maxHeight = answer.scrollHeight + 'px';
+    }
+  }
+
+  // Copy to clipboard
+  function copyCode(id, btn) {
+    const el = document.getElementById(id);
+    const text = el.innerText.replace(/^Kopieren\n?/, '').trim();
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Kopiert';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
+    }).catch(() => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(range);
+    });
+  }
+</script>
+</body>
+</html>
