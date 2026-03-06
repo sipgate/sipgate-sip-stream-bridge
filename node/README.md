@@ -27,14 +27,14 @@ sipgate SIP trunk  ←───────────────────�
 ## Features
 
 - Registers with sipgate SIP trunking and stays registered (auto re-registration)
-- Accepts inbound SIP INVITEs, negotiates PCMU (G.711 μ-law 8 kHz)
+- Accepts inbound SIP INVITEs, negotiates codec per `AUDIO_MODE` (default `twilio`: PCMU/G.711 μ-law 8 kHz; `best`: G.722 16 kHz > PCMA > PCMU — highest quality sipgate offers)
 - Opens one WebSocket connection per call to the configured backend URL
-- Bridges audio bidirectionally: RTP ↔ base64 mulaw `media` events
+- Bridges audio bidirectionally: RTP ↔ base64-encoded `media` events (encoding determined by `AUDIO_MODE`)
 - Forwards DTMF digits as `dtmf` events
 - Forwards `mark` events from the backend to the caller — echoes the mark name after all preceding audio frames have been sent; immediate echo when the outbound queue is idle
 - Handles `clear` events from the backend — discards buffered outbound audio and echoes all pending mark names immediately
 - SIP OPTIONS keepalive: probes the registrar every `SIP_OPTIONS_INTERVAL` seconds; triggers re-registration after 2 consecutive failures (401/407 responses count as success — server is reachable)
-- Survives transient WebSocket drops: exponential backoff reconnect (1 s → 2 s → 4 s, 30 s budget) with μ-law silence to the caller during the reconnect window
+- Survives transient WebSocket drops: exponential backoff reconnect (1 s → 2 s → 4 s, 30 s budget) with codec silence to the caller during the reconnect window
 - Supports multiple concurrent calls, each fully isolated
 - Structured JSON logs (pino) with `callId` and `streamSid` context on every line
 - Docker image with multi-stage build on `node:22-alpine`
@@ -66,6 +66,7 @@ All configuration is via environment variables. Copy `../.env.example` to `../.e
 | `SIP_EXPIRES` | `120` | SIP registration expiry in seconds (re-registers at 90%) |
 | `SIP_OPTIONS_INTERVAL` | `30` | Interval in seconds between SIP OPTIONS keepalive pings; 2 consecutive failures trigger re-registration |
 | `LOG_LEVEL` | `info` | Pino log level: `trace` `debug` `info` `warn` `error` |
+| `AUDIO_MODE` | `twilio` | Audio codec mode: `twilio` — PCMU/G.711 μ-law 8 kHz (Twilio-compatible, `mediaFormat: {encoding:"audio/x-mulaw",sampleRate:8000}`); `best` — negotiates highest-quality codec sipgate offers: G.722 (16 kHz) > PCMA > PCMU; negotiated codec is reflected in the `start` event `mediaFormat` and RTP payload is forwarded as-is |
 
 The service validates all variables at startup using Zod and exits immediately with a structured error if anything is missing:
 
@@ -183,12 +184,17 @@ sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protoco
 }
 ```
 
+> **`mediaFormat` depends on `AUDIO_MODE`.**
+> Default (`twilio`): `{"encoding":"audio/x-mulaw","sampleRate":8000,"channels":1}`.
+> With `AUDIO_MODE=best` and G.722 negotiated: `{"encoding":"audio/G722","sampleRate":16000,"channels":1}`.
+> The backend must decode inbound audio and encode outbound audio in the format indicated by `mediaFormat`.
+
 #### `media`
 ```json
 {
   "event": "media",
   "sequenceNumber": "2",
-  "media": {"track": "inbound", "chunk": "0", "timestamp": "0", "payload": "<base64 mulaw>"},
+  "media": {"track": "inbound", "chunk": "0", "timestamp": "0", "payload": "<base64-encoded audio>"},
   "streamSid": "MZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
@@ -232,7 +238,7 @@ Sent after all preceding outbound audio frames have been delivered to the caller
 {
   "event": "media",
   "streamSid": "MZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "media": {"payload": "<base64 mulaw 160 bytes>"}
+  "media": {"payload": "<base64-encoded audio, 160 bytes per 20 ms frame>"}
 }
 ```
 
@@ -280,7 +286,7 @@ If the backend disconnects during an active call:
 | Config | `src/config/index.ts` | Zod-validated environment variables; fails fast on startup |
 | Logger | `src/logger/index.ts` | Pino JSON logger; `createChildLogger` adds call context |
 | SIP UserAgent | `src/sip/userAgent.ts` | Raw UDP :5060; REGISTER with Digest Auth (MD5); INVITE/ACK/BYE/CANCEL |
-| SDP | `src/sip/sdp.ts` | `parseSdpOffer` / `buildSdpAnswer` (PCMU + telephone-event) |
+| SDP | `src/sip/sdp.ts` | `parseSdpOffer` / `buildSdpAnswer` (codec per `AUDIO_MODE` + telephone-event) |
 | RTP Handler | `src/rtp/rtpHandler.ts` | Per-call UDP socket; RTP header codec; `audio` and `dtmf` events |
 | WebSocket Client | `src/ws/wsClient.ts` | Per-call WebSocket; Twilio Media Streams encoding/decoding |
 | Call Manager | `src/bridge/callManager.ts` | Call lifecycle orchestration; `Map<callId, CallSession>` |

@@ -105,7 +105,8 @@ func sendConnected(conn net.Conn) error {
 // callSidToken is a CA-prefixed token (Twilio callSid convention).
 // callID is the SIP Call-ID, forwarded in customParameters.sipCallId for consumer use.
 // req.From().Address.String() and req.To().Address.String() provide SIP URI strings.
-func sendStart(conn net.Conn, streamSid, callSidToken, callID string, req *siplib.Request) error {
+// encoding and sampleRate come from MediaFormatForPT(negotiatedPT) set at session start.
+func sendStart(conn net.Conn, streamSid, callSidToken, callID string, req *siplib.Request, encoding string, sampleRate int) error {
 	customParams := map[string]string{
 		"sipCallId": callID,
 		"From":      req.From().Address.String(),
@@ -121,7 +122,7 @@ func sendStart(conn net.Conn, streamSid, callSidToken, callID string, req *sipli
 			CallSid:          callSidToken,
 			Tracks:           []string{"inbound", "outbound"},
 			CustomParameters: customParams,
-			MediaFormat:      MediaFormat{Encoding: "audio/x-mulaw", SampleRate: 8000, Channels: 1},
+			MediaFormat:      MediaFormat{Encoding: encoding, SampleRate: sampleRate, Channels: 1},
 		},
 	})
 }

@@ -35,6 +35,9 @@ type Config struct {
 	// SIP OPTIONS keepalive interval (Phase 10)
 	SIPOptionsInterval time.Duration `env:"SIP_OPTIONS_INTERVAL" default:"30s" usage:"Interval between SIP OPTIONS keepalive pings (e.g. 30s, 1m)"`
 
+	// Audio codec mode (AUDIO_MODE)
+	AudioMode string `env:"AUDIO_MODE" default:"twilio" usage:"Audio codec mode: twilio (PCMU only) or best (G.722 preferred)"`
+
 	// Log level (optional)
 	LogLevel string `env:"LOG_LEVEL" default:"info" usage:"Log level: trace, debug, info, warn, error"`
 
@@ -72,6 +75,12 @@ func Load() Config {
 		fmt.Fprintf(os.Stderr,
 			`{"level":"fatal","msg":"RTP_PORT_MIN must be less than RTP_PORT_MAX","RTP_PORT_MIN":%d,"RTP_PORT_MAX":%d}`+"\n",
 			cfg.RTPPortMin, cfg.RTPPortMax)
+		os.Exit(1)
+	}
+	if cfg.AudioMode != "twilio" && cfg.AudioMode != "best" {
+		fmt.Fprintf(os.Stderr,
+			`{"level":"fatal","msg":"AUDIO_MODE must be 'twilio' or 'best'","AUDIO_MODE":%q}`+"\n",
+			cfg.AudioMode)
 		os.Exit(1)
 	}
 

@@ -105,6 +105,12 @@ Both implementations share the same environment variables. Copy `.env.example` t
 
 `SDP_CONTACT_IP` is additionally required in the Go implementation (reachable IP for SDP contact).
 
+### Optional (selected)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUDIO_MODE` | `twilio` | Audio codec mode: `twilio` — PCMU/G.711 μ-law 8 kHz (Twilio-compatible); `best` — negotiates highest-quality codec sipgate offers (G.722 16 kHz > PCMA > PCMU); negotiated codec is reflected in the `start` event `mediaFormat` |
+
 See the individual READMEs for the full option list.
 
 ---

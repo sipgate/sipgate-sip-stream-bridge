@@ -89,7 +89,7 @@ func TestSendStart_JSONSchema(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- sendStart(client, streamSid, callSidToken, sipCallID, req)
+		errCh <- sendStart(client, streamSid, callSidToken, sipCallID, req, "audio/x-mulaw", 8000)
 	}()
 
 	data, _, err := wsutil.ReadClientData(server)
@@ -265,7 +265,7 @@ func TestHandshake_SendsConnectedThenStart(t *testing.T) {
 			errCh <- err
 			return
 		}
-		errCh <- sendStart(clientConn, "MZtest", "CAtest", "call-1", req)
+		errCh <- sendStart(clientConn, "MZtest", "CAtest", "call-1", req, "audio/x-mulaw", 8000)
 	}()
 
 	// Read frame 1: connected

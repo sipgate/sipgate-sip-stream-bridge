@@ -23,7 +23,7 @@ import type { Config } from '../config/index.js';
 import { createChildLogger } from '../logger/index.js';
 import type { Metrics } from '../observability/metrics.js';
 import { createRtpHandler, type RtpHandler } from '../rtp/rtpHandler.js';
-import { buildSdpAnswer, parseSdpOffer } from '../sip/sdp.js';
+import { buildSdpAnswer, parseSdpOffer, selectAudioCodec } from '../sip/sdp.js';
 import type { SipCallbacks, SipHandle } from '../sip/userAgent.js';
 import { createWsClient, type WsCallParams, type WsClient } from '../ws/wsClient.js';
 
@@ -58,6 +58,10 @@ export interface CallSession {
   wsReconnecting: boolean;
   /** Silence injection interval during WS reconnect — cleared on teardown to prevent send-after-dispose crash */
   silenceInterval: ReturnType<typeof setInterval> | null;
+  /** SDP answer sent in 200 OK — reused for retransmission to avoid re-negotiation */
+  sdpAnswer: string;
+  /** Silence byte for the negotiated codec — used for NAT hole-punch and reconnect silence */
+  silenceByte: number;
 }
 
 const USER_AGENT = 'sipgate-sip-stream-bridge/0.1.0';
@@ -270,13 +274,12 @@ export class CallManager {
     if (this.pendingInvites.has(sipCallId)) return;
     const existing = this.sessions.get(sipCallId);
     if (existing) {
-      // Re-send 200 OK so sipgate stops retransmitting
+      // Re-send 200 OK so sipgate stops retransmitting (reuse stored sdpAnswer — no re-negotiation)
       const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
-      const sdpAnswer = buildSdpAnswer(localIp, existing.localRtpPort);
       const ok200 = buildResponse({
         status: 200, reason: 'OK', vias: extractAllVias(raw), from,
         to: `${toHeader};tag=${existing.localTag}`,
-        callId: sipCallId, cseq, sdpBody: sdpAnswer, localIp,
+        callId: sipCallId, cseq, sdpBody: existing.sdpAnswer, localIp,
         sipUser: this.config.SIP_USER, sipDomain: this.config.SIP_DOMAIN,
         localSipPort: 5060,
       });
@@ -324,7 +327,8 @@ export class CallManager {
     // 3. Parse SDP body
     const sdpBody = raw.split('\r\n\r\n').slice(1).join('\r\n\r\n');
     const sdpOffer = parseSdpOffer(sdpBody);
-    if (!sdpOffer || !sdpOffer.hasPcmu) {
+    const supportedPts = new Set([0, 8, 9]);
+    if (!sdpOffer || !sdpOffer.audioPts.some((pt) => supportedPts.has(pt))) {
       const resp488 = buildResponse({
         status: 488,
         reason: 'Not Acceptable Here',
@@ -335,9 +339,12 @@ export class CallManager {
         cseq,
       });
       this.sipHandle.sendRaw(Buffer.from(resp488), rinfo.port, rinfo.address);
-      this.log.warn({ event: 'invite_rejected_sdp', sipCallId }, 'INVITE rejected — missing or no PCMU in SDP offer');
+      this.log.warn({ event: 'invite_rejected_sdp', sipCallId }, 'INVITE rejected — no supported codec in SDP offer');
       return;
     }
+
+    // Select negotiated codec based on AUDIO_MODE
+    const codecInfo = selectAudioCodec(sdpOffer.audioPts, this.config.AUDIO_MODE);
 
     // 4. Allocate RTP handler — must succeed before we commit to the call
     const callLog = createChildLogger({ component: 'call', callId: sipCallId });
@@ -345,11 +352,14 @@ export class CallManager {
       portMin: this.config.RTP_PORT_MIN,
       portMax: this.config.RTP_PORT_MAX,
       log: callLog,
+      audioPt: codecInfo.pt,
+      dtmfPt: sdpOffer.dtmfPt,
+      silenceByte: codecInfo.silenceByte,
     });
     rtp.setRemote(sdpOffer.remoteIp, sdpOffer.remotePort);
     // NAT hole-punch: send one silence packet outbound so the router creates a
     // mapping for this port. sipgate's inbound RTP will then traverse the same rule.
-    rtp.sendAudio(Buffer.alloc(160, 0xff)); // μ-law silence
+    rtp.sendAudio(Buffer.alloc(160, rtp.silenceByte));
 
     // Check if CANCEL arrived while we were awaiting RTP allocation
     if (this.cancelledInvites.has(sipCallId)) {
@@ -379,7 +389,14 @@ export class CallManager {
     try {
       ws = await createWsClient(
         this.config.WS_TARGET_URL,
-        { streamSid, callSid, from: fromUri, to: toUri, sipCallId },
+        {
+          streamSid,
+          callSid,
+          from: fromUri,
+          to: toUri,
+          sipCallId,
+          mediaFormat: { encoding: codecInfo.encoding, sampleRate: codecInfo.sampleRate, channels: 1 },
+        },
         callLog,
       );
     } catch (err) {
@@ -407,7 +424,7 @@ export class CallManager {
 
     // 8. Send 200 OK with SDP answer
     const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
-    const sdpAnswer = buildSdpAnswer(localIp, rtp.localPort);
+    const sdpAnswer = buildSdpAnswer(localIp, rtp.localPort, sdpOffer, this.config.AUDIO_MODE);
     const ok = buildResponse({
       status: 200,
       reason: 'OK',
@@ -449,6 +466,8 @@ export class CallManager {
       okRetransmitTimer: null,
       wsReconnecting: false,
       silenceInterval: null,
+      sdpAnswer,
+      silenceByte: rtp.silenceByte,
     };
     this.sessions.set(sipCallId, session);
     this.metrics?.incActiveCalls();
@@ -503,6 +522,7 @@ export class CallManager {
       from: fromUri,
       to: toUri,
       sipCallId,
+      mediaFormat: { encoding: codecInfo.encoding, sampleRate: codecInfo.sampleRate, channels: 1 },
     };
     ws.onDisconnect(() => {
       session.wsReconnecting = true;
@@ -656,11 +676,11 @@ export class CallManager {
     const started   = Date.now();
     let   delay     = 1_000;
 
-    // Send μ-law silence to caller throughout reconnect window — prevents dead-air.
+    // Send codec-appropriate silence to caller throughout reconnect window — prevents dead-air.
     // Stored on session so terminateSession can clear it if BYE arrives mid-sleep.
     session.silenceInterval = setInterval(() => {
       this.metrics?.incRtpTx();
-      session.rtp.sendAudio(Buffer.alloc(160, 0xff));
+      session.rtp.sendAudio(Buffer.alloc(160, session.silenceByte));
     }, 20);
 
     const cleanup = (): void => {

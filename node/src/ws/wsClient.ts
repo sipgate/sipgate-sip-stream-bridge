@@ -7,6 +7,7 @@ export interface WsCallParams {
   from: string;
   to: string;
   sipCallId: string;
+  mediaFormat: { encoding: string; sampleRate: number; channels: number };
 }
 
 export interface WsClient {
@@ -51,7 +52,7 @@ export function createWsClient(
   params: WsCallParams,
   log: Logger,
 ): Promise<WsClient> {
-  const { streamSid, callSid, from, to, sipCallId } = params;
+  const { streamSid, callSid, from, to, sipCallId, mediaFormat } = params;
 
   return new Promise<WsClient>((resolve, reject) => {
     const ws = new WebSocket(url);
@@ -89,11 +90,7 @@ export function createWsClient(
               To: to,
               sipCallId,
             },
-            mediaFormat: {
-              encoding: 'audio/x-mulaw',
-              sampleRate: 8000,
-              channels: 1,
-            },
+            mediaFormat,
           },
           streamSid,
         }),

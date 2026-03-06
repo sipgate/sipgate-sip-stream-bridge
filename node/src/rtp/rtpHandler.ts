@@ -20,11 +20,13 @@ import type { Logger } from 'pino';
 
 export interface RtpHandler extends EventEmitter {
   readonly localPort: number;
+  /** Silence byte for the negotiated codec (used for NAT hole-punch and reconnect silence) */
+  readonly silenceByte: number;
   /** Call after WS connected + start event sent — enables payload forwarding */
   startForwarding(): void;
   /** Set the remote RTP endpoint (IP + port) before sending audio */
   setRemote(ip: string, port: number): void;
-  /** Send a mulaw payload Buffer to the remote RTP endpoint */
+  /** Send an audio payload Buffer to the remote RTP endpoint */
   sendAudio(payload: Buffer): void;
   /** Release dgram socket and remove all listeners */
   dispose(): void;
@@ -59,6 +61,7 @@ let nextPort: number | undefined;
 
 class RtpHandlerImpl extends EventEmitter implements RtpHandler {
   readonly localPort: number;
+  readonly silenceByte: number;
 
   private forwardingEnabled = false;
   private remoteIp = '';
@@ -73,9 +76,13 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
     private readonly socket: dgram.Socket,
     localPort: number,
     private readonly log: Logger,
+    private readonly audioPt: number,
+    private readonly dtmfPt: number,
+    silenceByte: number,
   ) {
     super();
     this.localPort = localPort;
+    this.silenceByte = silenceByte;
     this.outSsrc = randomBytes(4).readUInt32BE(0);
 
     socket.on('message', (buf: Buffer) => this.onMessage(buf));
@@ -101,7 +108,7 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
 
     const header = Buffer.allocUnsafe(12);
     header[0] = 0x80; // V=2, P=0, X=0, CC=0
-    header[1] = 0x00; // M=0, PT=0 (PCMU)
+    header[1] = this.audioPt & 0x7f; // M=0, PT=negotiated audio codec
     header.writeUInt16BE(this.outSeq & 0xffff, 2);
     this.outSeq++;
     header.writeUInt32BE(this.outTimestamp >>> 0, 4);
@@ -141,14 +148,14 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
 
     if (!this.forwardingEnabled) return;
 
-    if (payloadType === 0) {
-      // PCMU audio
+    if (payloadType === this.audioPt) {
+      // Negotiated audio codec — forward payload to WS
       this.emit('audio', buf.subarray(headerLen));
       return;
     }
 
-    if (payloadType === 113) {
-      // RFC 4733 telephone-event (sipgate uses PT 113 for telephone-event/8000)
+    if (payloadType === this.dtmfPt) {
+      // RFC 4733 telephone-event
       const payload = buf.subarray(headerLen);
       if (payload.length < 4) return;
       const isEnd = (payload[1] & 0x80) !== 0;
@@ -184,8 +191,11 @@ export async function createRtpHandler(opts: {
   portMin: number;
   portMax: number;
   log: Logger;
+  audioPt: number;
+  dtmfPt: number;
+  silenceByte: number;
 }): Promise<RtpHandler> {
-  const { portMin, portMax, log } = opts;
+  const { portMin, portMax, log, audioPt, dtmfPt, silenceByte } = opts;
 
   // Initialise module counter on first call (or if drifted below range)
   if (nextPort === undefined || nextPort < portMin) {
@@ -200,7 +210,7 @@ export async function createRtpHandler(opts: {
     nextPort = port >= portMax ? portMin : port + 1;
 
     try {
-      const handler = await bindSocketOnPort(port, log);
+      const handler = await bindSocketOnPort(port, log, audioPt, dtmfPt, silenceByte);
 
       // Warn when fewer than 10 ports remain ahead in the range
       const portsAhead = portMax - port;
@@ -229,7 +239,13 @@ export async function createRtpHandler(opts: {
  * Create a udp4 socket, bind it to the given port, and return an RtpHandler.
  * Rejects with an EADDRINUSE error if the port is taken.
  */
-function bindSocketOnPort(port: number, log: Logger): Promise<RtpHandler> {
+function bindSocketOnPort(
+  port: number,
+  log: Logger,
+  audioPt: number,
+  dtmfPt: number,
+  silenceByte: number,
+): Promise<RtpHandler> {
   return new Promise<RtpHandler>((resolve, reject) => {
     const socket = dgram.createSocket('udp4');
 
@@ -242,7 +258,7 @@ function bindSocketOnPort(port: number, log: Logger): Promise<RtpHandler> {
       socket.removeListener('error', onError);
       const info = socket.address();
       const localPort = typeof info === 'object' ? info.port : port;
-      resolve(new RtpHandlerImpl(socket, localPort, log));
+      resolve(new RtpHandlerImpl(socket, localPort, log, audioPt, dtmfPt, silenceByte));
     }
 
     socket.once('error', onError);

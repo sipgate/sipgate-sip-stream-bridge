@@ -27,9 +27,9 @@ sipgate SIP trunk  ←───────────────────�
 ## Features
 
 - Registers with sipgate SIP trunking and stays registered (auto re-registration at 75% of server-granted Expires)
-- Accepts inbound SIP INVITEs, negotiates PCMU (G.711 μ-law 8 kHz)
+- Accepts inbound SIP INVITEs, negotiates codec per `AUDIO_MODE` (default `twilio`: PCMU/G.711 μ-law 8 kHz; `best`: G.722 16 kHz > PCMA > PCMU — highest quality sipgate offers)
 - Opens one WebSocket connection per call to the configured backend URL
-- Bridges audio bidirectionally: RTP ↔ base64 mulaw `media` events
+- Bridges audio bidirectionally: RTP ↔ base64-encoded `media` events (encoding determined by `AUDIO_MODE`)
 - Forwards DTMF digits as `dtmf` events (RFC 4733, End-bit deduplication by RTP timestamp)
 - Forwards `mark` events from the backend to the caller — echoes the mark name after all preceding audio frames have been sent; immediate echo when the outbound queue is idle
 - Handles `clear` events from the backend — discards buffered outbound audio and echoes all pending mark names immediately
@@ -71,6 +71,7 @@ All configuration is via environment variables. Copy `../.env.example` to `../.e
 | `SIP_OPTIONS_INTERVAL` | `30` | Interval in seconds between SIP OPTIONS keepalive pings; 2 consecutive failures trigger re-registration |
 | `LOG_LEVEL` | `info` | zerolog level: `trace` `debug` `info` `warn` `error` |
 | `HTTP_PORT` | `8080` | Port for `/health` and `/metrics` HTTP endpoints |
+| `AUDIO_MODE` | `twilio` | Audio codec mode: `twilio` — PCMU/G.711 μ-law 8 kHz (Twilio-compatible, `mediaFormat: {encoding:"audio/x-mulaw",sampleRate:8000}`); `best` — negotiates highest-quality codec sipgate offers: G.722 (16 kHz) > PCMA > PCMU; negotiated codec is reflected in the `start` event `mediaFormat` and RTP payload is forwarded as-is |
 
 The service validates all variables at startup and exits immediately with a structured error if anything is missing:
 
@@ -229,12 +230,17 @@ sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protoco
 }
 ```
 
+> **`mediaFormat` depends on `AUDIO_MODE`.**
+> Default (`twilio`): `{"encoding":"audio/x-mulaw","sampleRate":8000,"channels":1}`.
+> With `AUDIO_MODE=best` and G.722 negotiated: `{"encoding":"audio/G722","sampleRate":16000,"channels":1}`.
+> The backend must decode inbound audio and encode outbound audio in the format indicated by `mediaFormat`.
+
 #### `media` (inbound audio, 20 ms / 160 bytes)
 ```json
 {
   "event": "media",
   "sequenceNumber": "2",
-  "media": {"track": "inbound", "chunk": "0", "timestamp": "0", "payload": "<base64 mulaw>"},
+  "media": {"track": "inbound", "chunk": "0", "timestamp": "0", "payload": "<base64-encoded audio>"},
   "streamSid": "MZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
@@ -278,7 +284,7 @@ Sent after all preceding outbound audio frames have been delivered to the caller
 {
   "event": "media",
   "streamSid": "MZxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "media": {"payload": "<base64 mulaw 160 bytes>"}
+  "media": {"payload": "<base64-encoded audio, 160 bytes per 20 ms frame>"}
 }
 ```
 
@@ -326,7 +332,7 @@ If the backend disconnects during an active call:
 | SIP Agent | `internal/sip/agent.go` | sipgo UA/Server/Client setup |
 | SIP Handler | `internal/sip/handler.go` | INVITE/ACK/BYE/OPTIONS dispatch; shutdown guard (503 during drain) |
 | Registrar | `internal/sip/registrar.go` | REGISTER + Digest Auth + re-register loop at 75% Expires |
-| SDP | `internal/sip/sdp.go` | Parse SDP offer; build SDP answer (PCMU + telephone-event) |
+| SDP | `internal/sip/sdp.go` | Parse SDP offer; build SDP answer (codec per `AUDIO_MODE` + telephone-event) |
 | CallManager | `internal/bridge/manager.go` | sync.Map of active sessions; port pool; DrainAll on shutdown |
 | CallSession | `internal/bridge/session.go` | 4-goroutine per-call bridge: rtpReader, rtpPacer, wsPacer, wsToRTP |
 | WS helpers | `internal/bridge/ws.go` | sendConnected/Start/Media/Stop/DTMF; wsSignal; dialWS |

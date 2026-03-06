@@ -18,12 +18,12 @@ import (
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
 )
 
-// packetQueueSize is the maximum number of 20 ms PCMU frames buffered for the RTP pacer.
+// packetQueueSize is the maximum number of 20 ms audio frames buffered for the RTP pacer.
 // 500 frames = 10 seconds; large enough for any realistic TTS response blob.
 // When full, new frames are dropped and a warning is logged.
 const packetQueueSize = 500
 
-// rtpInboundQueueSize is the maximum number of 20 ms PCMU frames buffered between
+// rtpInboundQueueSize is the maximum number of 20 ms audio frames buffered between
 // rtpReader and wsPacer. 50 frames = 1 second — enough to absorb the periodic
 // ~400 ms sender-side RTP batching observed from sipgate without dropping packets.
 // When full, new frames are dropped and a warning is logged.
@@ -31,37 +31,29 @@ const rtpInboundQueueSize = 50
 
 // outboundFrame is a tagged union for packetQueue entries.
 // Exactly one field is set per instance:
-//   - audio != nil: a 160-byte PCMU audio frame to send to the caller
+//   - audio != nil: a 160-byte audio frame to send to the caller
 //   - mark != "": a mark sentinel — route to markEchoQueue, send no RTP packet
 type outboundFrame struct {
-	audio []byte // non-nil for PCMU frames (160 bytes)
+	audio []byte // non-nil for audio frames (160 bytes)
 	mark  string // non-empty for mark sentinel frames
 }
-
-// pcmuSilenceFrame is a single 20 ms PCMU silence frame (160 bytes of μ-law zero = 0xFF).
-// rtpPacer sends this when no audio is queued so the RTP stream is continuous.
-// Continuous RTP is required for NAT traversal: the first outbound UDP packet punches the
-// NAT hole so the caller's media server can reach our private address.
-var pcmuSilenceFrame = func() []byte {
-	b := make([]byte, 160)
-	for i := range b {
-		b[i] = 0xFF // 0xFF = μ-law encoding of linear PCM zero (silence)
-	}
-	return b
-}()
 
 // CallSession holds all per-call state: RTP socket, WS connection, goroutine lifecycle.
 // Ownership: StartSession creates one instance; run() owns it for the call lifetime.
 type CallSession struct {
-	callID       string
-	callSidToken string   // CA-prefixed Twilio callSid token (distinct from SIP Call-ID)
-	streamSid    string
-	dlg          *sipgo.DialogServerSession
-	rtpPort      int
-	callerRTP    net.Addr // *net.UDPAddr — caller's IP:port from SDP offer
-	dtmfPT       uint8    // telephone-event PT from SDP offer (sipgate: 113)
-	cfg          config.Config
-	log          zerolog.Logger
+	callID          string
+	callSidToken    string   // CA-prefixed Twilio callSid token (distinct from SIP Call-ID)
+	streamSid       string
+	dlg             *sipgo.DialogServerSession
+	rtpPort         int
+	callerRTP       net.Addr // *net.UDPAddr — caller's IP:port from SDP offer
+	dtmfPT          uint8    // telephone-event PT from SDP offer (sipgate: 113)
+	audioPT         uint8    // negotiated audio payload type (0=PCMU, 8=PCMA, 9=G.722)
+	silenceFrame    []byte   // 160-byte silence for audioPT (used by rtpPacer)
+	mediaEncoding   string   // Twilio mediaFormat encoding (e.g. "audio/G722")
+	mediaSampleRate int      // Twilio mediaFormat sampleRate (e.g. 16000)
+	cfg             config.Config
+	log             zerolog.Logger
 	cancel          context.CancelFunc
 	wg              sync.WaitGroup // tracks ONLY rtpReader + rtpPacer (persistent RTP goroutines)
 	packetQueue     chan outboundFrame // buffered outbound frames for rtpPacer (WS→RTP)
@@ -203,7 +195,7 @@ func (s *CallSession) handshake(wsConn net.Conn) error {
 	if err := sendConnected(wsConn); err != nil {
 		return fmt.Errorf("sendConnected: %w", err)
 	}
-	return sendStart(wsConn, s.streamSid, s.callSidToken, s.callID, s.dlg.InviteRequest)
+	return sendStart(wsConn, s.streamSid, s.callSidToken, s.callID, s.dlg.InviteRequest, s.mediaEncoding, s.mediaSampleRate)
 }
 
 // reconnect attempts to re-dial the target WebSocket with exponential backoff.
@@ -248,9 +240,9 @@ func (s *CallSession) reconnect(ctx context.Context) (net.Conn, bool) {
 	}
 }
 
-// rtpReader reads RTP packets from the UDP socket and enqueues PCMU payloads to
+// rtpReader reads RTP packets from the UDP socket and enqueues audio payloads to
 // rtpInboundQueue for paced forwarding by wsPacer.
-// DTMF packets (PT == s.dtmfPT) and non-PCMU packets are dropped silently.
+// DTMF packets (PT == s.dtmfPT) and non-audio packets are dropped silently.
 // Enqueuing is non-blocking: if rtpInboundQueue is full the packet is dropped with a warning.
 func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 	defer s.wg.Done()
@@ -298,12 +290,12 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 			continue
 		}
 
-		// Drop non-PCMU packets.
-		if pkt.PayloadType != 0 {
+		// Drop non-audio packets (pass-through for negotiated PT only).
+		if pkt.PayloadType != s.audioPT {
 			continue
 		}
 
-		// Increment RTP receive counter for each valid PCMU packet (OBS-03).
+		// Increment RTP receive counter for each valid audio packet (OBS-03).
 		if s.metrics != nil {
 			s.metrics.RTPRx.Inc()
 		}
@@ -319,7 +311,7 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 		case <-ctx.Done():
 			return
 		default:
-			s.log.Warn().Str("call_id", s.callID).Msg("rtpReader: inbound queue full — dropping PCMU packet")
+			s.log.Warn().Str("call_id", s.callID).Msg("rtpReader: inbound queue full — dropping audio packet")
 		}
 	}
 }
@@ -634,13 +626,13 @@ func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
 			}
 			chunk := frame.audio
 			if chunk == nil {
-				chunk = pcmuSilenceFrame
+				chunk = s.silenceFrame
 			}
 
 			pkt := &rtp.Packet{
 				Header: rtp.Header{
 					Version:        2,
-					PayloadType:    0, // PCMU
+					PayloadType:    s.audioPT,
 					SequenceNumber: seqNo,
 					Timestamp:      timestamp,
 					SSRC:           ssrc,
@@ -662,7 +654,7 @@ func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
 				s.metrics.RTPTx.Inc()
 			}
 			seqNo++
-			timestamp += 160 // 20 ms @ 8 kHz PCMU
+			timestamp += 160 // 20 ms @ 8 kHz (identical for all supported codecs)
 		}
 	}
 }

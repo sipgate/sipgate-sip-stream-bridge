@@ -135,6 +135,7 @@ func (m *CallManager) StartSession(
 	req *siplib.Request,
 	callerSDP *sip.CallerSDP,
 	rtpPort int,
+	audioPT uint8,
 	log zerolog.Logger,
 ) {
 	callID := req.CallID().Value()
@@ -151,6 +152,9 @@ func (m *CallManager) StartSession(
 		Port: callerSDP.RTPPort,
 	}
 
+	// Compute media format fields from negotiated codec.
+	encoding, sampleRate := sip.MediaFormatForPT(audioPT)
+
 	// Call is already answered (200 OK sent + ACK received in onInvite). Dial WS now.
 	// If WS fails we send BYE (can't reject after 200 OK).
 	wsCtx, wsCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -163,16 +167,20 @@ func (m *CallManager) StartSession(
 	}
 
 	session := &CallSession{
-		callID:       callID,
-		callSidToken: callSidToken,
-		streamSid:    streamSid,
-		dlg:          dlg,
-		rtpPort:      rtpPort,
-		callerRTP:    callerRTPAddr,
-		dtmfPT:       callerSDP.DTMFPayloadType,
-		cfg:          m.cfg,
-		log:          log,
-		metrics:      m.metrics,
+		callID:          callID,
+		callSidToken:    callSidToken,
+		streamSid:       streamSid,
+		dlg:             dlg,
+		rtpPort:         rtpPort,
+		callerRTP:       callerRTPAddr,
+		dtmfPT:          callerSDP.DTMFPayloadType,
+		audioPT:         audioPT,
+		silenceFrame:    sip.SilenceFrameForPT(audioPT),
+		mediaEncoding:   encoding,
+		mediaSampleRate: sampleRate,
+		cfg:             m.cfg,
+		log:             log,
+		metrics:         m.metrics,
 	}
 
 	m.sessions.Store(callID, session)

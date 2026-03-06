@@ -15,6 +15,7 @@ const configSchema = z
     SDP_CONTACT_IP: z.ipv4().optional(),
     SIP_EXPIRES: z.coerce.number().int().positive().default(120),
     SIP_OPTIONS_INTERVAL: z.coerce.number().int().positive().default(30),
+    AUDIO_MODE: z.enum(['twilio', 'best']).default('twilio'),
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
     HTTP_PORT: z.coerce.number().int().min(1).max(65535).default(9090),
   })

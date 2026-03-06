@@ -181,7 +181,7 @@ func TestClear_RTPContinues(t *testing.T) {
 	}
 	chunk := frame.audio
 	if chunk == nil {
-		chunk = pcmuSilenceFrame // silence fallback
+		chunk = make([]byte, 160) // silence fallback
 		silenceSent = true
 	}
 	_ = chunk // would be sent as RTP in real rtpPacer
@@ -195,7 +195,7 @@ func TestClear_RTPContinues(t *testing.T) {
 	chunk2 := frame2.audio
 	silence2 := false
 	if chunk2 == nil {
-		chunk2 = pcmuSilenceFrame
+		chunk2 = make([]byte, 160) // silence fallback
 		silence2 = true
 	}
 	_ = chunk2

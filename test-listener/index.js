@@ -26,7 +26,7 @@ const TONE_REPEAT = Number(process.env.TONE_REPEAT ?? 8);
 const wss = new WebSocketServer({ port: PORT });
 console.log(`[listener] listening on ws://localhost:${PORT}  mode=${MODE}`);
 
-// ── μ-law helpers ──────────────────────────────────────────────────────────────
+// ── codec helpers ──────────────────────────────────────────────────────────────
 
 /** Encode a 16-bit linear PCM sample to an 8-bit μ-law byte. */
 function pcm16ToMulaw(sample) {
@@ -40,18 +40,41 @@ function pcm16ToMulaw(sample) {
   return (~(sign | (exponent << 4) | mantissa)) & 0xff;
 }
 
+/** Encode a 16-bit linear PCM sample to an 8-bit A-law byte (ITU-T G.711). */
+function pcm16ToAlaw(sample) {
+  sample = Math.max(-32768, Math.min(32767, Math.round(sample)));
+  let sign = 0;
+  if (sample >= 0) { sign = 0x80; } else { sample = -sample - 1; }
+  let exponent = 7;
+  for (let mask = 0x4000; (sample & mask) === 0 && exponent > 0; mask >>= 1) exponent--;
+  const mantissa = exponent === 0 ? (sample >> 1) & 0x0f : (sample >> (exponent + 3)) & 0x0f;
+  return (sign | (exponent << 4) | mantissa) ^ 0x55;
+}
+
 /**
- * Generate `durationMs` ms of a sine-wave tone at `hz` Hz
- * encoded as 8-bit μ-law at 8000 Hz (ready to send as RTP payload).
- * Returns a Buffer whose length is a multiple of 160 (padded with silence).
+ * Generate `durationMs` ms of a sine-wave tone at `hz` Hz encoded for the given codec.
+ * - 'audio/x-mulaw': 8-bit μ-law at 8000 Hz
+ * - 'audio/x-alaw':  8-bit A-law at 8000 Hz
+ * - 'audio/G722':    silence bytes (0x00) — G.722 ADPCM encoding requires a native library
+ * Returns a Buffer whose length is a multiple of 160 bytes (padded with silence).
  */
-function generateMulawTone(hz, durationMs) {
-  const rawSamples = Math.round(8000 * durationMs / 1000);
-  // Round up to the nearest 160-byte boundary so every chunk is a full 20 ms packet
+function generateTone(hz, durationMs, encoding) {
+  // All three codecs: 160 bytes = 20 ms packet (G.722: 16kHz × 4-bit ADPCM = 160 bytes/20ms)
+  if (encoding === 'audio/G722') {
+    const rawSamples = Math.round(16000 * durationMs / 1000);
+    const totalSamples = Math.ceil(rawSamples / 160) * 160;
+    console.log('[listener]   G.722 tone: sending silence (G.722 ADPCM encoding requires native library)');
+    return Buffer.alloc(totalSamples, 0x00); // G.722 ADPCM silence = 0x00
+  }
+
+  const sampleRate = 8000;
+  const encodeFn = encoding === 'audio/x-alaw' ? pcm16ToAlaw : pcm16ToMulaw;
+  const silenceByte = encoding === 'audio/x-alaw' ? 0xD5 : 0xFF;
+  const rawSamples = Math.round(sampleRate * durationMs / 1000);
   const totalSamples = Math.ceil(rawSamples / 160) * 160;
-  const buf = Buffer.alloc(totalSamples, 0xff); // pre-fill with μ-law silence
+  const buf = Buffer.alloc(totalSamples, silenceByte);
   for (let i = 0; i < rawSamples; i++) {
-    buf[i] = pcm16ToMulaw(Math.sin(2 * Math.PI * hz * i / 8000) * 16383);
+    buf[i] = encodeFn(Math.sin(2 * Math.PI * hz * i / sampleRate) * 16383);
   }
   return buf;
 }
@@ -61,6 +84,7 @@ function generateMulawTone(hz, durationMs) {
 wss.on('connection', (ws, req) => {
   console.log(`\n[listener] connection from ${req.socket.remoteAddress}`);
   let callInfo = null;
+  let mediaFormat = { encoding: 'audio/x-mulaw', sampleRate: 8000, channels: 1 };
   let mediaCount = 0;
   let lastMediaAt = 0;
   let toneTimer = null;
@@ -76,6 +100,7 @@ wss.on('connection', (ws, req) => {
 
       case 'start':
         callInfo = msg.start;
+        if (msg.start.mediaFormat) mediaFormat = msg.start.mediaFormat;
         console.log('[listener] ← start');
         console.log('           streamSid:', msg.start.streamSid);
         console.log('           callSid  :', msg.start.callSid);
@@ -87,7 +112,7 @@ wss.on('connection', (ws, req) => {
         if (MODE === 'tone') {
           const sendTone = () => {
             if (ws.readyState !== ws.constructor.OPEN) return;
-            const toneBuf = generateMulawTone(TONE_HZ, TONE_MS);
+            const toneBuf = generateTone(TONE_HZ, TONE_MS, mediaFormat.encoding);
             const payload = toneBuf.toString('base64');
             ws.send(JSON.stringify({
               event: 'media',
