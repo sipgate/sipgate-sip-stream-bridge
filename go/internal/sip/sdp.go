@@ -1,6 +1,8 @@
 package sip
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,10 +17,16 @@ type CallerSDP struct {
 	RTPPort           int     // UDP port to send RTP to
 	DTMFPayloadType   uint8   // telephone-event PT (sipgate uses 113, not the conventional 101)
 	AudioPayloadTypes []uint8 // all non-DTMF audio PTs from offer, in order
+	// SRTP fields — populated when the offer uses RTP/SAVP with SDES crypto (RFC 4568).
+	IsSRTP         bool   // true when offer uses RTP/SAVP protocol
+	RemoteSRTPKey  []byte // 16-byte AES-128 master key from caller's a=crypto: line
+	RemoteSRTPSalt []byte // 14-byte master salt from caller's a=crypto: line
 }
 
 // ParseCallerSDP extracts the caller's RTP destination and DTMF payload type from an SDP offer.
 // CRITICAL: DTMF PT is NEVER hardcoded — always extracted from SDP offer per STATE.md decision.
+// When the offer uses RTP/SAVP, the IsSRTP flag is set and the remote SRTP master key/salt are
+// extracted from the first AES_128_CM_HMAC_SHA1_80 a=crypto: line (RFC 4568).
 func ParseCallerSDP(body []byte) (*CallerSDP, error) {
 	sd := &sdp.SessionDescription{}
 	if err := sd.Unmarshal(body); err != nil {
@@ -61,11 +69,52 @@ func ParseCallerSDP(body []byte) (*CallerSDP, error) {
 			}
 		}
 
+		// Detect RTP/SAVP protocol (SRTP offer per RFC 4568).
+		isSRTP := false
+		for _, proto := range md.MediaName.Protos {
+			if strings.EqualFold(proto, "SAVP") {
+				isSRTP = true
+				break
+			}
+		}
+
+		// Extract remote SRTP master key+salt from a=crypto: attribute when present.
+		// Only AES_128_CM_HMAC_SHA1_80 is supported (the most common SDES suite).
+		// key+salt = 30 bytes (16-byte key + 14-byte salt), base64-encoded (40 chars).
+		var remoteSRTPKey, remoteSRTPSalt []byte
+		for _, attr := range md.Attributes {
+			if attr.Key != "crypto" {
+				continue
+			}
+			// Format: <tag> AES_128_CM_HMAC_SHA1_80 inline:<base64keyAndSalt>[|<params>...]
+			parts := strings.Fields(attr.Value)
+			if len(parts) < 3 {
+				continue
+			}
+			if !strings.EqualFold(parts[1], "AES_128_CM_HMAC_SHA1_80") {
+				continue
+			}
+			// Strip "inline:" prefix
+			inlineVal := strings.TrimPrefix(parts[2], "inline:")
+			// base64 may have trailing session params after "|" or " "
+			inlineVal = strings.SplitN(inlineVal, "|", 2)[0]
+			keyAndSalt, err := base64.StdEncoding.DecodeString(inlineVal)
+			if err != nil || len(keyAndSalt) < 30 {
+				continue
+			}
+			remoteSRTPKey = keyAndSalt[:16]
+			remoteSRTPSalt = keyAndSalt[16:30]
+			break
+		}
+
 		return &CallerSDP{
 			RTPAddr:           ip,
 			RTPPort:           port,
 			DTMFPayloadType:   dtmfPT,
 			AudioPayloadTypes: audioPTs,
+			IsSRTP:            isSRTP,
+			RemoteSRTPKey:     remoteSRTPKey,
+			RemoteSRTPSalt:    remoteSRTPSalt,
 		}, nil
 	}
 	return nil, fmt.Errorf("no audio media section in SDP offer")
@@ -132,9 +181,15 @@ type codecEntry struct {
 }
 
 // BuildSDPAnswer constructs an SDP answer based on the caller's offer and the configured audio mode.
-// Returns the SDP bytes and the negotiated audio payload type.
+// Returns the SDP bytes, the negotiated audio payload type, and (when SRTP is negotiated) the
+// local SRTP master key+salt that were generated for this session.
+//
+// srtpEnabled controls whether we negotiate SRTP: when true and the caller's offer uses
+// RTP/SAVP, the answer uses RTP/SAVP with an a=crypto: line (SDES, RFC 4568).
+// When the offer is plain RTP/AVP, or srtpEnabled is false, the answer uses RTP/AVP.
+//
 // ourIP is cfg.SDPContactIP (externally reachable host IP — not the container IP).
-func BuildSDPAnswer(ourIP string, ourRTPPort int, callerSDP *CallerSDP, audioMode string) (sdpBytes []byte, negotiatedPT uint8) {
+func BuildSDPAnswer(ourIP string, ourRTPPort int, callerSDP *CallerSDP, audioMode string, srtpEnabled bool) (sdpBytes []byte, negotiatedPT uint8, localSRTPKey []byte, localSRTPSalt []byte) {
 	now := uint64(time.Now().UnixNano())
 	sd := &sdp.SessionDescription{
 		Version: 0,
@@ -185,13 +240,38 @@ func BuildSDPAnswer(ourIP string, ourRTPPort int, callerSDP *CallerSDP, audioMod
 	}
 	formats = append(formats, dtmfPTStr)
 
+	// Negotiate SRTP (RTP/SAVP) when enabled and the caller's offer is also SAVP.
+	// When the offer is plain AVP, or SRTP is disabled, fall back to RTP/AVP.
+	useSRTP := srtpEnabled && callerSDP.IsSRTP
+
+	proto := []string{"RTP", "AVP"}
+	if useSRTP {
+		proto = []string{"RTP", "SAVP"}
+	}
+
 	audio := &sdp.MediaDescription{
 		MediaName: sdp.MediaName{
 			Media:   "audio",
 			Port:    sdp.RangedPort{Value: ourRTPPort},
-			Protos:  []string{"RTP", "AVP"},
+			Protos:  proto,
 			Formats: formats,
 		},
+	}
+
+	// When SRTP is negotiated, generate a random local master key+salt and add a=crypto:.
+	if useSRTP {
+		key := make([]byte, 16)
+		salt := make([]byte, 14)
+		if _, err := rand.Read(key); err == nil {
+			if _, err := rand.Read(salt); err == nil {
+				localSRTPKey = key
+				localSRTPSalt = salt
+				keyAndSalt := append(key, salt...)
+				cryptoVal := fmt.Sprintf("1 AES_128_CM_HMAC_SHA1_80 inline:%s",
+					base64.StdEncoding.EncodeToString(keyAndSalt))
+				audio.Attributes = append(audio.Attributes, sdp.Attribute{Key: "crypto", Value: cryptoVal})
+			}
+		}
 	}
 
 	// Add rtpmap for each advertised codec.
@@ -204,5 +284,5 @@ func BuildSDPAnswer(ourIP string, ourRTPPort int, callerSDP *CallerSDP, audioMod
 	sd.MediaDescriptions = append(sd.MediaDescriptions, audio)
 
 	out, _ := sd.Marshal()
-	return out, negotiatedPT
+	return out, negotiatedPT, localSRTPKey, localSRTPSalt
 }

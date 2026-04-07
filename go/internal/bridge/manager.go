@@ -136,6 +136,8 @@ func (m *CallManager) StartSession(
 	callerSDP *sip.CallerSDP,
 	rtpPort int,
 	audioPT uint8,
+	localSRTPKey []byte,
+	localSRTPSalt []byte,
 	log zerolog.Logger,
 ) {
 	callID := req.CallID().Value()
@@ -178,6 +180,10 @@ func (m *CallManager) StartSession(
 		silenceFrame:    sip.SilenceFrameForPT(audioPT),
 		mediaEncoding:   encoding,
 		mediaSampleRate: sampleRate,
+		localSRTPKey:    localSRTPKey,
+		localSRTPSalt:   localSRTPSalt,
+		remoteSRTPKey:   callerSDP.RemoteSRTPKey,
+		remoteSRTPSalt:  callerSDP.RemoteSRTPSalt,
 		cfg:             m.cfg,
 		log:             log,
 		metrics:         m.metrics,

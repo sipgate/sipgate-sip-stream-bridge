@@ -38,6 +38,9 @@ type Config struct {
 	// Audio codec mode (AUDIO_MODE)
 	AudioMode string `env:"AUDIO_MODE" default:"twilio" usage:"Audio codec mode: twilio (PCMU only) or best (G.722 preferred)"`
 
+	// SRTP media encryption (SRTP_ENABLED)
+	SRTPEnabled bool `env:"SRTP_ENABLED" default:"false" usage:"Enable SRTP media encryption (RTP/SAVP with SDES key exchange)"`
+
 	// Log level (optional)
 	LogLevel string `env:"LOG_LEVEL" default:"info" usage:"Log level: trace, debug, info, warn, error"`
 

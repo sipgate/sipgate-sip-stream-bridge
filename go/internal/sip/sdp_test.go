@@ -1,6 +1,8 @@
 package sip
 
 import (
+	"encoding/base64"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -152,12 +154,15 @@ func callerSDPWithPTs(dtmfPT uint8, audioPTs ...uint8) *CallerSDP {
 // Test 6 — BuildSDPAnswer (twilio mode) contains PCMU PT 0 and mirrors callerDTMFPT 113
 func TestBuildSDPAnswer_TwilioContainsPCMUAndDTMF(t *testing.T) {
 	caller := callerSDPWithPTs(113, 0)
-	out, negotiatedPT := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio")
+	out, negotiatedPT, localKey, localSalt := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio", false)
 	if len(out) == 0 {
 		t.Fatal("BuildSDPAnswer returned empty bytes")
 	}
 	if negotiatedPT != 0 {
 		t.Errorf("expected negotiatedPT=0 (PCMU), got=%d", negotiatedPT)
+	}
+	if localKey != nil || localSalt != nil {
+		t.Error("expected no SRTP keys when srtpEnabled=false")
 	}
 
 	// Parse the output to validate structure
@@ -209,7 +214,7 @@ func TestBuildSDPAnswer_TwilioContainsPCMUAndDTMF(t *testing.T) {
 // Test 7 — BuildSDPAnswer (twilio mode) uses sendrecv attribute
 func TestBuildSDPAnswer_TwilioSendRecv(t *testing.T) {
 	caller := callerSDPWithPTs(113, 0)
-	out, _ := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio")
+	out, _, _, _ := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio", false)
 	if !strings.Contains(string(out), "a=sendrecv") {
 		t.Errorf("BuildSDPAnswer output missing 'a=sendrecv':\n%s", string(out))
 	}
@@ -219,7 +224,7 @@ func TestBuildSDPAnswer_TwilioSendRecv(t *testing.T) {
 func TestBuildSDPAnswer_BestModeSelectsG722(t *testing.T) {
 	// Simulate sipgate offer: G.722, PCMA, PCMU, DTMF
 	caller := callerSDPWithPTs(113, 9, 8, 0)
-	out, negotiatedPT := BuildSDPAnswer("10.0.0.1", 10000, caller, "best")
+	out, negotiatedPT, _, _ := BuildSDPAnswer("10.0.0.1", 10000, caller, "best", false)
 	if len(out) == 0 {
 		t.Fatal("BuildSDPAnswer returned empty bytes")
 	}
@@ -255,11 +260,148 @@ func TestBuildSDPAnswer_BestModeSelectsG722(t *testing.T) {
 // Test 9 — BuildSDPAnswer (best mode) falls back to PCMU when G.722/PCMA not offered
 func TestBuildSDPAnswer_BestModeFallbackPCMU(t *testing.T) {
 	caller := callerSDPWithPTs(113, 0) // only PCMU offered
-	out, negotiatedPT := BuildSDPAnswer("10.0.0.1", 10000, caller, "best")
+	out, negotiatedPT, _, _ := BuildSDPAnswer("10.0.0.1", 10000, caller, "best", false)
 	if negotiatedPT != 0 {
 		t.Errorf("expected negotiatedPT=0 (PCMU fallback), got=%d", negotiatedPT)
 	}
 	if !strings.Contains(string(out), "PCMU") {
 		t.Errorf("expected PCMU in SDP answer:\n%s", string(out))
+	}
+}
+
+// ─── SRTP tests ──────────────────────────────────────────────────────────────
+
+// callerSRTPSDP builds an SDP offer with RTP/SAVP and a=crypto: for SRTP tests.
+func callerSRTPSDP(dtmfPT uint8, audioPTs ...uint8) []byte {
+	// 16-byte key + 14-byte salt = 30 bytes = 40 base64 chars
+	keyAndSalt := make([]byte, 30)
+	for i := range keyAndSalt {
+		keyAndSalt[i] = byte(i + 1)
+	}
+	cryptoVal := "inline:" + base64.StdEncoding.EncodeToString(keyAndSalt)
+
+	ptList := ""
+	for i, pt := range audioPTs {
+		if i > 0 {
+			ptList += " "
+		}
+		ptList += strconv.FormatUint(uint64(pt), 10)
+	}
+	ptList += " " + strconv.FormatUint(uint64(dtmfPT), 10)
+
+	body := "v=0\r\n" +
+		"o=- 1 1 IN IP4 1.2.3.4\r\n" +
+		"s=-\r\n" +
+		"c=IN IP4 1.2.3.4\r\n" +
+		"t=0 0\r\n" +
+		"m=audio 20000 RTP/SAVP " + ptList + "\r\n" +
+		"a=crypto:1 AES_128_CM_HMAC_SHA1_80 " + cryptoVal + "\r\n"
+	for _, pt := range audioPTs {
+		switch pt {
+		case 0:
+			body += "a=rtpmap:0 PCMU/8000\r\n"
+		case 8:
+			body += "a=rtpmap:8 PCMA/8000\r\n"
+		case 9:
+			body += "a=rtpmap:9 G722/8000\r\n"
+		}
+	}
+	body += "a=rtpmap:" + strconv.FormatUint(uint64(dtmfPT), 10) + " telephone-event/8000\r\n"
+	body += "a=fmtp:" + strconv.FormatUint(uint64(dtmfPT), 10) + " 0-16\r\n"
+	return []byte(body)
+}
+
+// Test 10 — ParseCallerSDP detects RTP/SAVP and extracts SRTP key+salt
+func TestParseCallerSDP_SRTP_SAVP(t *testing.T) {
+	body := callerSRTPSDP(113, 0)
+	result, err := ParseCallerSDP(body)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !result.IsSRTP {
+		t.Error("expected IsSRTP=true for RTP/SAVP offer")
+	}
+	if len(result.RemoteSRTPKey) != 16 {
+		t.Errorf("expected 16-byte RemoteSRTPKey, got %d bytes", len(result.RemoteSRTPKey))
+	}
+	if len(result.RemoteSRTPSalt) != 14 {
+		t.Errorf("expected 14-byte RemoteSRTPSalt, got %d bytes", len(result.RemoteSRTPSalt))
+	}
+	// Key bytes 1..16, salt bytes 17..30 (our test key: byte i = i+1)
+	if result.RemoteSRTPKey[0] != 1 || result.RemoteSRTPKey[15] != 16 {
+		t.Errorf("unexpected RemoteSRTPKey values: %v", result.RemoteSRTPKey)
+	}
+	if result.RemoteSRTPSalt[0] != 17 || result.RemoteSRTPSalt[13] != 30 {
+		t.Errorf("unexpected RemoteSRTPSalt values: %v", result.RemoteSRTPSalt)
+	}
+}
+
+// Test 11 — ParseCallerSDP on plain RTP/AVP offer has IsSRTP=false
+func TestParseCallerSDP_PlainRTP_NotSRTP(t *testing.T) {
+	body := []byte("v=0\r\n" +
+		"o=- 1 1 IN IP4 1.2.3.4\r\n" +
+		"s=-\r\n" +
+		"c=IN IP4 1.2.3.4\r\n" +
+		"t=0 0\r\n" +
+		"m=audio 20000 RTP/AVP 0 113\r\n" +
+		"a=rtpmap:0 PCMU/8000\r\n" +
+		"a=rtpmap:113 telephone-event/8000\r\n" +
+		"a=fmtp:113 0-16\r\n")
+	result, err := ParseCallerSDP(body)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if result.IsSRTP {
+		t.Error("expected IsSRTP=false for RTP/AVP offer")
+	}
+	if result.RemoteSRTPKey != nil || result.RemoteSRTPSalt != nil {
+		t.Error("expected nil SRTP keys for plain RTP offer")
+	}
+}
+
+// Test 12 — BuildSDPAnswer with srtpEnabled=true and SAVP offer uses RTP/SAVP + a=crypto:
+func TestBuildSDPAnswer_SRTPEnabled_SAVPOffer(t *testing.T) {
+	body := callerSRTPSDP(113, 0)
+	caller, err := ParseCallerSDP(body)
+	if err != nil {
+		t.Fatalf("ParseCallerSDP: %v", err)
+	}
+
+	out, negotiatedPT, localKey, localSalt := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio", true)
+	if negotiatedPT != 0 {
+		t.Errorf("expected negotiatedPT=0 (PCMU), got=%d", negotiatedPT)
+	}
+	if len(localKey) != 16 {
+		t.Errorf("expected 16-byte localKey, got %d", len(localKey))
+	}
+	if len(localSalt) != 14 {
+		t.Errorf("expected 14-byte localSalt, got %d", len(localSalt))
+	}
+
+	sdpStr := string(out)
+	if !strings.Contains(sdpStr, "RTP/SAVP") {
+		t.Errorf("expected RTP/SAVP in answer, got:\n%s", sdpStr)
+	}
+	if !strings.Contains(sdpStr, "a=crypto:") {
+		t.Errorf("expected a=crypto: in answer, got:\n%s", sdpStr)
+	}
+	if !strings.Contains(sdpStr, "AES_128_CM_HMAC_SHA1_80") {
+		t.Errorf("expected AES_128_CM_HMAC_SHA1_80 in a=crypto:, got:\n%s", sdpStr)
+	}
+}
+
+// Test 13 — BuildSDPAnswer with srtpEnabled=true but AVP offer uses plain RTP/AVP (fallback)
+func TestBuildSDPAnswer_SRTPEnabled_AVPOffer_FallsBack(t *testing.T) {
+	caller := callerSDPWithPTs(113, 0) // plain AVP offer, IsSRTP=false
+	out, _, localKey, localSalt := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio", true)
+	if localKey != nil || localSalt != nil {
+		t.Error("expected no SRTP keys when offer is plain AVP")
+	}
+	sdpStr := string(out)
+	if strings.Contains(sdpStr, "RTP/SAVP") {
+		t.Errorf("expected RTP/AVP (not SAVP) when offer is plain AVP:\n%s", sdpStr)
+	}
+	if strings.Contains(sdpStr, "a=crypto:") {
+		t.Errorf("expected no a=crypto: when offer is plain AVP:\n%s", sdpStr)
 	}
 }

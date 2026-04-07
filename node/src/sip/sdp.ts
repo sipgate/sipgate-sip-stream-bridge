@@ -3,11 +3,23 @@
  * Pure functions — no side effects, no I/O.
  */
 
+import { randomBytes } from 'node:crypto';
+
 export interface SdpOffer {
   remoteIp: string;
   remotePort: number;
   dtmfPt: number;    // telephone-event PT from offer (sipgate uses 113 at 8kHz)
   audioPts: number[]; // all non-DTMF audio PTs from offer, in order
+  // SRTP fields — populated when the offer uses RTP/SAVP with SDES crypto (RFC 4568).
+  isSrtp: boolean;       // true when offer uses RTP/SAVP protocol
+  remoteSrtpKey?: Buffer;  // 16-byte AES-128 master key from caller's a=crypto:
+  remoteSrtpSalt?: Buffer; // 14-byte master salt from caller's a=crypto:
+}
+
+export interface SdpAnswer {
+  sdp: string;
+  localSrtpKey?: Buffer;  // 16-byte AES-128 master key for our outbound SRTP (undefined when not SRTP)
+  localSrtpSalt?: Buffer; // 14-byte master salt for our outbound SRTP (undefined when not SRTP)
 }
 
 export interface CodecInfo {
@@ -48,6 +60,10 @@ export function selectAudioCodec(offered: number[], mode: string): CodecInfo {
  * Parse the SDP body from a SIP INVITE and extract the fields needed to
  * set up an outbound RTP socket.
  *
+ * Accepts both RTP/AVP (plain RTP) and RTP/SAVP (SRTP) offers.
+ * When RTP/SAVP is detected, the isSrtp flag is set and the remote SRTP master
+ * key+salt are extracted from the first AES_128_CM_HMAC_SHA1_80 a=crypto: line.
+ *
  * Returns null if either the connection line (c=) or the audio media line
  * (m=audio) is missing — callers must treat this as a malformed offer.
  */
@@ -56,10 +72,14 @@ export function parseSdpOffer(sdpBody: string): SdpOffer | null {
   if (!cMatch) return null;
   const remoteIp = cMatch[1];
 
-  const mMatch = sdpBody.match(/^m=audio\s+(\d+)\s+RTP\/AVP\s+([\d ]+)/m);
+  // Accept both RTP/AVP (plain RTP) and RTP/SAVP (SRTP)
+  const mMatch = sdpBody.match(/^m=audio\s+(\d+)\s+RTP\/S?AVP\s+([\d ]+)/m);
   if (!mMatch) return null;
   const remotePort = parseInt(mMatch[1], 10);
   const payloadTypes = mMatch[2].trim().split(/\s+/);
+
+  // Detect SRTP (RTP/SAVP) from the media line
+  const isSrtp = /^m=audio\s+\d+\s+RTP\/SAVP\s+/m.test(sdpBody);
 
   // Build PT → codec name map from rtpmap lines
   const rtpmaps: Record<number, string> = {};
@@ -82,7 +102,26 @@ export function parseSdpOffer(sdpBody: string): SdpOffer | null {
     }
   }
 
-  return { remoteIp, remotePort, dtmfPt, audioPts };
+  // Extract remote SRTP master key+salt from a=crypto: when present.
+  // Only AES_128_CM_HMAC_SHA1_80 is supported (key+salt = 16+14 = 30 bytes, 40 base64 chars).
+  let remoteSrtpKey: Buffer | undefined;
+  let remoteSrtpSalt: Buffer | undefined;
+  if (isSrtp) {
+    for (const m of sdpBody.matchAll(/^a=crypto:\d+\s+AES_128_CM_HMAC_SHA1_80\s+inline:([^\s|]+)/gim)) {
+      try {
+        const keyAndSalt = Buffer.from(m[1], 'base64');
+        if (keyAndSalt.length >= 30) {
+          remoteSrtpKey = keyAndSalt.subarray(0, 16);
+          remoteSrtpSalt = keyAndSalt.subarray(16, 30);
+          break;
+        }
+      } catch {
+        // skip malformed entries
+      }
+    }
+  }
+
+  return { remoteIp, remotePort, dtmfPt, audioPts, isSrtp, remoteSrtpKey, remoteSrtpSalt };
 }
 
 /**
@@ -91,6 +130,11 @@ export function parseSdpOffer(sdpBody: string): SdpOffer | null {
  * twilio mode: always PCMU (PT 0) + telephone-event (from offer's dtmfPt).
  * best mode: G.722 > PCMA > PCMU preference order, filtered to what caller offered.
  *
+ * When srtpEnabled is true and the offer uses RTP/SAVP, the answer uses RTP/SAVP with
+ * an a=crypto: line. When localSrtpKey and localSrtpSalt are provided they are used
+ * directly; otherwise a random 16-byte key and 14-byte salt are generated.
+ * When the offer is plain AVP or srtpEnabled is false, the answer uses RTP/AVP.
+ *
  * Lines are joined with CRLF and a trailing CRLF is appended per RFC 4566.
  */
 export function buildSdpAnswer(
@@ -98,7 +142,10 @@ export function buildSdpAnswer(
   localRtpPort: number,
   offer: SdpOffer,
   mode: string,
-): string {
+  srtpEnabled: boolean,
+  localSrtpKey?: Buffer,
+  localSrtpSalt?: Buffer,
+): SdpAnswer {
   const { dtmfPt, audioPts } = offer;
 
   // Determine which audio codecs to advertise, in preference order.
@@ -117,18 +164,36 @@ export function buildSdpAnswer(
 
   const fmtPts = [...preferredCodecs.map((c) => c.pt), dtmfPt].join(' ');
 
+  // Negotiate SRTP when enabled and the offer is also SAVP; otherwise plain AVP.
+  const useSrtp = srtpEnabled && offer.isSrtp;
+  const protocol = useSrtp ? 'RTP/SAVP' : 'RTP/AVP';
+
   const lines = [
     'v=0',
     `o=sipgate-sip-stream-bridge 0 0 IN IP4 ${localIp}`,
     's=sipgate-sip-stream-bridge',
     `c=IN IP4 ${localIp}`,
     't=0 0',
-    `m=audio ${localRtpPort} RTP/AVP ${fmtPts}`,
+    `m=audio ${localRtpPort} ${protocol} ${fmtPts}`,
+  ];
+
+  // Add a=crypto: and include/generate local SRTP key+salt when negotiating SRTP.
+  let outLocalSrtpKey: Buffer | undefined;
+  let outLocalSrtpSalt: Buffer | undefined;
+  if (useSrtp) {
+    outLocalSrtpKey = localSrtpKey ?? randomBytes(16);
+    outLocalSrtpSalt = localSrtpSalt ?? randomBytes(14);
+    const keyAndSalt = Buffer.concat([outLocalSrtpKey, outLocalSrtpSalt]);
+    lines.push(`a=crypto:1 AES_128_CM_HMAC_SHA1_80 inline:${keyAndSalt.toString('base64')}`);
+  }
+
+  lines.push(
     ...preferredCodecs.map((c) => `a=rtpmap:${c.pt} ${c.name}/8000`),
     `a=rtpmap:${dtmfPt} telephone-event/8000`,
     `a=fmtp:${dtmfPt} 0-16`,
     'a=ptime:20',
     'a=sendrecv',
-  ];
-  return lines.join('\r\n') + '\r\n';
+  );
+
+  return { sdp: lines.join('\r\n') + '\r\n', localSrtpKey: outLocalSrtpKey, localSrtpSalt: outLocalSrtpSalt };
 }
