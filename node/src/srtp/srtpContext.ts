@@ -76,6 +76,9 @@ function computeIV(sessionSalt: Buffer, ssrc: number, packetIndex: bigint): Buff
   return iv;
 }
 
+/** Sequence number range threshold for RFC 3711 §3.3.1 packet index estimation. */
+const SEQ_WRAP_THRESHOLD = 32768;
+
 /** SRTP context for one direction of a media stream. */
 export class SrtpContext {
   private readonly encKey: Buffer;  // 16-byte session encryption key
@@ -193,12 +196,12 @@ export class SrtpContext {
     const diff = seq - this.lastSeq;
     let roc = this.roc;
 
-    if (diff < -32768) {
+    if (diff < -SEQ_WRAP_THRESHOLD) {
       // Forward sequence wrap (e.g., 65535 → 0): increment persistent ROC.
       this.roc++;
       roc = this.roc;
       this.lastSeq = seq;
-    } else if (diff > 32768) {
+    } else if (diff > SEQ_WRAP_THRESHOLD) {
       // Late/reordered packet from before the most recent wrap: use ROC-1 for
       // this packet's index only. Do not update lastSeq or the persistent ROC.
       roc = Math.max(0, this.roc - 1);

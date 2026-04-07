@@ -30,6 +30,10 @@ const packetQueueSize = 500
 // When full, new frames are dropped and a warning is logged.
 const rtpInboundQueueSize = 50
 
+// SRTP key/salt lengths for AES_128_CM_HMAC_SHA1_80 (RFC 3711, RFC 4568).
+const srtpKeyLength  = 16 // 128-bit AES master key
+const srtpSaltLength = 14 // 112-bit master salt
+
 // outboundFrame is a tagged union for packetQueue entries.
 // Exactly one field is set per instance:
 //   - audio != nil: a 160-byte audio frame to send to the caller
@@ -111,8 +115,8 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 	// Build SRTP contexts when SRTP was negotiated (localSRTPKey != nil).
 	// decCtx uses the remote key to decrypt inbound packets; encCtx uses the local key to encrypt outbound.
 	var srtpDecCtx, srtpEncCtx *pionSRTP.Context
-	if len(s.localSRTPKey) == 16 && len(s.localSRTPSalt) == 14 &&
-		len(s.remoteSRTPKey) == 16 && len(s.remoteSRTPSalt) == 14 {
+	if len(s.localSRTPKey) == srtpKeyLength && len(s.localSRTPSalt) == srtpSaltLength &&
+		len(s.remoteSRTPKey) == srtpKeyLength && len(s.remoteSRTPSalt) == srtpSaltLength {
 		decCtx, err := pionSRTP.CreateContext(s.remoteSRTPKey, s.remoteSRTPSalt,
 			pionSRTP.ProtectionProfileAes128CmHmacSha1_80)
 		if err != nil {
