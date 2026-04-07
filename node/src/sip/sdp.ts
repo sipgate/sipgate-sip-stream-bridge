@@ -78,8 +78,9 @@ export function parseSdpOffer(sdpBody: string): SdpOffer | null {
   const remotePort = parseInt(mMatch[1], 10);
   const payloadTypes = mMatch[2].trim().split(/\s+/);
 
-  // Detect SRTP (RTP/SAVP) from the media line
-  const isSrtp = /^m=audio\s+\d+\s+RTP\/SAVP\s+/m.test(sdpBody);
+  // Detect SRTP: check for the explicit RTP/SAVP protocol in the matched media line.
+  const mLineProto = sdpBody.match(/^m=audio\s+\d+\s+(RTP\/S?AVP)\s+/m)?.[1] ?? '';
+  const isSrtp = mLineProto === 'RTP/SAVP';
 
   // Build PT → codec name map from rtpmap lines
   const rtpmaps: Record<number, string> = {};

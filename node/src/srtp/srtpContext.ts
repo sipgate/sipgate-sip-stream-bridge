@@ -109,8 +109,7 @@ export class SrtpContext {
 
     const ssrc = rtpPacket.readUInt32BE(8);
     const seq  = rtpPacket.readUInt16BE(2);
-    this.updateRoc(seq);
-    const packetIndex = BigInt(this.roc) * 65536n + BigInt(seq);
+    const packetIndex = this.getPacketIndex(seq);
 
     const headerLen = this.rtpHeaderLength(rtpPacket);
     const header  = rtpPacket.subarray(0, headerLen);
@@ -150,8 +149,7 @@ export class SrtpContext {
 
     const ssrc = encPacket.readUInt32BE(8);
     const seq  = encPacket.readUInt16BE(2);
-    this.updateRoc(seq);
-    const packetIndex = BigInt(this.roc) * 65536n + BigInt(seq);
+    const packetIndex = this.getPacketIndex(seq);
 
     // Verify HMAC-SHA1-80 auth tag
     const rocBuf = Buffer.alloc(4);
@@ -177,22 +175,39 @@ export class SrtpContext {
   }
 
   /**
-   * Update the ROC (Rollover Counter) when the sequence number wraps around.
-   * Uses the RFC 3711 §3.3.1 v≠0 algorithm for index estimation.
+   * Compute the 48-bit SRTP packet index (ROC || SEQ) for the given sequence number,
+   * and update the stored ROC and lastSeq on confirmed forward wraps (RFC 3711 §3.3.1).
+   *
+   * Three cases:
+   *   - Normal sequential: diff in [-32768, 32768] → use current ROC, update lastSeq.
+   *   - Forward wrap (diff < -32768): seq wrapped high→low → ROC++, update lastSeq.
+   *   - Late packet (diff > 32768): seq is from before a previous wrap → use ROC-1
+   *     for THIS packet's index only; do not update lastSeq or persistent ROC.
    */
-  private updateRoc(seq: number): void {
+  private getPacketIndex(seq: number): bigint {
     if (this.lastSeq < 0) {
       this.lastSeq = seq;
-      return;
+      return BigInt(this.roc) * 65536n + BigInt(seq);
     }
+
     const diff = seq - this.lastSeq;
-    if (diff > 32768) {
-      // seq wrapped backward — ROC decrements (late packet from before wrap)
-    } else if (diff < -32768) {
-      // seq wrapped forward
+    let roc = this.roc;
+
+    if (diff < -32768) {
+      // Forward sequence wrap (e.g., 65535 → 0): increment persistent ROC.
       this.roc++;
+      roc = this.roc;
+      this.lastSeq = seq;
+    } else if (diff > 32768) {
+      // Late/reordered packet from before the most recent wrap: use ROC-1 for
+      // this packet's index only. Do not update lastSeq or the persistent ROC.
+      roc = Math.max(0, this.roc - 1);
+    } else {
+      // Normal sequential packet (or minor reorder within the 32768-sample window).
+      this.lastSeq = seq;
     }
-    this.lastSeq = seq;
+
+    return BigInt(roc) * 65536n + BigInt(seq);
   }
 
   /** Compute the RTP header length including CSRC list and extension (RFC 3550 §5.1). */
