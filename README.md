@@ -38,6 +38,7 @@ Two implementations are available in this repository:
 | **WS reconnect** | ✅ 1s/2s/4s, 30s budget | ✅ 1s/2s/4s, 30s budget |
 | **DTMF forwarding** | ✅ RFC 4733 End-bit dedup | ✅ RFC 4733 End-bit dedup |
 | **Mark/clear protocol** | ✅ echo after drain, fast-path | ✅ echo after drain, fast-path |
+| **SRTP encrypted media** | ✅ `SRTP_ENABLED=true` | ✅ `SRTP_ENABLED=true` |
 | **SIP OPTIONS keepalive** | ✅ re-register after 2 failures | ✅ re-register after 2 failures |
 | **Graceful shutdown** | ✅ DrainAll + UNREGISTER | ✅ BYE + UNREGISTER |
 | **`GET /health`** | ✅ port 9090 | ✅ port 9090 |
@@ -110,6 +111,7 @@ Both implementations share the same environment variables. Copy `.env.example` t
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUDIO_MODE` | `twilio` | Audio codec mode: `twilio` — PCMU/G.711 μ-law 8 kHz (Twilio-compatible); `best` — negotiates highest-quality codec sipgate offers (G.722 16 kHz > PCMA > PCMU); negotiated codec is reflected in the `start` event `mediaFormat` |
+| `SRTP_ENABLED` | `false` | Enable encrypted media. Set to `true` (or `1`) to negotiate SRTP (RTP/SAVP) with sipgate using SDES key exchange (AES-128-CM-HMAC-SHA1-80). Falls back to plain RTP/AVP automatically when the caller's offer is plain. |
 
 See the individual READMEs for the full option list.
 

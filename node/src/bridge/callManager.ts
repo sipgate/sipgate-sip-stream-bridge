@@ -503,6 +503,9 @@ export class CallManager {
     };
     session.okRetransmitTimer = setTimeout(scheduleOkRetransmit, retransmitInterval);
     callLog.info({ event: 'call_started', from: fromUri, to: toUri }, 'Call started');
+    if (useSrtp) {
+      callLog.info({ event: 'srtp_negotiated' }, 'SRTP negotiated — media encrypted with AES-128-CM-HMAC-SHA1-80');
+    }
 
     // 10. Wire audio bridge AFTER session is stored
     // RTP audio → WS backend (route via session.ws so post-reconnect handler picks up new WsClient)
