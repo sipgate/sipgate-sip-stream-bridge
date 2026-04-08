@@ -346,8 +346,23 @@ export class CallManager {
     // Select negotiated codec based on AUDIO_MODE
     const codecInfo = selectAudioCodec(sdpOffer.audioPts, this.config.AUDIO_MODE);
 
+    // Determine whether SRTP will be negotiated: enabled in config AND offered by caller.
+    const useSrtp = this.config.SRTP_ENABLED && sdpOffer.isSrtp;
+
+    // Generate local SRTP key+salt before allocating the RTP handler so both the
+    // handler and the SDP answer use the same keying material.
+    let localSrtpKey: Buffer | undefined;
+    let localSrtpSalt: Buffer | undefined;
+    if (useSrtp) {
+      localSrtpKey = crypto.randomBytes(16);
+      localSrtpSalt = crypto.randomBytes(14);
+    }
+
     // 4. Allocate RTP handler — must succeed before we commit to the call
     const callLog = createChildLogger({ component: 'call', callId: sipCallId });
+    if (this.config.SRTP_ENABLED && !sdpOffer.isSrtp) {
+      callLog.warn({ event: 'srtp_fallback', sipCallId }, 'SRTP desired but caller offered plain RTP/AVP — proceeding unencrypted');
+    }
     const rtp = await createRtpHandler({
       portMin: this.config.RTP_PORT_MIN,
       portMax: this.config.RTP_PORT_MAX,
@@ -355,6 +370,10 @@ export class CallManager {
       audioPt: codecInfo.pt,
       dtmfPt: sdpOffer.dtmfPt,
       silenceByte: codecInfo.silenceByte,
+      localSrtpKey,
+      localSrtpSalt,
+      remoteSrtpKey: sdpOffer.remoteSrtpKey,
+      remoteSrtpSalt: sdpOffer.remoteSrtpSalt,
     });
     rtp.setRemote(sdpOffer.remoteIp, sdpOffer.remotePort);
     // NAT hole-punch: send one silence packet outbound so the router creates a
@@ -424,7 +443,10 @@ export class CallManager {
 
     // 8. Send 200 OK with SDP answer
     const localIp = this.config.SDP_CONTACT_IP ?? getLocalIp();
-    const sdpAnswer = buildSdpAnswer(localIp, rtp.localPort, sdpOffer, this.config.AUDIO_MODE);
+    const { sdp: sdpAnswerStr } = buildSdpAnswer(
+      localIp, rtp.localPort, sdpOffer, this.config.AUDIO_MODE,
+      this.config.SRTP_ENABLED, localSrtpKey, localSrtpSalt,
+    );
     const ok = buildResponse({
       status: 200,
       reason: 'OK',
@@ -434,7 +456,7 @@ export class CallManager {
       to: `${toHeader};tag=${localTag}`,
       callId: sipCallId,
       cseq,
-      sdpBody: sdpAnswer,
+      sdpBody: sdpAnswerStr,
       localIp,
       sipUser: this.config.SIP_USER,
       sipDomain: this.config.SIP_DOMAIN,
@@ -466,7 +488,7 @@ export class CallManager {
       okRetransmitTimer: null,
       wsReconnecting: false,
       silenceInterval: null,
-      sdpAnswer,
+      sdpAnswer: sdpAnswerStr,
       silenceByte: rtp.silenceByte,
     };
     this.sessions.set(sipCallId, session);
@@ -484,6 +506,9 @@ export class CallManager {
     };
     session.okRetransmitTimer = setTimeout(scheduleOkRetransmit, retransmitInterval);
     callLog.info({ event: 'call_started', from: fromUri, to: toUri }, 'Call started');
+    if (useSrtp) {
+      callLog.info({ event: 'srtp_negotiated' }, 'SRTP negotiated — media encrypted with AES-128-CM-HMAC-SHA1-80');
+    }
 
     // 10. Wire audio bridge AFTER session is stored
     // RTP audio → WS backend (route via session.ws so post-reconnect handler picks up new WsClient)

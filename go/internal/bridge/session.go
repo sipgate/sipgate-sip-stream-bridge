@@ -13,6 +13,7 @@ import (
 	"github.com/emiago/sipgo"
 	"github.com/gobwas/ws"
 	"github.com/pion/rtp"
+	pionSRTP "github.com/pion/srtp/v2"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
@@ -28,6 +29,10 @@ const packetQueueSize = 500
 // ~400 ms sender-side RTP batching observed from sipgate without dropping packets.
 // When full, new frames are dropped and a warning is logged.
 const rtpInboundQueueSize = 50
+
+// SRTP key/salt lengths for AES_128_CM_HMAC_SHA1_80 (RFC 3711, RFC 4568).
+const srtpKeyLength  = 16 // 128-bit AES master key
+const srtpSaltLength = 14 // 112-bit master salt
 
 // outboundFrame is a tagged union for packetQueue entries.
 // Exactly one field is set per instance:
@@ -52,6 +57,11 @@ type CallSession struct {
 	silenceFrame    []byte   // 160-byte silence for audioPT (used by rtpPacer)
 	mediaEncoding   string   // Twilio mediaFormat encoding (e.g. "audio/G722")
 	mediaSampleRate int      // Twilio mediaFormat sampleRate (e.g. 16000)
+	// SRTP key material — both fields are nil when SRTP is not negotiated.
+	localSRTPKey   []byte // 16-byte AES-128 master key for outbound SRTP encryption
+	localSRTPSalt  []byte // 14-byte master salt for outbound SRTP encryption
+	remoteSRTPKey  []byte // 16-byte AES-128 master key for inbound SRTP decryption
+	remoteSRTPSalt []byte // 14-byte master salt for inbound SRTP decryption
 	cfg             config.Config
 	log             zerolog.Logger
 	cancel          context.CancelFunc
@@ -102,6 +112,32 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 	}
 	defer rtpConn.Close()
 
+	// Build SRTP contexts when SRTP was negotiated (localSRTPKey != nil).
+	// decCtx uses the remote key to decrypt inbound packets; encCtx uses the local key to encrypt outbound.
+	var srtpDecCtx, srtpEncCtx *pionSRTP.Context
+	if len(s.localSRTPKey) == srtpKeyLength && len(s.localSRTPSalt) == srtpSaltLength &&
+		len(s.remoteSRTPKey) == srtpKeyLength && len(s.remoteSRTPSalt) == srtpSaltLength {
+		decCtx, err := pionSRTP.CreateContext(s.remoteSRTPKey, s.remoteSRTPSalt,
+			pionSRTP.ProtectionProfileAes128CmHmacSha1_80)
+		if err != nil {
+			s.log.Error().Err(err).Str("call_id", s.callID).Msg("SRTP decrypt context creation failed — sending BYE")
+			_ = initialWsConn.Close()
+			_ = s.dlg.Bye(context.Background())
+			return
+		}
+		encCtx, err := pionSRTP.CreateContext(s.localSRTPKey, s.localSRTPSalt,
+			pionSRTP.ProtectionProfileAes128CmHmacSha1_80)
+		if err != nil {
+			s.log.Error().Err(err).Str("call_id", s.callID).Msg("SRTP encrypt context creation failed — sending BYE")
+			_ = initialWsConn.Close()
+			_ = s.dlg.Bye(context.Background())
+			return
+		}
+		srtpDecCtx = decCtx
+		srtpEncCtx = encCtx
+		s.log.Info().Str("call_id", s.callID).Msg("SRTP negotiated — media encrypted with AES-128-CM-HMAC-SHA1-80")
+	}
+
 	// Initialize queues before launching goroutines (Pitfall 6 for DTMF in Phase 7-02).
 	s.packetQueue = make(chan outboundFrame, packetQueueSize)
 	s.rtpInboundQueue = make(chan []byte, rtpInboundQueueSize)
@@ -121,8 +157,8 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 	// RTP goroutines: persistent for the full call lifetime, tracked by s.wg.
 	// rtpReader enqueues inbound PCMU to rtpInboundQueue; rtpPacer drains packetQueue to caller.
 	s.wg.Add(2)
-	go s.rtpReader(sessionCtx, rtpConn)
-	go s.rtpPacer(sessionCtx, rtpConn)
+	go s.rtpReader(sessionCtx, rtpConn, srtpDecCtx)
+	go s.rtpPacer(sessionCtx, rtpConn, srtpEncCtx)
 
 	// WS reconnect loop: stops/restarts only wsPacer + wsToRTP on each new connection.
 	// A fresh sig + wsWg is created for each connection iteration.
@@ -240,14 +276,16 @@ func (s *CallSession) reconnect(ctx context.Context) (net.Conn, bool) {
 	}
 }
 
-// rtpReader reads RTP packets from the UDP socket and enqueues audio payloads to
+// rtpReader reads RTP (or SRTP) packets from the UDP socket and enqueues audio payloads to
 // rtpInboundQueue for paced forwarding by wsPacer.
 // DTMF packets (PT == s.dtmfPT) and non-audio packets are dropped silently.
 // Enqueuing is non-blocking: if rtpInboundQueue is full the packet is dropped with a warning.
-func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
+// srtpDecCtx is non-nil when SRTP was negotiated; nil means plain RTP.
+func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn, srtpDecCtx *pionSRTP.Context) {
 	defer s.wg.Done()
 
 	buf := make([]byte, 1500) // MTU-safe read buffer
+	decBuf := make([]byte, 1500)
 
 	for {
 		// Blocking read — no deadline. run() calls rtpConn.Close() after sessionCtx is done,
@@ -262,8 +300,19 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn) {
 			return
 		}
 
+		// Decrypt SRTP to plain RTP when a decrypt context is available.
+		raw := buf[:n]
+		if srtpDecCtx != nil {
+			decrypted, err := srtpDecCtx.DecryptRTP(decBuf[:0], raw, nil)
+			if err != nil {
+				s.log.Warn().Err(err).Str("call_id", s.callID).Msg("rtpReader: SRTP decrypt failed — skipping packet")
+				continue
+			}
+			raw = decrypted
+		}
+
 		var pkt rtp.Packet
-		if err := pkt.Unmarshal(buf[:n]); err != nil {
+		if err := pkt.Unmarshal(raw); err != nil {
 			s.log.Warn().Err(err).Str("call_id", s.callID).Msg("rtpReader: RTP unmarshal failed — skipping packet")
 			continue
 		}
@@ -558,12 +607,14 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 // of back-to-back UDP datagrams, causing most to be dropped by the jitter buffer.
 //
 // rtpPacer is the SOLE UDP writer during a session — no other goroutine writes to rtpConn.
-func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
+// srtpEncCtx is non-nil when SRTP was negotiated; nil means plain RTP.
+func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn, srtpEncCtx *pionSRTP.Context) {
 	defer s.wg.Done()
 
 	ssrc := rand.Uint32()
 	var seqNo uint16
 	var timestamp uint32
+	encBuf := make([]byte, 1500)
 
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
@@ -644,7 +695,21 @@ func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn) {
 				s.log.Warn().Err(err).Str("call_id", s.callID).Msg("rtpPacer: RTP marshal failed — skipping frame")
 				continue
 			}
-			if _, err := rtpConn.WriteTo(encoded, s.callerRTP); err != nil {
+
+			// Encrypt to SRTP when an encryption context is available.
+			outPacket := encoded
+			if srtpEncCtx != nil {
+				encrypted, err := srtpEncCtx.EncryptRTP(encBuf[:0], encoded, &pkt.Header)
+				if err != nil {
+					s.log.Warn().Err(err).Str("call_id", s.callID).Msg("rtpPacer: SRTP encrypt failed — skipping frame")
+					seqNo++
+					timestamp += 160
+					continue
+				}
+				outPacket = encrypted
+			}
+
+			if _, err := rtpConn.WriteTo(outPacket, s.callerRTP); err != nil {
 				s.log.Error().Err(err).Str("call_id", s.callID).Msg("rtpPacer: WriteTo caller failed")
 				s.cancel()
 				return

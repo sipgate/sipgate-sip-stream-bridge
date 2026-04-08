@@ -14,7 +14,7 @@ import (
 type CallManagerIface interface {
 	AcquirePort() (int, error)
 	ReleasePort(port int)
-	StartSession(dlg *sipgo.DialogServerSession, req *siplib.Request, callerSDP *CallerSDP, rtpPort int, audioPT uint8, log zerolog.Logger)
+	StartSession(dlg *sipgo.DialogServerSession, req *siplib.Request, callerSDP *CallerSDP, rtpPort int, audioPT uint8, localSRTPKey []byte, localSRTPSalt []byte, log zerolog.Logger)
 }
 
 // Handler manages inbound SIP dialog state using sipgo.DialogServerCache.
@@ -127,7 +127,10 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 
 	// Send 200 OK+SDP synchronously — must complete before onInvite returns.
 	// See package-level comment on onInvite for why this cannot be done in a goroutine.
-	sdpBytes, negotiatedPT := BuildSDPAnswer(h.cfg.SDPContactIP, rtpPort, callerSDP, h.cfg.AudioMode)
+	sdpBytes, negotiatedPT, localSRTPKey, localSRTPSalt := BuildSDPAnswer(h.cfg.SDPContactIP, rtpPort, callerSDP, h.cfg.AudioMode, h.cfg.SRTPEnabled)
+	if h.cfg.SRTPEnabled && !callerSDP.IsSRTP {
+		log.Warn().Str("call_id", req.CallID().Value()).Msg("SRTP desired but caller offered plain RTP/AVP — proceeding unencrypted")
+	}
 	if err := dlg.RespondSDP(sdpBytes); err != nil {
 		log.Info().Err(err).Msg("RespondSDP 200 OK failed — releasing port")
 		h.callManager.ReleasePort(rtpPort)
@@ -137,7 +140,7 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	// ACK received. Launch post-answer session goroutine (WS dial + bridge).
 	// dlg.Context() is cancelled when caller sends BYE → onBye/ReadBye.
 	// Port release happens inside StartSession via defer.
-	go h.callManager.StartSession(dlg, req, callerSDP, rtpPort, negotiatedPT, log)
+	go h.callManager.StartSession(dlg, req, callerSDP, rtpPort, negotiatedPT, localSRTPKey, localSRTPSalt, log)
 }
 
 // onAck routes the ACK to the correct dialog, transitioning it to DialogStateConfirmed.

@@ -6,6 +6,10 @@
  * audio and DTMF events, and can send outbound audio with a minimal 12-byte
  * RTP header.
  *
+ * When SRTP key material is provided via createRtpHandler options, inbound
+ * SRTP packets are decrypted and outbound RTP packets are encrypted using
+ * AES_128_CM_HMAC_SHA1_80 (RFC 3711).
+ *
  * Emits:
  *   'audio'  (payload: Buffer)           — PCMU payload, header stripped
  *   'dtmf'   (data: { digit: string })   — telephone-event End=true only
@@ -15,6 +19,8 @@ import { randomBytes } from 'node:crypto';
 import * as dgram from 'node:dgram';
 import { EventEmitter } from 'node:events';
 import type { Logger } from 'pino';
+
+import { SrtpContext } from '../srtp/srtpContext.js';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -71,6 +77,10 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
   private readonly outSsrc: number;
   /** RTP timestamp of the last emitted DTMF event — deduplicates RFC 4733 redundant End packets */
   private lastDtmfTimestamp = -1;
+  /** SRTP decryption context for inbound packets (undefined = plain RTP) */
+  private readonly decCtx?: SrtpContext;
+  /** SRTP encryption context for outbound packets (undefined = plain RTP) */
+  private readonly encCtx?: SrtpContext;
 
   constructor(
     private readonly socket: dgram.Socket,
@@ -79,11 +89,15 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
     private readonly audioPt: number,
     private readonly dtmfPt: number,
     silenceByte: number,
+    decCtx?: SrtpContext,
+    encCtx?: SrtpContext,
   ) {
     super();
     this.localPort = localPort;
     this.silenceByte = silenceByte;
     this.outSsrc = randomBytes(4).readUInt32BE(0);
+    this.decCtx = decCtx;
+    this.encCtx = encCtx;
 
     socket.on('message', (buf: Buffer) => this.onMessage(buf));
     socket.on('error', (err: Error) => {
@@ -115,7 +129,21 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
     this.outTimestamp = (this.outTimestamp + 160) >>> 0; // 20 ms at 8 kHz, keep 32-bit
     header.writeUInt32BE(this.outSsrc, 8);
 
-    const packet = Buffer.concat([header, payload]);
+    let packet = Buffer.concat([header, payload]);
+
+    // Encrypt to SRTP when an encryption context is configured.
+    if (this.encCtx) {
+      let encrypted: Buffer;
+      try {
+        encrypted = this.encCtx.encrypt(packet);
+      } catch (err) {
+        this.log.warn({ err }, 'SRTP encrypt failed — dropping packet');
+        return;
+      }
+      this.socket.send(encrypted, this.remotePort, this.remoteIp);
+      return;
+    }
+
     this.socket.send(packet, this.remotePort, this.remoteIp);
   }
 
@@ -131,32 +159,46 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
   }
 
   private onMessage(buf: Buffer): void {
-    if (buf.length < 12) return; // too short for a valid RTP header
+    if (buf.length < 12) return; // too short for a valid RTP/SRTP header
 
-    const byte0 = buf[0];
+    // Decrypt SRTP to plain RTP when a decryption context is configured.
+    let rtpBuf = buf;
+    if (this.decCtx) {
+      try {
+        rtpBuf = this.decCtx.decrypt(buf);
+      } catch {
+        // Authentication failure or malformed SRTP — drop silently
+        this.log.trace('SRTP decrypt failed — dropping inbound packet');
+        return;
+      }
+    }
+
+    if (rtpBuf.length < 12) return;
+
+    const byte0 = rtpBuf[0];
     const csrcCount = byte0 & 0x0f;
     const extBit = (byte0 & 0x10) !== 0;
     let headerLen = 12 + csrcCount * 4;
     if (extBit) {
       // Extension header: 2-byte profile + 2-byte length (in 32-bit words)
-      if (buf.length < headerLen + 4) return;
-      headerLen += 4 + buf.readUInt16BE(headerLen + 2) * 4;
+      if (rtpBuf.length < headerLen + 4) return;
+      headerLen += 4 + rtpBuf.readUInt16BE(headerLen + 2) * 4;
     }
-    if (buf.length < headerLen) return;
+    if (rtpBuf.length < headerLen) return;
 
-    const payloadType = buf[1] & 0x7f;
+    const payloadType = rtpBuf[1] & 0x7f;
 
     if (!this.forwardingEnabled) return;
 
     if (payloadType === this.audioPt) {
       // Negotiated audio codec — forward payload to WS
-      this.emit('audio', buf.subarray(headerLen));
+      this.emit('audio', rtpBuf.subarray(headerLen));
       return;
     }
 
     if (payloadType === this.dtmfPt) {
       // RFC 4733 telephone-event
-      const payload = buf.subarray(headerLen);
+      const payload = rtpBuf.subarray(headerLen);
       if (payload.length < 4) return;
       const isEnd = (payload[1] & 0x80) !== 0;
       if (isEnd) {
@@ -164,7 +206,7 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
         const digit = DTMF_DIGIT[eventCode];
         // RFC 4733 §2.5: senders MUST transmit 3 redundant End packets with the same
         // RTP timestamp. Deduplicate by timestamp so only one event is emitted per keypress.
-        const rtpTimestamp = buf.readUInt32BE(4);
+        const rtpTimestamp = rtpBuf.readUInt32BE(4);
         if (digit !== undefined && rtpTimestamp !== this.lastDtmfTimestamp) {
           this.lastDtmfTimestamp = rtpTimestamp;
           this.emit('dtmf', { digit });
@@ -186,6 +228,10 @@ class RtpHandlerImpl extends EventEmitter implements RtpHandler {
  * within the same process step through the range without re-trying the same
  * port. On EADDRINUSE the counter advances by one and retries; on exhaustion
  * an error is thrown.
+ *
+ * When localSrtpKey/Salt and remoteSrtpKey/Salt are both provided, the handler
+ * applies SRTP (AES_128_CM_HMAC_SHA1_80) to inbound decryption and outbound
+ * encryption. Pass undefined to use plain RTP.
  */
 export async function createRtpHandler(opts: {
   portMin: number;
@@ -194,8 +240,21 @@ export async function createRtpHandler(opts: {
   audioPt: number;
   dtmfPt: number;
   silenceByte: number;
+  localSrtpKey?: Buffer;
+  localSrtpSalt?: Buffer;
+  remoteSrtpKey?: Buffer;
+  remoteSrtpSalt?: Buffer;
 }): Promise<RtpHandler> {
-  const { portMin, portMax, log, audioPt, dtmfPt, silenceByte } = opts;
+  const { portMin, portMax, log, audioPt, dtmfPt, silenceByte,
+          localSrtpKey, localSrtpSalt, remoteSrtpKey, remoteSrtpSalt } = opts;
+
+  // Build SRTP contexts when all four key material buffers are present.
+  let decCtx: SrtpContext | undefined;
+  let encCtx: SrtpContext | undefined;
+  if (localSrtpKey && localSrtpSalt && remoteSrtpKey && remoteSrtpSalt) {
+    decCtx = new SrtpContext(remoteSrtpKey, remoteSrtpSalt);
+    encCtx = new SrtpContext(localSrtpKey, localSrtpSalt);
+  }
 
   // Initialise module counter on first call (or if drifted below range)
   if (nextPort === undefined || nextPort < portMin) {
@@ -210,7 +269,7 @@ export async function createRtpHandler(opts: {
     nextPort = port >= portMax ? portMin : port + 1;
 
     try {
-      const handler = await bindSocketOnPort(port, log, audioPt, dtmfPt, silenceByte);
+      const handler = await bindSocketOnPort(port, log, audioPt, dtmfPt, silenceByte, decCtx, encCtx);
 
       // Warn when fewer than 10 ports remain ahead in the range
       const portsAhead = portMax - port;
@@ -245,6 +304,8 @@ function bindSocketOnPort(
   audioPt: number,
   dtmfPt: number,
   silenceByte: number,
+  decCtx?: SrtpContext,
+  encCtx?: SrtpContext,
 ): Promise<RtpHandler> {
   return new Promise<RtpHandler>((resolve, reject) => {
     const socket = dgram.createSocket('udp4');
@@ -258,7 +319,7 @@ function bindSocketOnPort(
       socket.removeListener('error', onError);
       const info = socket.address();
       const localPort = typeof info === 'object' ? info.port : port;
-      resolve(new RtpHandlerImpl(socket, localPort, log, audioPt, dtmfPt, silenceByte));
+      resolve(new RtpHandlerImpl(socket, localPort, log, audioPt, dtmfPt, silenceByte, decCtx, encCtx));
     }
 
     socket.once('error', onError);

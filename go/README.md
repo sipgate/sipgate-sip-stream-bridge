@@ -28,6 +28,7 @@ sipgate SIP trunk  ←───────────────────�
 
 - Registers with sipgate SIP trunking and stays registered (auto re-registration at 75% of server-granted Expires)
 - Accepts inbound SIP INVITEs, negotiates codec per `AUDIO_MODE` (default `twilio`: PCMU/G.711 μ-law 8 kHz; `best`: G.722 16 kHz > PCMA > PCMU — highest quality sipgate offers)
+- Supports optional **SRTP encrypted media** via `SRTP_ENABLED=true`: negotiates RTP/SAVP with SDES key exchange (AES-128-CM-HMAC-SHA1-80, RFC 3711/4568); falls back to plain RTP/AVP when the offer is unencrypted
 - Opens one WebSocket connection per call to the configured backend URL
 - Bridges audio bidirectionally: RTP ↔ base64-encoded `media` events (encoding determined by `AUDIO_MODE`)
 - Forwards DTMF digits as `dtmf` events (RFC 4733, End-bit deduplication by RTP timestamp)
@@ -72,6 +73,7 @@ All configuration is via environment variables. Copy `../.env.example` to `../.e
 | `LOG_LEVEL` | `info` | zerolog level: `trace` `debug` `info` `warn` `error` |
 | `HTTP_PORT` | `8080` | Port for `/health` and `/metrics` HTTP endpoints |
 | `AUDIO_MODE` | `twilio` | Audio codec mode: `twilio` — PCMU/G.711 μ-law 8 kHz (Twilio-compatible, `mediaFormat: {encoding:"audio/x-mulaw",sampleRate:8000}`); `best` — negotiates highest-quality codec sipgate offers: G.722 (16 kHz) > PCMA > PCMU; negotiated codec is reflected in the `start` event `mediaFormat` and RTP payload is forwarded as-is |
+| `SRTP_ENABLED` | `false` | Enable encrypted media. Set to `true` (or `1`) to negotiate SRTP (RTP/SAVP) with sipgate using SDES key exchange (AES-128-CM-HMAC-SHA1-80, RFC 3711/4568). Falls back to plain RTP/AVP automatically when the offer is unencrypted. Each accepted call logs `SRTP negotiated — media encrypted with AES-128-CM-HMAC-SHA1-80` when active. |
 
 The service validates all variables at startup and exits immediately with a structured error if anything is missing:
 
