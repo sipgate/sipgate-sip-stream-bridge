@@ -1,6 +1,6 @@
 module github.com/sipgate/sipgate-sip-stream-bridge
 
-go 1.25.0
+go 1.24
 
 require (
 	github.com/emiago/sipgo v1.2.0
