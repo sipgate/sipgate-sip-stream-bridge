@@ -41,6 +41,7 @@ func main() {
 		Int("rtp_port_min", cfg.RTPPortMin).
 		Int("rtp_port_max", cfg.RTPPortMax).
 		Int("sip_expires", cfg.SIPExpires).
+		Bool("srtp_enabled", cfg.SRTPEnabled).
 		Msg("sipgate-sip-stream-bridge starting")
 
 	// Create Prometheus metrics registry (OBS-02, OBS-03)

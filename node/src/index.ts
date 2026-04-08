@@ -9,7 +9,7 @@ import { CallManager } from './bridge/callManager.js';
 const log = createChildLogger({ component: 'main' });
 
 log.info(
-  { event: 'startup', sipUser: config.SIP_USER, sipDomain: config.SIP_DOMAIN },
+  { event: 'startup', sipUser: config.SIP_USER, sipDomain: config.SIP_DOMAIN, srtpEnabled: config.SRTP_ENABLED },
   'sipgate-sip-stream-bridge starting'
 );
 

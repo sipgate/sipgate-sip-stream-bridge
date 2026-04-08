@@ -360,6 +360,9 @@ export class CallManager {
 
     // 4. Allocate RTP handler — must succeed before we commit to the call
     const callLog = createChildLogger({ component: 'call', callId: sipCallId });
+    if (this.config.SRTP_ENABLED && !sdpOffer.isSrtp) {
+      callLog.warn({ event: 'srtp_fallback', sipCallId }, 'SRTP desired but caller offered plain RTP/AVP — proceeding unencrypted');
+    }
     const rtp = await createRtpHandler({
       portMin: this.config.RTP_PORT_MIN,
       portMax: this.config.RTP_PORT_MAX,

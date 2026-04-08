@@ -128,6 +128,9 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	// Send 200 OK+SDP synchronously — must complete before onInvite returns.
 	// See package-level comment on onInvite for why this cannot be done in a goroutine.
 	sdpBytes, negotiatedPT, localSRTPKey, localSRTPSalt := BuildSDPAnswer(h.cfg.SDPContactIP, rtpPort, callerSDP, h.cfg.AudioMode, h.cfg.SRTPEnabled)
+	if h.cfg.SRTPEnabled && !callerSDP.IsSRTP {
+		log.Warn().Str("call_id", req.CallID().Value()).Msg("SRTP desired but caller offered plain RTP/AVP — proceeding unencrypted")
+	}
 	if err := dlg.RespondSDP(sdpBytes); err != nil {
 		log.Info().Err(err).Msg("RespondSDP 200 OK failed — releasing port")
 		h.callManager.ReleasePort(rtpPort)
