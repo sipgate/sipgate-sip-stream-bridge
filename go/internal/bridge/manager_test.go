@@ -54,12 +54,10 @@ func TestPortPool_Acquire_NonBlocking(t *testing.T) {
 		done <- err
 	}()
 
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Error("second Acquire() on empty pool: expected error, got nil")
-		}
 	// If this blocks, the test will hang — non-blocking guarantee violated
+	err = <-done
+	if err == nil {
+		t.Error("second Acquire() on empty pool: expected error, got nil")
 	}
 }
 

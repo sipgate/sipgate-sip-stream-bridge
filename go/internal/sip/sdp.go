@@ -120,29 +120,6 @@ func ParseCallerSDP(body []byte) (*CallerSDP, error) {
 	return nil, fmt.Errorf("no audio media section in SDP offer")
 }
 
-// selectAudioCodec returns the best audio payload type to use based on the offer and mode.
-// best mode: prefers 9 (G.722), then 8 (PCMA), then 0 (PCMU).
-// twilio mode: always returns 0 (PCMU).
-func selectAudioCodec(offered []uint8, mode string) (pt uint8, ok bool) {
-	if mode == "best" {
-		for _, pref := range []uint8{9, 8, 0} {
-			for _, off := range offered {
-				if off == pref {
-					return pref, true
-				}
-			}
-		}
-		return 0, false
-	}
-	// twilio mode: only PCMU
-	for _, off := range offered {
-		if off == 0 {
-			return 0, true
-		}
-	}
-	return 0, false
-}
-
 // SilenceFrameForPT returns a 160-byte silence frame for the given RTP payload type.
 // Exported so bridge.manager can call it without importing a silence constant directly.
 func SilenceFrameForPT(pt uint8) []byte {
