@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>sipgate SIP Stream Bridge — Weg von Twilio. Rein nach Deutschland.</title>
+<title>sipgate SIP Stream Bridge — Twilio-kompatibel. DSGVO-konform. Open Source.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1047,13 +1047,13 @@
   <div class="hero-inner">
     <div class="hero-badge reveal">
       <div class="hero-badge-dot"></div>
-      Made in Germany
+      Open Source · Made in Düsseldorf
     </div>
     <h1 class="hero-headline reveal reveal-delay-1">
-      Weg von Twilio.<br><em>Rein nach Deutschland.</em>
+      Twilio Media Streams —<br><em>ohne Twilio.</em>
     </h1>
     <p class="hero-sub reveal reveal-delay-2">
-      Die sipgate SIP Stream Bridge lässt dich echte deutsche Telefonnummern statt Twilio nutzen — ohne eine einzige Zeile Code zu ändern.
+      Drop-in Bridge von Twilio zu sipgate SIP-Trunking.<br>Kein Code-Umbau. DSGVO-konform. Kostenlos.
     </p>
     <div class="hero-ctas reveal reveal-delay-3">
       <a href="#how" class="btn-primary">Jetzt kostenlos loslegen</a>
@@ -1061,21 +1061,18 @@
     </div>
     <div class="hero-flow reveal reveal-delay-4">
       <div class="flow-box">
-        <div class="flow-box-flag">🇺🇸</div>
-        <div class="flow-box-label">Deine App</div>
-        <div class="flow-box-name">Twilio API</div>
+        <div class="flow-box-label">Dein Backend</div>
+        <div class="flow-box-name">Twilio Media Streams</div>
       </div>
       <div class="flow-arrow">→</div>
       <div class="flow-box bridge">
-        <div class="flow-box-flag">🌉</div>
-        <div class="flow-box-label">Bridge</div>
-        <div class="flow-box-name">SIP Stream Bridge</div>
+        <div class="flow-box-label">SIP Stream Bridge</div>
+        <div class="flow-box-name">übersetzt das Protokoll</div>
       </div>
       <div class="flow-arrow">→</div>
       <div class="flow-box">
-        <div class="flow-box-flag">🇩🇪</div>
-        <div class="flow-box-label">Telefonie</div>
-        <div class="flow-box-name">sipgate</div>
+        <div class="flow-box-label">sipgate</div>
+        <div class="flow-box-name">SIP-Trunking aus der EU</div>
       </div>
     </div>
   </div>
@@ -1087,42 +1084,36 @@
     <div class="what-grid">
       <div class="what-text">
         <div class="eyebrow reveal">Was ist das?</div>
-        <h2 class="section-h2 reveal reveal-delay-1">Eine Brücke zwischen deiner App und Deutschland.</h2>
+        <h2 class="section-h2 reveal reveal-delay-1">Twilio raus, sipgate rein — dein Code bleibt.</h2>
         <p class="reveal reveal-delay-2">
-          Stell dir vor, du hast eine App gebaut, die telefonieren kann. Die App spricht eine bestimmte Sprache — die Sprache von Twilio. Das Problem: Twilio ist eine amerikanische Firma. Deine Telefongespräche gehen durch Server in den USA.
-        </p>
-        <p class="reveal reveal-delay-2">
-          <strong>Die sipgate SIP Stream Bridge ist die Lösung.</strong> Sie übersetzt die Twilio-Sprache deiner App in echte deutsche Telefonie — über sipgate, einem Anbieter aus Düsseldorf.
+          Du nutzt Twilio Media Streams für Voice-Bots oder Echtzeit-Audio? Die SIP Stream Bridge ersetzt Twilio — nicht deinen Code. Sie emuliert die Twilio-WebSocket-Schnittstelle und leitet Calls über sipgate SIP-Trunking, direkt aus der EU.
         </p>
         <p class="reveal reveal-delay-3">
-          Deine App merkt nichts davon. Sie denkt immer noch, sie redet mit Twilio. Aber in Wirklichkeit telefoniert sie über Deutschland. <strong>Kein Code anfassen. Kein Risiko. Volle Kontrolle.</strong>
+          <strong>Selbes Protokoll, selbe Events, selbe Payloads.</strong> Dein Code läuft weiter, nur Twilio ist raus.
         </p>
       </div>
       <div class="what-visual reveal reveal-delay-2">
         <div class="what-flow-row">
           <div class="wf-box">
-            <div class="wf-flag">🇺🇸</div>
             <div class="wf-label">Dein Backend</div>
-            <div class="wf-name">spricht Twilio</div>
+            <div class="wf-name">spricht Twilio Media Streams (WebSocket)</div>
           </div>
         </div>
         <div style="font-size:24px;color:var(--grey-dark);">↓</div>
         <div class="what-flow-row">
           <div class="wf-box lime" style="max-width:200px;">
-            <div class="wf-flag">🌉</div>
             <div class="wf-label">SIP Stream Bridge</div>
-            <div class="wf-name">übersetzt &amp; vermittelt</div>
+            <div class="wf-name">Protokoll-Übersetzung</div>
           </div>
         </div>
         <div style="font-size:24px;color:var(--grey-dark);">↓</div>
         <div class="what-flow-row">
           <div class="wf-box">
-            <div class="wf-flag">🇩🇪</div>
-            <div class="wf-label">sipgate Anlage</div>
-            <div class="wf-name">spricht SIP / Telefon</div>
+            <div class="wf-label">sipgate</div>
+            <div class="wf-name">SIP-Trunking (INVITE, RTP/SRTP)</div>
           </div>
         </div>
-        <p class="what-caption">Dein Backend kommuniziert mit der Bridge wie mit Twilio.<br>Die Bridge spricht echtes SIP mit sipgate.</p>
+        <p class="what-caption">Dein Backend schickt WebSocket-Frames an die Bridge.<br>Die Bridge mappt sie auf Standard-SIP und verbindet mit sipgate.</p>
       </div>
     </div>
   </div>
@@ -1132,35 +1123,35 @@
 <section class="section-why" id="warum">
   <div class="section-inner">
     <div class="why-header">
-      <div class="eyebrow reveal">Warum sipgate?</div>
-      <h2 class="section-h2 reveal reveal-delay-1">Vier gute Gründe,<br>den Wechsel zu machen.</h2>
+      <div class="eyebrow reveal">Warum wechseln?</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Was sipgate besser macht.</h2>
     </div>
     <div class="bento-grid">
       <div class="bento-card featured reveal">
-        <span class="bento-icon">🇩🇪</span>
-        <div class="bento-title">Daten bleiben in Deutschland</div>
-        <div class="bento-text">Twilio ist US-amerikanisch. Deine Telefongespräche verlassen Europa und landen auf amerikanischen Servern, die amerikanischem Recht unterliegen. Mit sipgate bleibt alles in Deutschland — kein Umweg über den Atlantik, kein Datenschutzproblem.</div>
-        <span class="bento-tag">Serverstandort: Deutschland</span>
+        <span class="bento-icon">🏢</span>
+        <div class="bento-title">Daten bleiben in der EU</div>
+        <div class="bento-text">Bei Twilio laufen deine Calls über US-Server — unter US-Recht. Mit sipgate bleibt alles in der EU. Kein transatlantischer Umweg, kein Datenschutz-Risiko.</div>
+        <span class="bento-tag">Serverstandort: Düsseldorf</span>
       </div>
       <div class="bento-card reveal reveal-delay-1">
         <span class="bento-icon">🔒</span>
-        <div class="bento-title">DSGVO — kein Kopfschmerz mehr</div>
-        <div class="bento-text">Kein Auftragsverarbeitungsvertrag mit einem US-Unternehmen. Keine Standardvertragsklauseln. Kein Anwalt, der das prüfen muss. Deutsches Unternehmen, deutsches Recht. DSGVO-Compliance ohne Kopfrechnen. Fertig.</div>
+        <div class="bento-title">DSGVO — ohne Papierkram</div>
+        <div class="bento-text">Kein AV-Vertrag mit einem US-Unternehmen. Keine Standardvertragsklauseln. sipgate sitzt in der EU — damit ist DSGVO kein juristisches Projekt, sondern der Default.</div>
       </div>
       <div class="bento-card reveal reveal-delay-2">
         <span class="bento-icon">💶</span>
-        <div class="bento-title">Günstigere Telefonie, direkt</div>
-        <div class="bento-text">Echte deutsche Festnetz- und Mobilfunknummern zu fairen Preisen — direkt, ohne Umweg über einen amerikanischen Vermittler. Die Bridge selbst ist komplett kostenlos.</div>
+        <div class="bento-title">Faire Preise, kein Middleman</div>
+        <div class="bento-text">Lokale Festnetz- und Mobilfunknummern direkt von sipgate — ohne Aufschlag durch einen US-Vermittler. Die Bridge selbst ist kostenlos und open source.</div>
       </div>
       <div class="bento-card reveal reveal-delay-3">
         <span class="bento-icon">🤝</span>
-        <div class="bento-title">Support, der dich versteht</div>
-        <div class="bento-text">sipgate ist seit über 20 Jahren in Deutschland. Deutschsprachiger Support. Deutsche Mentalität. Wenn etwas nicht klappt, rufst du einfach an — auf Deutsch, ohne Ticketsystem.</div>
+        <div class="bento-title">Support auf Augenhöhe</div>
+        <div class="bento-text">sipgate gibt es seit über 20 Jahren. Kein Callcenter, kein Ticket-Pingpong — wenn etwas klemmt, erreichst du echte Menschen, die das Produkt kennen.</div>
       </div>
       <div class="bento-card reveal">
         <span class="bento-icon">🔓</span>
-        <div class="bento-title">100% Open Source</div>
-        <div class="bento-text">Der komplette Quellcode liegt offen auf GitHub. Kein Vendor Lock-in, keine Black Box — du kannst den Code prüfen, forken und nach Belieben anpassen. Community-Beiträge sind herzlich willkommen.</div>
+        <div class="bento-title">100 % Open Source</div>
+        <div class="bento-text">Quellcode auf GitHub. Kein Vendor Lock-in, keine Black Box. Forken, anpassen, PRs schicken — contributions welcome.</div>
         <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" target="_blank" class="bento-tag" style="text-decoration:none;">github.com/sipgate/sipgate-sip-stream-bridge →</a>
       </div>
     </div>
@@ -1177,7 +1168,7 @@
     <div class="steps-grid">
       <div class="step-card reveal">
         <div class="step-number">1</div>
-        <div class="step-title">sipgate Zugangsdaten eintragen</div>
+        <div class="step-title">.env anlegen</div>
         <div class="code-block" id="code1">
           <button class="copy-btn" onclick="copyCode('code1',this)">Kopieren</button>
 <span class="k">SIP_USER</span>=<span class="v">1234567t0</span>
@@ -1186,11 +1177,11 @@
 <span class="k">SIP_REGISTRAR</span>=<span class="v">sipconnect.sipgate.de</span>
 <span class="k">WS_TARGET_URL</span>=<span class="v">ws://mein-backend.example.com</span>
 <span class="k">SDP_CONTACT_IP</span>=<span class="v">1.2.3.4</span></div>
-        <p class="step-desc">Eine .env-Datei mit deinen sipgate SIP-Zugangsdaten. Bekommst du unter <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a></p>
+        <p class="step-desc">SIP-Credentials aus deinem sipgate Trunking-Account. Noch keinen? → <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a></p>
       </div>
       <div class="step-card reveal reveal-delay-1">
         <div class="step-number">2</div>
-        <div class="step-title">Docker Image starten</div>
+        <div class="step-title">Container starten</div>
         <div class="code-block" id="code2">
           <button class="copy-btn" onclick="copyCode('code2',this)">Kopieren</button>
 <span class="c"># Go-Version (empfohlen)</span>
@@ -1198,7 +1189,7 @@ docker run \
   --env-file <span class="v">.env</span> \
   --network <span class="v">host</span> \
   <span class="k">ghcr.io/sipgate/</span><span class="v">sipgate-sip-stream-bridge-go:latest</span></div>
-        <p class="step-desc">Ein einzelner Docker-Befehl. Das Image ist ~10 MB groß und startet in Millisekunden.</p>
+        <p class="step-desc">Ein Docker-Befehl. ~10 MB Image, cold start in Millisekunden.</p>
       </div>
       <div class="step-card reveal reveal-delay-2">
         <div class="step-number">3</div>
@@ -1206,13 +1197,13 @@ docker run \
         <div style="background:var(--grey-light);border:1px solid var(--grey);border-radius:var(--radius-md);padding:24px 20px;margin-bottom:14px;text-align:center;">
           <div style="font-size:48px;margin-bottom:12px;">🎉</div>
           <div style="font-weight:700;font-size:16px;color:var(--black);margin-bottom:6px;">Backend läuft weiter.</div>
-          <div style="font-size:13px;color:var(--grey-dark);">Unverändert. Wie gehabt.</div>
+          <div style="font-size:13px;color:var(--grey-dark);">Ohne Änderungen.</div>
         </div>
-        <p class="step-desc">Dein bestehendes Backend läuft weiter — unverändert. Nur die Telefonie kommt jetzt aus Deutschland.</p>
+        <p class="step-desc">Dein Backend läuft weiter — ohne Änderungen. Die Telefonie läuft jetzt über sipgate statt über Twilio.</p>
       </div>
     </div>
     <div class="how-tagline reveal">
-      Drei Schritte. Fünf Minuten. Kein Code anfassen.
+      Drei Schritte. Fünf Minuten. Null Code-Änderungen.
     </div>
   </div>
 </section>
@@ -1222,7 +1213,7 @@ docker run \
   <div class="section-inner">
     <div class="compare-header">
       <div class="eyebrow reveal">Der Vergleich</div>
-      <h2 class="section-h2 reveal reveal-delay-1">Twilio vs. sipgate — auf einen Blick.</h2>
+      <h2 class="section-h2 reveal reveal-delay-1">Twilio vs. sipgate + Bridge</h2>
     </div>
     <div class="compare-table-wrap reveal reveal-delay-1">
       <table>
@@ -1237,32 +1228,32 @@ docker run \
           <tr>
             <td>🌍 Serverstandort</td>
             <td class="col-twilio">USA 🇺🇸</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Deutschland 🇩🇪</span></td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> EU (Düsseldorf) 🇪🇺</span></td>
           </tr>
           <tr>
             <td>🔒 DSGVO</td>
-            <td class="col-twilio">Aufwändig, Standardvertragsklauseln nötig</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Eingebaut, kein Extra-Aufwand</span></td>
+            <td class="col-twilio">SCCs + AV-Vertrag nötig</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Eingebaut — EU-Anbieter</span></td>
           </tr>
           <tr>
             <td>📞 Rufnummern</td>
             <td class="col-twilio">International</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Deutsche Festnetz &amp; Mobilfunk</span></td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Lokale Festnetz- &amp; Mobilfunknummern</span></td>
           </tr>
           <tr>
             <td>💬 Support</td>
             <td class="col-twilio">Englisch, Ticketsystem</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Deutsch, direkt</span></td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Persönlich, direkt erreichbar</span></td>
           </tr>
           <tr>
             <td>💻 Code-Änderungen</td>
             <td class="col-twilio">—</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Keine — Backend bleibt wie es ist</span></td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Keine nötig</span></td>
           </tr>
           <tr>
             <td>🐳 Deployment</td>
-            <td class="col-twilio">—</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Ein Docker-Befehl</span></td>
+            <td class="col-twilio">Managed</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Self-hosted, ein Docker-Befehl</span></td>
           </tr>
           <tr>
             <td>💰 Bridge-Kosten</td>
@@ -1285,8 +1276,8 @@ docker run \
   <div class="section-inner">
     <div class="docker-header">
       <div class="eyebrow reveal">Docker Images</div>
-      <h2 class="section-h2 reveal reveal-delay-1">Direkt und kostenlos.</h2>
-      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">Die Images werden automatisch gebaut und sind jederzeit abrufbar — kostenlos, ohne Account, direkt aus der GitHub Container Registry.</p>
+      <h2 class="section-h2 reveal reveal-delay-1">Aus der GitHub Container Registry.</h2>
+      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">Automatische Builds, frei verfügbar, kein Login nötig.</p>
     </div>
     <div class="docker-cards">
       <div class="docker-card reveal">
@@ -1340,8 +1331,8 @@ docker run \
   <div class="section-inner">
     <div class="features-header">
       <div class="eyebrow reveal">Protokoll-Unterstützung</div>
-      <h2 class="section-h2 reveal reveal-delay-1">Was bleibt gleich? Alles.</h2>
-      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">Alles, was dein Backend schon kann — bleibt. Die Bridge unterstützt das vollständige Twilio Media Streams Protokoll.</p>
+      <h2 class="section-h2 reveal reveal-delay-1">Volle Protokoll-Kompatibilität.</h2>
+      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">Die Bridge implementiert das komplette Twilio Media Streams Protokoll.</p>
     </div>
     <div class="features-grid">
       <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Eingehende &amp; ausgehende Audiospuren</span></div>
@@ -1371,7 +1362,7 @@ docker run \
           <div class="faq-icon">+</div>
         </div>
         <div class="faq-answer">
-          <div class="faq-answer-inner">Nein. Die Bridge spricht exakt dieselbe Sprache wie Twilio Media Streams. Dein Backend merkt keinen Unterschied — du musst keinen einzigen Code anfassen.</div>
+          <div class="faq-answer-inner">Nein. Die Bridge implementiert das Twilio Media Streams Protokoll. Dein Backend merkt keinen Unterschied.</div>
         </div>
       </div>
       <div class="faq-item reveal reveal-delay-1">
@@ -1380,7 +1371,7 @@ docker run \
           <div class="faq-icon">+</div>
         </div>
         <div class="faq-answer">
-          <div class="faq-answer-inner">Ja — du brauchst einen sipgate trunking-Anschluss. Den bekommst du unter <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a>. Die Bridge selbst ist kostenlos und open source.</div>
+          <div class="faq-answer-inner">Ja — du brauchst einen sipgate Trunking-Anschluss. Gibt's unter <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a>. Die Bridge selbst ist kostenlos.</div>
         </div>
       </div>
       <div class="faq-item reveal reveal-delay-2">
@@ -1389,7 +1380,7 @@ docker run \
           <div class="faq-icon">+</div>
         </div>
         <div class="faq-answer">
-          <div class="faq-answer-inner">sipgate ist ein deutsches Unternehmen mit deutschen Servern. Deine Telefondaten verlassen Deutschland nicht. Das ist ein erheblicher Vorteil gegenüber US-Anbietern wie Twilio, bei denen du Standardvertragsklauseln und einen Auftragsverarbeitungsvertrag brauchst.</div>
+          <div class="faq-answer-inner">sipgate sitzt in Düsseldorf, die Server stehen in der EU. Deine Telefondaten verlassen Europa nicht. Im Vergleich zu US-Anbietern entfallen SCCs und ein separater AV-Vertrag.</div>
         </div>
       </div>
       <div class="faq-item reveal">
@@ -1398,7 +1389,7 @@ docker run \
           <div class="faq-icon">+</div>
         </div>
         <div class="faq-answer">
-          <div class="faq-answer-inner">Die Bridge ist komplett kostenlos und open source. Du hostest sie selbst — aber keine Sorge: Das Docker-Image ist nur ~10 MB groß und läuft problemlos auf dem kleinsten Cloud-Server (1 vCPU, 512 MB RAM). Du zahlst nur für deinen sipgate-Anschluss.</div>
+          <div class="faq-answer-inner">Die Bridge ist kostenlos und open source. Self-hosted — läuft auf dem kleinsten Cloud-Server (1 vCPU, 512 MB RAM). Du zahlst nur für deinen sipgate Trunking-Anschluss.</div>
         </div>
       </div>
       <div class="faq-item reveal reveal-delay-1">
@@ -1407,7 +1398,7 @@ docker run \
           <div class="faq-icon">+</div>
         </div>
         <div class="faq-answer">
-          <div class="faq-answer-inner">Standardmäßig bis zu 100 parallele Gespräche — konfigurierbar nach oben. Läuft stabil über Wochen ohne Neustart.</div>
+          <div class="faq-answer-inner">Default: bis zu 100 parallele Calls, konfigurierbar. Läuft stabil über Wochen ohne Restart.</div>
         </div>
       </div>
       <div class="faq-item reveal reveal-delay-2">
@@ -1426,9 +1417,9 @@ docker run \
 <!-- FINAL CTA -->
 <section class="section-cta" id="start">
   <div class="cta-inner section-inner">
-    <div class="cta-eyebrow reveal">Bereit loszulegen?</div>
+    <div class="cta-eyebrow reveal">Loslegen</div>
     <h2 class="cta-headline reveal reveal-delay-1">
-      Los geht's.<br>Direkt starten.
+      In fünf Minuten live.
     </h2>
     <div class="terminal reveal reveal-delay-2">
       <div class="terminal-bar">
@@ -1451,7 +1442,7 @@ docker run \
 </section>
 
 <footer>
-  sipgate SIP Stream Bridge — Made in Germany 🇩🇪
+  sipgate SIP Stream Bridge — Open Source · Düsseldorf 🇪🇺
   <span>|</span>
   <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" target="_blank">GitHub</a>
   <span>|</span>
