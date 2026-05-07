@@ -63,7 +63,7 @@ type MediaBody struct {
 }
 
 // StopEvent is sent when the call ends (WSB-04).
-// SequenceNumber is intentionally empty in Phase 6 — see sendStop comment.
+// SequenceNumber is intentionally empty — see sendStop comment.
 type StopEvent struct {
 	Event          string   `json:"event"`
 	SequenceNumber string   `json:"sequenceNumber"`
@@ -78,7 +78,7 @@ type StopBody struct {
 }
 
 // dialWS connects to the target WebSocket URL using gobwas/ws.
-// Handles both ws:// and wss:// (TLS via system roots — included in Docker image from Phase 4).
+// Handles both ws:// and wss:// (TLS via system roots — included in the Docker image).
 // Returns a net.Conn that is safe to use with wsutil read/write helpers.
 //
 // TCP_NODELAY is set to disable Nagle's algorithm. ws.WriteFrame makes two separate
@@ -102,24 +102,36 @@ func sendConnected(conn net.Conn) error {
 }
 
 // sendStart sends the WSB-02 + WSB-06 start event with full call metadata.
-// callSidToken is a CA-prefixed token (Twilio callSid convention).
+// callSid is a CA-prefixed token (Twilio callSid convention).
+// accountSid is an AC-prefixed token (Twilio accountSid convention) — empty
+// string in early boot paths; main.go wires the production value.
 // callID is the SIP Call-ID, forwarded in customParameters.sipCallId for consumer use.
 // req.From().Address.String() and req.To().Address.String() provide SIP URI strings.
 // encoding and sampleRate come from MediaFormatForPT(negotiatedPT) set at session start.
-func sendStart(conn net.Conn, streamSid, callSidToken, callID string, req *siplib.Request, encoding string, sampleRate int) error {
+//
+// Identity surfaces (Twilio compatibility): callSid + accountSid appear at BOTH
+// the top-level Start fields (StartEventBody.{CallSid,AccountSid}) AND inside
+// customParameters. Twilio's downstream consumers vary in which surface they
+// read from, so emitting on both is required for bit-for-bit parity.
+func sendStart(conn net.Conn, streamSid, callSid, accountSid, callID string, req *siplib.Request, encoding string, sampleRate int) error {
 	customParams := map[string]string{
 		"sipCallId": callID,
 		"From":      req.From().Address.String(),
 		"To":        req.To().Address.String(),
 	}
+	// Identity surfaces — emit CallSid + AccountSid into customParameters in
+	// addition to the top-level Start.{CallSid,AccountSid} fields. Twilio's
+	// downstream consumers vary in which surface they read from.
+	customParams["CallSid"] = callSid
+	customParams["AccountSid"] = accountSid
 	return writeJSON(conn, StartEvent{
 		Event:          "start",
 		SequenceNumber: "1",
 		StreamSid:      streamSid,
 		Start: StartEventBody{
 			StreamSid:        streamSid,
-			AccountSid:       "",
-			CallSid:          callSidToken,
+			AccountSid:       accountSid,
+			CallSid:          callSid,
 			Tracks:           []string{"inbound", "outbound"},
 			CustomParameters: customParams,
 			MediaFormat:      MediaFormat{Encoding: encoding, SampleRate: sampleRate, Channels: 1},
@@ -129,17 +141,17 @@ func sendStart(conn net.Conn, streamSid, callSidToken, callID string, req *sipli
 
 // sendStop sends the WSB-04 stop event when the call ends.
 //
-// SequenceNumber is intentionally left empty (zero value "") in Phase 6.
+// SequenceNumber is intentionally left empty (zero value "").
 // The Twilio Media Streams spec lists sequenceNumber as a field on stop events,
 // but consumers identify the stream via streamSid + callSid. Tracking a global
-// per-session sequence counter is deferred to Phase 7 if needed.
+// per-session sequence counter is deferred unless required.
 // Per-session seqNo lives in rtpToWS; passing it through to sendStop would require
-// an out-of-band channel — unnecessary complexity for Phase 6.
-func sendStop(conn net.Conn, streamSid, callSidToken string) error {
+// an out-of-band channel — unnecessary complexity here.
+func sendStop(conn net.Conn, streamSid, callSid, accountSid string) error {
 	return writeJSON(conn, StopEvent{
 		Event:     "stop",
 		StreamSid: streamSid,
-		Stop:      StopBody{AccountSid: "", CallSid: callSidToken},
+		Stop:      StopBody{AccountSid: accountSid, CallSid: callSid},
 	})
 }
 

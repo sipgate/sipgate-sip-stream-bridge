@@ -1,0 +1,151 @@
+# deploy/observability/prometheus-rules.yaml
+#
+# Alert rules for sipgate-sip-stream-bridge v3.0 — observability + cardinality
+# discipline. All four thresholds are LOCKED at the operator-runbook level —
+# do not modify without an operator-visible CHANGELOG entry.
+#
+# Two formats supported by this file:
+#   - kube-prometheus-stack: apply this YAML directly (PrometheusRule CRD with
+#     apiVersion + kind). The operator picks it up automatically when matched
+#     by the Prometheus CR's `ruleSelector`.
+#   - vanilla Prometheus: extract just the `spec.groups` block (lines under
+#     `groups:` below) and place it in a file referenced by your prometheus.yml's
+#     `rule_files:` directive. The `groups[].rules[]` shape is identical between
+#     the two formats; only the wrapper differs.
+#
+# Metric-name namespacing reference (cross-checked against
+# go/internal/observability/metrics.go on 2026-05-04):
+#   - sipgate_bridge_*  : forward_*, rtp_port_pool_*, rtp_port_acquire_*,
+#                          auth_challenge_kind_total, status_callback_*
+#   - (un-namespaced)   : active_calls_total, sip_registration_status,
+#                          rtp_packets_(received|sent)_total,
+#                          ws_reconnect_attempts_total, mark_echoed_total,
+#                          clear_received_total, sip_options_failures_total,
+#                          api_requests_total, api_request_duration_seconds,
+#                          twiml_modify_total
+#   - go_*              : runtime collectors are NOT registered on the bridge's
+#                          custom Registry (go/internal/observability/metrics.go
+#                          uses prometheus.NewRegistry, NOT DefaultRegisterer).
+#                          The GoroutineLeakSuspect rule depends on go_goroutines
+#                          being scraped from a separate exporter or from a
+#                          process_exporter. Operators wanting this signal must
+#                          either (a) also scrape a Go-runtime exporter for the
+#                          bridge process, or (b) replace go_goroutines with the
+#                          equivalent process_resident_memory_bytes growth rule
+#                          if only node_exporter is available. See README.md
+#                          GoroutineLeakSuspect runbook for the alternative.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sipgate-sip-stream-bridge
+  labels:
+    app: sipgate-sip-stream-bridge
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: sipgate-sip-stream-bridge.observability
+      interval: 30s
+      rules:
+        # ────────────────────────────────────────────────────────────────────
+        # TollFraudActivity
+        # Source: forward_failed_total{reason="toll_fraud"} > 5/hour, sustained 5m
+        # Production metric name: sipgate_bridge_forward_failed_total{reason}
+        # ────────────────────────────────────────────────────────────────────
+        - alert: TollFraudActivity
+          expr: increase(sipgate_bridge_forward_failed_total{reason="toll_fraud"}[1h]) > 5
+          for: 5m
+          labels:
+            severity: warning
+            component: sipgate-sip-stream-bridge
+          annotations:
+            summary: "Toll-fraud guardrails fired more than 5 times in the last hour"
+            description: |
+              The DIAL_ALLOWED_PREFIXES toll-fraud allow-list has rejected
+              {{ $value }} dial attempts in the past hour. This may indicate a
+              compromised customer bot attempting to abuse the <Dial> verb, or
+              a legitimately misconfigured allow-list. Investigate logs for
+              the account_sid emitting the rejected dials.
+            runbook_url: "https://github.com/sipgate/audio-dock/blob/main/deploy/observability/README.md#tollfraudactivity"
+
+        # ────────────────────────────────────────────────────────────────────
+        # StatusCallbackFailureRate
+        # Source: status_callback_failures_total / status_callback_attempts_total > 0.10, sustained 5m
+        # Production metric names: sipgate_bridge_status_callback_failures_total{reason}
+        #                          sipgate_bridge_status_callback_attempts_total{event}
+        # The ratio is computed across ALL events / ALL reasons (no `by(...)`)
+        # — operators interested in per-event breakdowns should consult the
+        # dashboard panels in grafana-dashboard.json.
+        # ────────────────────────────────────────────────────────────────────
+        - alert: StatusCallbackFailureRate
+          expr: |
+            (
+              sum(rate(sipgate_bridge_status_callback_failures_total[5m]))
+              /
+              sum(rate(sipgate_bridge_status_callback_attempts_total[5m]))
+            ) > 0.10
+          for: 5m
+          labels:
+            severity: warning
+            component: sipgate-sip-stream-bridge
+          annotations:
+            summary: "Status-callback failure rate exceeds 10%"
+            description: |
+              {{ $value | humanizePercentage }} of status callbacks failed over
+              the last 5 minutes. Common causes: customer host down, SSRF guard
+              rejecting URLs (RFC1918 / link-local / localhost), signature
+              verification failures, or network egress issues. See the per-reason
+              breakdown panel in the Grafana dashboard.
+            runbook_url: "https://github.com/sipgate/audio-dock/blob/main/deploy/observability/README.md#statuscallbackfailurerate"
+
+        # ────────────────────────────────────────────────────────────────────
+        # RTPPortPoolPressure
+        # Source: rtp_port_pool_in_use / rtp_port_pool_size > 0.8, sustained 30s
+        # Production metric names: sipgate_bridge_rtp_port_pool_in_use (gauge)
+        #                          sipgate_bridge_rtp_port_pool_size (gauge)
+        # Note: <Dial> consumes 2 ports per call; pool exhaustion fails new calls.
+        # ────────────────────────────────────────────────────────────────────
+        - alert: RTPPortPoolPressure
+          expr: |
+            (
+              sipgate_bridge_rtp_port_pool_in_use
+              /
+              sipgate_bridge_rtp_port_pool_size
+            ) > 0.8
+          for: 30s
+          labels:
+            severity: warning
+            component: sipgate-sip-stream-bridge
+          annotations:
+            summary: "RTP port pool utilization exceeds 80%"
+            description: |
+              {{ $value | humanizePercentage }} of the RTP port pool is in use.
+              Pool exhaustion will cause new calls to fail with 503. Increase
+              RTP_PORT_MAX or scale horizontally. Note that <Dial> consumes
+              two ports per call (caller leg + callee leg).
+            runbook_url: "https://github.com/sipgate/audio-dock/blob/main/deploy/observability/README.md#rtpportpoolpressure"
+
+        # ────────────────────────────────────────────────────────────────────
+        # GoroutineLeakSuspect
+        # Source: rate(go_goroutines[5m]) > 0 AND go_goroutines > 1000, sustained 10m
+        # Note: go_goroutines is NOT exposed by the bridge's custom Registry
+        # (the v2.1 invariant — see metrics.go header comment). Operators must
+        # scrape a Go-runtime exporter for the bridge process to use this rule.
+        # If unavailable, see README.md GoroutineLeakSuspect runbook for the
+        # process_resident_memory_bytes alternative.
+        # ────────────────────────────────────────────────────────────────────
+        - alert: GoroutineLeakSuspect
+          expr: rate(go_goroutines[5m]) > 0 and go_goroutines > 1000
+          for: 10m
+          labels:
+            severity: warning
+            component: sipgate-sip-stream-bridge
+          annotations:
+            summary: "Goroutine count growing unbounded"
+            description: |
+              Goroutine count is {{ $value }} and growing. Classic symptom of a
+              goroutine leak — typical causes: stuck StatusClient retry loops,
+              unclosed dial-leg perCall entries, abandoned WS reconnect
+              goroutines. Investigate via /debug/pprof/goroutine?debug=2 (if
+              pprof is enabled), or capture stack traces via SIGQUIT in a
+              non-production replica.
+            runbook_url: "https://github.com/sipgate/audio-dock/blob/main/deploy/observability/README.md#goroutineleaksuspect"

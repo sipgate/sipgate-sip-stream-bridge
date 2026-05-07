@@ -24,7 +24,7 @@ type CallerSDP struct {
 }
 
 // ParseCallerSDP extracts the caller's RTP destination and DTMF payload type from an SDP offer.
-// CRITICAL: DTMF PT is NEVER hardcoded — always extracted from SDP offer per STATE.md decision.
+// CRITICAL: DTMF PT is NEVER hardcoded — always extracted from the SDP offer.
 // When the offer uses RTP/SAVP, the IsSRTP flag is set and the remote SRTP master key/salt are
 // extracted from the first AES_128_CM_HMAC_SHA1_80 a=crypto: line (RFC 4568).
 func ParseCallerSDP(body []byte) (*CallerSDP, error) {
