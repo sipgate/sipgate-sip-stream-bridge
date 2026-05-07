@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+
+<!--
+  UAS stub — silent. Receives INVITE, sends 100 Trying, then never
+  responds further. The bridge's <Dial> ring timeout fires after
+  DIAL_RING_TIMEOUT_S (default 30 s); the bridge sends CANCEL,
+  receives 487 Request Terminated, and BYEs the inbound leg with
+  DialCallStatus=no-answer.
+
+  Used by: inbound-rest-dial-no-answer.xml (scenario d).
+-->
+
+<scenario name="uas-noanswer">
+  <recv request="INVITE">
+    <action>
+      <log message="UAS noanswer: received INVITE; will stay silent until CANCEL"/>
+    </action>
+  </recv>
+
+  <send>
+    <![CDATA[
+
+      SIP/2.0 100 Trying
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <!-- Wait for CANCEL (the bridge's ring-timeout fires after
+       DIAL_RING_TIMEOUT_S; harness sets this short via env override). -->
+  <recv request="CANCEL" rtd="true">
+    <action>
+      <log message="UAS noanswer: received CANCEL"/>
+    </action>
+  </recv>
+
+  <!-- 200 OK to the CANCEL. -->
+  <send>
+    <![CDATA[
+
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <!-- 487 Request Terminated on the original INVITE transaction. sipp's
+       transaction state is keyed by CSeq; the original INVITE was
+       CSeq 1 (from the Bridge), so we send 487 with that CSeq.
+       sipp expects ACK to the 487. -->
+  <send retrans="500">
+    <![CDATA[
+
+      SIP/2.0 487 Request Terminated
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      CSeq: 1 INVITE
+      Content-Length: 0
+
+    ]]>
+  </send>
+
+  <recv request="ACK" optional="true" rtd="true" crlf="true"/>
+
+  <ResponseTimeRepartition value="10, 20, 30, 40, 50, 100, 150, 200"/>
+  <CallLengthRepartition value="10, 50, 100, 500, 1000, 5000, 10000"/>
+
+</scenario>

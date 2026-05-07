@@ -76,7 +76,8 @@ func TestSendConnected_JSONSchema(t *testing.T) {
 // Test 2 — sendStart marshals correct JSON schema (WSB-02 + WSB-06).
 // Verifies: event="start", sequenceNumber="1", tracks=["inbound","outbound"],
 // mediaFormat.encoding="audio/x-mulaw", mediaFormat.sampleRate=8000,
-// callSid=callSidToken (CA-prefixed), customParameters.sipCallId=sipCallID.
+// callSid (CA-prefixed) + accountSid (AC-prefixed) populated on both top-level
+// and customParameters surfaces, customParameters.sipCallId=sipCallID.
 func TestSendStart_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
 	defer client.Close()
@@ -84,12 +85,13 @@ func TestSendStart_JSONSchema(t *testing.T) {
 
 	req := mockSIPRequest("a", "b.com", "c", "d.com")
 	streamSid := "MZabc"
-	callSidToken := "CAtest123"
+	callSid := "CAtest123"
+	accountSid := "ACtest00000000000000000000000000"
 	sipCallID := "test-sip-call-id"
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- sendStart(client, streamSid, callSidToken, sipCallID, req, "audio/x-mulaw", 8000)
+		errCh <- sendStart(client, streamSid, callSid, accountSid, sipCallID, req, "audio/x-mulaw", 8000)
 	}()
 
 	data, _, err := wsutil.ReadClientData(server)
@@ -119,11 +121,11 @@ func TestSendStart_JSONSchema(t *testing.T) {
 	if body.StreamSid != streamSid {
 		t.Errorf("Start.StreamSid: expected %q, got %q", streamSid, body.StreamSid)
 	}
-	if body.CallSid != callSidToken {
-		t.Errorf("Start.CallSid: expected %q, got %q", callSidToken, body.CallSid)
+	if body.CallSid != callSid {
+		t.Errorf("Start.CallSid: expected %q, got %q", callSid, body.CallSid)
 	}
-	if body.AccountSid != "" {
-		t.Errorf("Start.AccountSid: expected empty string, got %q", body.AccountSid)
+	if body.AccountSid != accountSid {
+		t.Errorf("Start.AccountSid: expected %q, got %q", accountSid, body.AccountSid)
 	}
 
 	if len(body.Tracks) != 2 || body.Tracks[0] != "inbound" || body.Tracks[1] != "outbound" {
@@ -147,21 +149,32 @@ func TestSendStart_JSONSchema(t *testing.T) {
 	if from := body.CustomParameters["From"]; !strings.Contains(from, "a@b.com") {
 		t.Errorf("CustomParameters.From: expected to contain %q, got %q", "a@b.com", from)
 	}
+	// Identity surfaces — CallSid + AccountSid must appear in customParameters
+	// in addition to the top-level Start fields. Twilio's downstream consumers
+	// vary in which surface they read from; we emit on both for parity.
+	if got := body.CustomParameters["CallSid"]; got != callSid {
+		t.Errorf("CustomParameters.CallSid: expected %q, got %q", callSid, got)
+	}
+	if got := body.CustomParameters["AccountSid"]; got != accountSid {
+		t.Errorf("CustomParameters.AccountSid: expected %q, got %q", accountSid, got)
+	}
 }
 
-// Test 3 — sendStop marshals correct JSON schema (WSB-04).
-// sequenceNumber is intentionally empty ("") in Phase 6 — see sendStop comment in ws.go.
+// Test 3 — sendStop marshals correct JSON schema.
+// sequenceNumber is intentionally empty ("") — see sendStop comment in ws.go.
+// callSid + accountSid are populated on the Stop body.
 func TestSendStop_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
 	defer client.Close()
 	defer server.Close()
 
 	streamSid := "MZabc"
-	callID := "test-call-id"
+	callSid := "CAtest123"
+	accountSid := "ACtest00000000000000000000000000"
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- sendStop(client, streamSid, callID)
+		errCh <- sendStop(client, streamSid, callSid, accountSid)
 	}()
 
 	data, _, err := wsutil.ReadClientData(server)
@@ -183,15 +196,15 @@ func TestSendStop_JSONSchema(t *testing.T) {
 	if got.StreamSid != streamSid {
 		t.Errorf("StreamSid: expected %q, got %q", streamSid, got.StreamSid)
 	}
-	// SequenceNumber is intentionally empty in Phase 6
+	// SequenceNumber is intentionally empty in this code path
 	if got.SequenceNumber != "" {
-		t.Errorf("SequenceNumber: expected empty string (Phase 6 deferred), got %q", got.SequenceNumber)
+		t.Errorf("SequenceNumber: expected empty string (deferred), got %q", got.SequenceNumber)
 	}
-	if got.Stop.CallSid != callID {
-		t.Errorf("Stop.CallSid: expected %q, got %q", callID, got.Stop.CallSid)
+	if got.Stop.CallSid != callSid {
+		t.Errorf("Stop.CallSid: expected %q, got %q", callSid, got.Stop.CallSid)
 	}
-	if got.Stop.AccountSid != "" {
-		t.Errorf("Stop.AccountSid: expected empty string, got %q", got.Stop.AccountSid)
+	if got.Stop.AccountSid != accountSid {
+		t.Errorf("Stop.AccountSid: expected %q, got %q", accountSid, got.Stop.AccountSid)
 	}
 }
 
@@ -246,14 +259,15 @@ func TestHandshake_SendsConnectedThenStart(t *testing.T) {
 
 	req := mockSIPRequest("caller", "sip.example.com", "callee", "sip.example.com")
 	s := &CallSession{
-		callID:       "test-call-id",
-		callSidToken: "CAtest",
-		streamSid:    "MZtest",
-		dlg:          nil, // dlg not needed for handshake — sendStart uses s.dlg.InviteRequest
+		callID:    "test-call-id",
+		callSid:   "CAtest",
+		streamSid: "MZtest",
+		// dlg lives on Leg now; the handshake test below exercises sendConnected+sendStart
+		// directly without invoking s.handshake (which would deref leg.dlg.InviteRequest).
 	}
 	// We cannot use a real dlg here, so we test via the handshake helper by calling
 	// sendConnected + sendStart directly as handshake() does.
-	// handshake(wsConn) calls sendConnected(wsConn) then sendStart(wsConn, streamSid, callSidToken, callID, dlg.InviteRequest).
+	// handshake(wsConn) calls sendConnected(wsConn) then sendStart(wsConn, streamSid, callSid, accountSid, callID, dlg.InviteRequest, ...).
 	// Since dlg is nil we exercise the helper indirectly by reading two frames.
 	_ = s
 	_ = req
@@ -265,7 +279,7 @@ func TestHandshake_SendsConnectedThenStart(t *testing.T) {
 			errCh <- err
 			return
 		}
-		errCh <- sendStart(clientConn, "MZtest", "CAtest", "call-1", req, "audio/x-mulaw", 8000)
+		errCh <- sendStart(clientConn, "MZtest", "CAtest", "ACtest", "call-1", req, "audio/x-mulaw", 8000)
 	}()
 
 	// Read frame 1: connected

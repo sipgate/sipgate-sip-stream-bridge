@@ -17,16 +17,17 @@ import (
 
 // Registrar manages SIP REGISTER lifecycle for a single AoR (SIP_USER@SIP_DOMAIN).
 type Registrar struct {
-	client     *sipgo.Client
-	registrar  string // SIP_REGISTRAR — REGISTER Request-URI host
-	domain     string // SIP_DOMAIN — AoR domain in From/To headers
-	contactIP  string // SDPContactIP — reachable IP for Contact header (where sipgate sends INVITEs)
-	user       string // SIP_USER
-	password   string // SIP_PASSWORD
-	expires    int    // SIP_EXPIRES default 120 — requested expiry; server may grant different value
-	log        zerolog.Logger
-	registered atomic.Bool // true after successful registration; false after unregister or failure
-	metrics    *observability.Metrics
+	client      *sipgo.Client
+	registrar   string // SIP_REGISTRAR — REGISTER Request-URI host
+	domain      string // SIP_DOMAIN — AoR domain in From/To headers
+	contactIP   string // SDPContactIP — reachable IP for Contact header (where sipgate sends INVITEs)
+	contactPort int    // listener port — Contact: <sip:user@contactIP:contactPort>; derived from SIP_LISTEN_ADDR
+	user        string // SIP_USER
+	password    string // SIP_PASSWORD
+	expires     int    // SIP_EXPIRES default 120 — requested expiry; server may grant different value
+	log         zerolog.Logger
+	registered  atomic.Bool // true after successful registration; false after unregister or failure
+	metrics     *observability.Metrics
 	mu              sync.Mutex    // serializes concurrent doRegister calls (OPTS-04)
 	optionsInterval time.Duration // SIPOptionsInterval from config
 }
@@ -45,6 +46,7 @@ func NewRegistrar(client *sipgo.Client, cfg config.Config, log zerolog.Logger, m
 		registrar:       cfg.SIPRegistrar,
 		domain:          cfg.SIPDomain,
 		contactIP:       cfg.SDPContactIP,
+		contactPort:     cfg.ListenPort(),
 		user:            cfg.SIPUser,
 		password:        cfg.SIPPassword,
 		expires:         cfg.SIPExpires,
@@ -82,7 +84,7 @@ func (r *Registrar) Register(ctx context.Context) error {
 // doRegister performs a single REGISTER → 401 challenge → DoDigestAuth cycle.
 // Returns the server-granted Expires duration from the 200 OK, or error.
 // IMPORTANT: doRegister is called directly by reregisterLoop (not Register) to avoid
-// goroutine leak (goroutine nesting anti-pattern — see RESEARCH.md Pitfall 6).
+// goroutine leak (goroutine nesting anti-pattern).
 func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 	if r.client == nil {
 		return 0, fmt.Errorf("REGISTER send: sipgo client is nil")
@@ -102,11 +104,13 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 	req.AppendHeader(fromH)
 	req.AppendHeader(&siplib.ToHeader{Address: aor})
 
-	// Contact header tells sipgate where to deliver inbound INVITEs (sip:user@ourIP:5060).
+	// Contact header tells sipgate where to deliver inbound INVITEs (sip:user@ourIP:listenPort).
 	// ClientRequestRegisterBuild does NOT add a Contact header — without it sipgate acknowledges
 	// the REGISTER with 200 OK but creates no binding, so inbound calls fail with 480.
+	// Port comes from SIP_LISTEN_ADDR (default 5060) so a non-standard listen port still
+	// produces a coherent Contact: that sipgate can reach.
 	req.AppendHeader(siplib.NewHeader("Contact",
-		fmt.Sprintf("<sip:%s@%s:5060>", r.user, r.contactIP)))
+		fmt.Sprintf("<sip:%s@%s:%d>", r.user, r.contactIP, r.contactPort)))
 
 	res, err := r.client.Do(ctx, req, sipgo.ClientRequestRegisterBuild)
 	if err != nil {
@@ -146,7 +150,7 @@ func (r *Registrar) doRegister(ctx context.Context) (time.Duration, error) {
 }
 
 // reregisterLoop re-registers at 75% of the server-granted interval (SIP-02).
-// 75% matches diago's calcRetry ratio (see RESEARCH.md source: diago register_transaction.go).
+// 75% matches diago's calcRetry ratio (diago register_transaction.go).
 // Uses doRegister (not Register) to prevent goroutine nesting (Pitfall 6).
 func (r *Registrar) reregisterLoop(ctx context.Context, expiry time.Duration) {
 	retryIn := time.Duration(float64(expiry) * 0.75)
@@ -197,7 +201,7 @@ func isOptionsAuth(res *siplib.Response) bool {
 
 // applyOptionsResponse computes the new consecutiveFailures count and whether doRegister
 // should be triggered, given the current count and OPTIONS response. Pure function — no side effects.
-// threshold is hardcoded to 2 per CONTEXT.md locked decision.
+// threshold is hardcoded to 2 by design.
 func applyOptionsResponse(consecutiveFailures int, res *siplib.Response, err error) (newCount int, triggerRegister bool) {
 	const threshold = 2
 	if isOptionsFailure(res, err) {
@@ -256,7 +260,7 @@ func (r *Registrar) optionsKeepaliveLoop(ctx context.Context, interval time.Dura
 			failure := isOptionsFailure(res, err)
 			auth := isOptionsAuth(res)
 
-			// Always increment metric for failures (CONTEXT.md: increment on every failure)
+			// Always increment metric for failures (one increment per failure)
 			if failure && r.metrics != nil {
 				r.metrics.SIPOptionsFailures.Inc()
 			}
@@ -285,7 +289,8 @@ func (r *Registrar) optionsKeepaliveLoop(ctx context.Context, interval time.Dura
 }
 
 // Unregister sends REGISTER with Expires: 0 (de-registration per RFC 3261 §10.2.2).
-// Called on graceful shutdown from reregisterLoop, and will be called from Phase 8 (LCY-01).
+// Called on graceful shutdown from reregisterLoop, and from the lifecycle
+// shutdown path.
 func (r *Registrar) Unregister(ctx context.Context) error {
 	registrarURI := siplib.Uri{Host: r.registrar, Port: 5060}
 	req := siplib.NewRequest(siplib.REGISTER, registrarURI)

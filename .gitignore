@@ -8,3 +8,7 @@ go/.env
 *.pcap
 *.cap
 .planning/
+
+# Built Go binaries (produced by `go build ./cmd/...` without -o)
+/go/lint-metrics
+/go/sipgate-sip-stream-bridge

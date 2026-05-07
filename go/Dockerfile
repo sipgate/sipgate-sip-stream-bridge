@@ -26,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 FROM scratch
 
 # Copy CA certificates from the Alpine builder stage.
-# REQUIRED for Phase 6: wss:// WebSocket TLS connections will fail without this.
+# REQUIRED: wss:// WebSocket TLS connections will fail without this.
 # FROM scratch has no /etc/ssl/ directory — we must copy it explicitly.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
@@ -36,7 +36,7 @@ COPY --from=builder /sipgate-sip-stream-bridge /sipgate-sip-stream-bridge
 # SIP ports — documented for reference; not required with network_mode: host
 # Note: DO NOT EXPOSE the RTP port range (10000-10099/udp) here —
 # large port ranges stall Docker Desktop's port proxy on macOS.
-# RTP EXPOSE is added in Phase 6 with the macOS override pattern.
+# RTP EXPOSE uses the macOS override pattern.
 EXPOSE 5060/udp
 EXPOSE 5060/tcp
 

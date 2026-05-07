@@ -1,0 +1,279 @@
+[
+  {
+    "name": "fixture_a_basic",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://mycompany.com/myapp.php?foo=1&bar=2",
+    "params": {
+      "CallSid": [
+        "CA1234567890ABCDE"
+      ],
+      "Digits": [
+        "1234"
+      ],
+      "From": [
+        "+14158675309"
+      ],
+      "To": [
+        "+18005551212"
+      ],
+      "Caller": [
+        "+14158675309"
+      ]
+    },
+    "expected_signature": "RSOYDt4T1cUTdK1PDd93/VVr8B8=",
+    "notes": "Canonical Twilio fixture from twilio-python tests/unit/test_request_validator.py — proves the basic single-value case end-to-end."
+  },
+  {
+    "name": "fixture_b_duplicate_values",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://mycompany.com/myapp.php?foo=1&bar=2",
+    "params": {
+      "Sid": [
+        "CA123"
+      ],
+      "SidAccount": [
+        "AC123"
+      ],
+      "Digits": [
+        "5678",
+        "1234",
+        "1234"
+      ]
+    },
+    "expected_signature": "IK+Dwps556ElfBT0I3Rgjkr1wJU=",
+    "notes": "Multi-value sort+dedupe per twilio-python compute_signature(): for value in sorted(set(values))."
+  },
+  {
+    "name": "fixture_empty_params",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/cb",
+    "params": {},
+    "expected_signature": "+xE6fKV5OcQGR58lHUAbQmwfuO8=",
+    "notes": "Empty params — signature is HMAC-SHA1 of the URL bytes only."
+  },
+  {
+    "name": "fixture_single_param",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/cb",
+    "params": {
+      "CallSid": [
+        "CA1234567890abcdef1234567890abcdef"
+      ]
+    },
+    "expected_signature": "mzs19xfskilsEAmT2aZMQxrLv64=",
+    "notes": "Single-param boundary case."
+  },
+  {
+    "name": "fixture_special_chars_ampersand",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/cb",
+    "params": {
+      "Body": [
+        "rock & roll"
+      ],
+      "Notes": [
+        "a&b&c"
+      ]
+    },
+    "expected_signature": "0LVvcMHwkEVVdjwy5teURFzgY1o=",
+    "notes": "Ampersand in value must not terminate parsing on the signing side."
+  },
+  {
+    "name": "fixture_special_chars_percent",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/cb",
+    "params": {
+      "From": [
+        "+1"
+      ],
+      "Body": [
+        "50%25 off"
+      ]
+    },
+    "expected_signature": "relSBUBTle/0icojYu6vmICT2E0=",
+    "notes": "Literal percent character in value — signer must not URL-decode."
+  },
+  {
+    "name": "fixture_special_chars_plus",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/cb",
+    "params": {
+      "From": [
+        "+4915123456789"
+      ],
+      "Body": [
+        "hello+world"
+      ]
+    },
+    "expected_signature": "RPmvJzz674XdYurPkoSZxwiOiWM=",
+    "notes": "Plus characters in values must be signed verbatim (NOT decoded to space)."
+  },
+  {
+    "name": "fixture_status_callback_completed",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/status",
+    "params": {
+      "CallSid": [
+        "CAdeadbeef00000000000000000000abcd"
+      ],
+      "AccountSid": [
+        "ACdeadbeef00000000000000000000abcd"
+      ],
+      "From": [
+        "+4915123456789"
+      ],
+      "To": [
+        "+4930111222333"
+      ],
+      "Direction": [
+        "inbound"
+      ],
+      "ApiVersion": [
+        "2010-04-01"
+      ],
+      "CallStatus": [
+        "completed"
+      ],
+      "Timestamp": [
+        "Mon, 01 May 2026 18:00:00 +0000"
+      ],
+      "SequenceNumber": [
+        "3"
+      ],
+      "CallbackSource": [
+        "call-progress-events"
+      ],
+      "CallDuration": [
+        "42"
+      ],
+      "Duration": [
+        "1"
+      ],
+      "SipResponseCode": [
+        "200"
+      ],
+      "Caller": [
+        "+4915123456789"
+      ],
+      "Called": [
+        "+4930111222333"
+      ]
+    },
+    "expected_signature": "4f3RC3ew0KDtE+5ewc92V07QPag=",
+    "notes": "Realistic terminal-event payload (CallStatus=completed) with all phase-16 §3.3 form fields, including CallDuration, Duration, SipResponseCode."
+  },
+  {
+    "name": "fixture_status_callback_initiated",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/status",
+    "params": {
+      "CallSid": [
+        "CAdeadbeef00000000000000000000abcd"
+      ],
+      "AccountSid": [
+        "ACdeadbeef00000000000000000000abcd"
+      ],
+      "From": [
+        "+4915123456789"
+      ],
+      "To": [
+        "+4930111222333"
+      ],
+      "Direction": [
+        "inbound"
+      ],
+      "ApiVersion": [
+        "2010-04-01"
+      ],
+      "CallStatus": [
+        "queued"
+      ],
+      "Timestamp": [
+        "Mon, 01 May 2026 18:00:00 +0000"
+      ],
+      "SequenceNumber": [
+        "0"
+      ],
+      "CallbackSource": [
+        "call-progress-events"
+      ],
+      "Caller": [
+        "+4915123456789"
+      ],
+      "Called": [
+        "+4930111222333"
+      ]
+    },
+    "expected_signature": "A0PijkhfvctCGPEf3SmLRESHnHM=",
+    "notes": "Non-terminal (initiated/queued) payload — OMITS CallDuration/Duration/SipResponseCode per phase-16 §3.3."
+  },
+  {
+    "name": "fixture_url_with_port",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example:8443/cb",
+    "params": {
+      "CallSid": [
+        "CAabc"
+      ],
+      "From": [
+        "+1"
+      ]
+    },
+    "expected_signature": "Bn98bRviQ8twn59dPV0XR/MV5Dc=",
+    "notes": "URL with explicit :8443 — sign verbatim (do NOT strip port)."
+  },
+  {
+    "name": "fixture_url_with_query_string",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/cb?account=AC1&v=1",
+    "params": {
+      "CallSid": [
+        "CAabc"
+      ],
+      "From": [
+        "+1"
+      ]
+    },
+    "expected_signature": "oy3cOyulo7xZiIBHV699Jwitk1I=",
+    "notes": "URL has ?account=AC1&v=1 — query bytes are part of the signed URL prefix."
+  },
+  {
+    "name": "fixture_utf8_value",
+    "source_lib": "twilio-python",
+    "source_version": "9.5.x",
+    "auth_token": "12345",
+    "url": "https://customer.example/cb",
+    "params": {
+      "Caller": [
+        "Müller"
+      ],
+      "Greeting": [
+        "Grüß Gott"
+      ]
+    },
+    "expected_signature": "1u+8eedolvqsC8ybKmeUbdyKfrU=",
+    "notes": "UTF-8 byte-encode round-trip — German umlauts in values."
+  }
+]

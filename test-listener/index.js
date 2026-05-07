@@ -102,12 +102,15 @@ wss.on('connection', (ws, req) => {
         callInfo = msg.start;
         if (msg.start.mediaFormat) mediaFormat = msg.start.mediaFormat;
         console.log('[listener] ← start');
-        console.log('           streamSid:', msg.start.streamSid);
-        console.log('           callSid  :', msg.start.callSid);
-        console.log('           From     :', msg.start.customParameters?.From);
-        console.log('           To       :', msg.start.customParameters?.To);
-        console.log('           sipCallId:', msg.start.customParameters?.sipCallId);
-        console.log('           format   :', JSON.stringify(msg.start.mediaFormat));
+        console.log('           streamSid :', msg.start.streamSid);
+        console.log('           callSid   :', msg.start.callSid);
+        console.log('           accountSid:', msg.start.accountSid);
+        console.log('           cp.CallSid   :', msg.start.customParameters?.CallSid);
+        console.log('           cp.AccountSid:', msg.start.customParameters?.AccountSid);
+        console.log('           From      :', msg.start.customParameters?.From);
+        console.log('           To        :', msg.start.customParameters?.To);
+        console.log('           sipCallId :', msg.start.customParameters?.sipCallId);
+        console.log('           format    :', JSON.stringify(msg.start.mediaFormat));
 
         if (MODE === 'tone') {
           const sendTone = () => {
@@ -169,6 +172,8 @@ wss.on('connection', (ws, req) => {
 
       case 'stop':
         console.log(`[listener] ← stop   (received ${mediaCount} media packets total)`);
+        console.log('           callSid   :', msg.stop?.callSid);
+        console.log('           accountSid:', msg.stop?.accountSid);
         mediaCount = 0;
         callInfo = null;
         lastMediaAt = 0;

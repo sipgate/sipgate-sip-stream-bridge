@@ -1,7 +1,7 @@
 # docker-compose.yml — Linux production configuration (v2.0 Go binary)
 #
 # network_mode: host gives the container direct access to the host network stack.
-# This is REQUIRED for RTP media (Phase 6): Docker's port-proxy adds ~10ms jitter
+# This is REQUIRED for RTP media: Docker's port-proxy adds ~10ms jitter
 # to every UDP packet and prevents the container from binding to ephemeral UDP ports.
 #
 # macOS / Windows: network_mode: host is silently ignored by Docker Desktop.

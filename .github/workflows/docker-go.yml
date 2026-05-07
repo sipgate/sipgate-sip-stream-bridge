@@ -22,10 +22,61 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          # Pin to go.mod's `go 1.26` directive. cmd/lint-metrics imports
+          # golang.org/x/tools/go/packages which requires 1.24+; explicit
+          # pinning here aligns the runner toolchain with the module
+          # declaration and prevents future drift.
+          go-version: '1.26'
 
       - name: Run tests
         run: cd go && go test ./...
+
+      - name: Lint metrics cardinality + secret-mask discipline
+        # Build-blocking CI gate. Exits 1 when any *Vec.WithLabelValues
+        # call site violates the // metrics:allowlist contract OR any
+        # zerolog Info+ Str("from"|"to"|"url"|"caller"|"callee"|
+        # "to_uri"|"from_uri"|"target_url"|"callback_url", _) emit lacks
+        # a // metrics:url-allowed opt-out (phone-number / URL
+        # debug-only convention).
+        # Local-equivalent: `make lint-metrics`.
+        run: cd go && go run ./cmd/lint-metrics ./...
+
+      - name: Install sipp binary (e2e harness)
+        # sip-tester is the Debian/Ubuntu apt package name for the sipp
+        # SIP scenario tool used by the e2e harness (8 XML scenarios
+        # under tests/e2e/sipp/). Without this step, run-sipp.sh
+        # skip-passes silently. Installing it explicitly turns the e2e
+        # step into a true build-blocking gate.
+        run: sudo apt-get update && sudo apt-get install -y sip-tester
+
+      - name: E2E test suite — Go integration + 8 sipp scenarios (build-blocking)
+        # Build-blocking CI gate for the Go integration tests under
+        # go/test/e2e/ AND all 8 sipp XML scenarios (a inbound-default-
+        # streaming, b-f inbound-rest-dial-{answer,busy,no-answer,cancel,
+        # codec-mismatch}, g rest-hangup-mid-stream, h status-callback-
+        # flapping-host). The harness brings up a test-registrar stub, a
+        # stub WebSocket target, a flapping HTTP stub for the
+        # operator-trusted default StatusCallback, and per-scenario sipp
+        # UAS stubs for outbound INVITE acceptance. Local-equivalent:
+        # `make e2e`.
+        run: make e2e
+
+      - name: Image size budget (≤6.0 MB)
+        # Build-blocking CI gate. Asserts the runtime Docker image
+        # (multi-stage; FROM scratch runtime) stays under the
+        # 6,000,000-byte budget. A static sipgo + gobwas/ws +
+        # pion/{rtp,srtp,sdp} + prometheus + zerolog OCI layer cannot
+        # plausibly fit under 1 MB even with `-ldflags="-s -w" -trimpath`;
+        # the 6 MB limit gives ~10% margin against the measured 5.46 MB
+        # baseline and still flips on a profiler addition or new direct
+        # dependency >100 KB.
+        #
+        # Failure pointer: docs/operator/IMAGE_SIZE.md (re-budgeting
+        # procedure: justify dependency / toolchain change; bump
+        # CHANGELOG; update Makefile LIMIT constant; update
+        # IMAGE_SIZE.md).
+        # Local-equivalent: `make image-size-check`.
+        run: make image-size-check
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
