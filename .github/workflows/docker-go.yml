@@ -79,15 +79,13 @@ jobs:
         run: make image-size-check
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        # Action @v7 is the first major that recognises golangci-lint v2.x
+        # binaries (built with newer Go toolchains). Action @v6 + `version:
+        # latest` still falls back to v1.64.8 (built with Go 1.24) which
+        # refuses to lint a project targeting `go 1.26`.
+        uses: golangci/golangci-lint-action@v7
         with:
           working-directory: go
-          # Pin golangci-lint to `latest` so the binary is built with a Go
-          # toolchain at least as new as the project's `go 1.26` directive.
-          # The action's default (v1.64.8 at action @v6) is built with
-          # Go 1.24 and refuses to load the config with "Go language
-          # version (go1.24) used to build golangci-lint is lower than
-          # the targeted Go version (1.26)".
           version: latest
           args: --enable errcheck,govet,staticcheck,unused
 
