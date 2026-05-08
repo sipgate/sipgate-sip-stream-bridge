@@ -82,6 +82,13 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           working-directory: go
+          # Pin golangci-lint to `latest` so the binary is built with a Go
+          # toolchain at least as new as the project's `go 1.26` directive.
+          # The action's default (v1.64.8 at action @v6) is built with
+          # Go 1.24 and refuses to load the config with "Go language
+          # version (go1.24) used to build golangci-lint is lower than
+          # the targeted Go version (1.26)".
+          version: latest
           args: --enable errcheck,govet,staticcheck,unused
 
   build-and-push:
