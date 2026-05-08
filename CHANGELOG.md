@@ -11,7 +11,17 @@ derived view; if the two diverge, the CHANGELOG wins.
 
 ## [Unreleased]
 
-(empty — v3.0.0 just shipped)
+### Fixed
+
+- `make image-size-check` now measures the gzip-compressed saved
+  tarball (`docker save … | gzip -9 | wc -c`). The previous raw
+  `wc -c` measurement reported wildly different numbers depending on
+  the daemon — Docker Desktop on macOS returns layers already
+  gzipped inside the tarball (~5.5 MB), while Linux Docker returns
+  them uncompressed (~13.5 MB) for the same image. The new metric
+  matches the registry-side compressed bytes that ghcr.io stores
+  and that K8s pulls at deploy time, and produces the same number
+  on macOS and Linux. The 6.0 MB budget is unchanged.
 
 ## [3.0.0] - 2026-05-XX
 

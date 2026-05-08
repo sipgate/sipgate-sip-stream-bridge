@@ -65,26 +65,32 @@ e2e:
 
 # image-size-check — runtime Docker image budget enforcer (≤6.0 MB).
 # Builds the multi-stage `FROM scratch` runtime image and asserts the
-# saved tarball stays under 6,000,000 bytes. The 6 MB limit gives ~10 %
-# margin against the measured ~5.5 MB baseline while still catching
-# material regressions (a profiler addition or new direct dependency
-# >100 KB would flip the gate). A static sipgo + gobwas/ws +
-# pion/{rtp,srtp,sdp} + prometheus/client_golang + zerolog Go binary
-# cannot plausibly fit under 1 MB even with `-ldflags="-s -w" -trimpath`.
+# gzip-compressed saved tarball stays under 6,000,000 bytes. The 6 MB
+# limit gives ~10 % margin against the measured ~5.5 MB baseline while
+# still catching material regressions (a profiler addition or a new
+# direct dependency >100 KB would flip the gate).
+#
+# Why `docker save | gzip -9 | wc -c`: `docker save` alone produces
+# different byte counts on different daemons — Docker Desktop on macOS
+# returns layers already gzipped (≈ 5.5 MB) while a Linux daemon
+# returns them uncompressed (≈ 13.5 MB) for the same image. Piping
+# through gzip -9 normalises the measurement to the registry-side
+# compressed bytes, which is what ghcr.io stores and what K8s pulls
+# at deploy time — meaningful, portable, and stable across platforms.
+#
+# A static sipgo + gobwas/ws + pion/{rtp,srtp,sdp} +
+# prometheus/client_golang + zerolog Go binary cannot plausibly fit
+# under 1 MB even with `-ldflags="-s -w" -trimpath`.
 #
 # Any future regression — single new direct dependency >100 KB or
 # toolchain bump — MUST trigger a re-budgeting review documented at
 # docs/operator/IMAGE_SIZE.md.
-#
-# Local-equivalent recipe (without buildx): `docker build -t bridge
-# go/` then `docker save bridge | wc -c`. The Makefile target uses
-# buildx for CI parity with the docker/build-push-action workflow step.
 image-size-check:
 	docker buildx build --output type=image,push=false --load -t sipgate-bridge-sizecheck go/
-	@SIZE=$$(docker save sipgate-bridge-sizecheck | wc -c); \
+	@SIZE=$$(docker save sipgate-bridge-sizecheck | gzip -9 | wc -c); \
 	 LIMIT=6000000; \
-	 echo "image size: $$SIZE bytes (limit: $$LIMIT bytes / ~5.7 MB)"; \
+	 echo "image size (gzip): $$SIZE bytes (limit: $$LIMIT bytes / ~5.7 MB)"; \
 	 if [ $$SIZE -gt $$LIMIT ]; then \
-	   echo "FAIL: image exceeds 6.0 MB budget — see docs/operator/IMAGE_SIZE.md for re-budgeting procedure"; \
+	   echo "FAIL: image exceeds 6.0 MB compressed budget — see docs/operator/IMAGE_SIZE.md for re-budgeting procedure"; \
 	   exit 1; \
 	 fi

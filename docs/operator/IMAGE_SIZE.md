@@ -5,32 +5,48 @@ of the v3.0 hardening + release-gate documentation set. See
 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for the pre-merge
 checklist that ties this runbook to the CI gate.
 
-## Budget: 6.0 MB (6,000,000 bytes)
+## Budget: 6.0 MB (6,000,000 bytes) — gzip-compressed tarball
 
 The runtime Docker image (multi-stage build, `FROM scratch` runtime
 layer) MUST stay under 6,000,000 bytes when measured via `docker save
-... | wc -c`. This is enforced as a build-blocking CI gate by `make
-image-size-check`.
+... | gzip -9 | wc -c`. This is enforced as a build-blocking CI gate
+by `make image-size-check`.
 
 The integer 6,000,000 (decimal MB) is operator-readable rather than
-binary-MiB-aligned ("image size: NNN bytes (limit: 6000000)").
+binary-MiB-aligned.
+
+### Why gzip-compressed bytes are the canonical metric
+
+`docker save` alone produces different byte counts on different
+daemons:
+
+- **Docker Desktop on macOS** returns layers already gzipped inside
+  the tarball (≈ 5.5 MB for the v3.0 image).
+- **Linux Docker** returns layers uncompressed inside the tarball
+  (≈ 13.5 MB for the same image — same content, different packaging).
+
+Piping through `gzip -9` normalises the measurement to the
+registry-side compressed bytes, which is what ghcr.io stores and what
+K8s pulls at deploy time. This metric is meaningful (matches
+operator-visible bandwidth and registry-storage cost), portable
+(same number regardless of daemon), and stable (no false positives
+from daemon-format quirks).
 
 ## v3.0 budget rationale (6.0 MB)
 
-On 2026-05-06 the built v3.0 image measured **5,466,112 bytes
-(~5.2 MB)**. The 6,000,000-byte budget gives ~10 % margin against this
-measurement while staying tight enough to catch material regressions
-(a profiler addition or a new direct dependency >100 KB would still
-flip the gate).
+On 2026-05-06 the built v3.0 image measured **5,455,901 bytes
+(~5.2 MB)** via `docker save ... | gzip -9 | wc -c`. The 6,000,000-byte
+budget gives ~10 % margin against this measurement while staying
+tight enough to catch material regressions (a profiler addition or a
+new direct dependency >100 KB would still flip the gate).
 
 Forensic breakdown of the v3.0 measurement:
 
 - Stripped, trimmed binary (`go build -ldflags="-s -w" -trimpath`):
   ~13.5 MB.
-- OCI layer-blob in saved tarball: 5,323,680 bytes (~2.5×
-  compression).
-- Total saved tarball (binary layer + CA cert layer + manifests):
-  5,466,112 bytes.
+- gzip-compressed saved tarball (binary layer + CA cert layer +
+  manifests): 5,455,901 bytes (~2.5× effective compression of the
+  binary content).
 
 A static sipgo + gobwas/ws + pion/{rtp,srtp,sdp} +
 prometheus/client_golang + zerolog Go binary cannot plausibly produce
@@ -56,14 +72,14 @@ Expected output (image fits):
 ```
 docker buildx build --output type=image,push=false --load -t sipgate-bridge-sizecheck go/
 ... (build output) ...
-image size: 5466112 bytes (limit: 6000000 bytes / ~5.7 MB)
+image size (gzip): 5455901 bytes (limit: 6000000 bytes / ~5.7 MB)
 ```
 
 Failure output (image exceeds budget):
 
 ```
-image size: 6234567 bytes (limit: 6000000 bytes / ~5.7 MB)
-FAIL: image exceeds 6.0 MB budget — see docs/operator/IMAGE_SIZE.md for re-budgeting procedure
+image size (gzip): 6234567 bytes (limit: 6000000 bytes / ~5.7 MB)
+FAIL: image exceeds 6.0 MB compressed budget — see docs/operator/IMAGE_SIZE.md for re-budgeting procedure
 make: *** [image-size-check] Error 1
 ```
 
@@ -72,7 +88,7 @@ make: *** [image-size-check] Error 1
 ```bash
 cd go
 docker buildx build --output type=image,push=false --load -t sipgate-bridge-sizecheck .
-docker save sipgate-bridge-sizecheck | wc -c
+docker save sipgate-bridge-sizecheck | gzip -9 | wc -c
 # Result MUST be ≤ 6000000
 ```
 
