@@ -507,7 +507,7 @@ func (c *StatusClient) deliverOnce(job *callbackJob) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// Drain body so the connection can be returned to the pool.
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return resp.StatusCode, nil

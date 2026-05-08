@@ -59,9 +59,8 @@ func TestForwarder_Cardinality_OutcomeAlwaysBucketed(t *testing.T) {
 		// Direct invocation of the unexported chokepoint. opts/callerSid
 		// zero-value: emitDialEvent is nil-safe and short-circuits on
 		// opts.StatusCallback=="" — this exercises ONLY the metric-emit
-		// path the regression covers. The `outcome` arg deliberately
-		// passes the raw status (mirrors the 9-of-11 production callers).
-		f.recordFailure(errors.New("regression: "+rawStatus), time.Now(), DialOpts{}, "", result, rawStatus)
+		// path the regression covers.
+		f.recordFailure(errors.New("regression: "+rawStatus), time.Now(), DialOpts{}, "", result)
 	}
 
 	families, err := m.Registry.Gather()

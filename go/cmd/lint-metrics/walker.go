@@ -168,7 +168,7 @@ func (w *Walker) PrintDiagnostics(out io.Writer) {
 		return a.Column < b.Column
 	})
 	for _, d := range w.diagnostics {
-		fmt.Fprintln(out, d)
+		_, _ = fmt.Fprintln(out, d)
 	}
 }
 

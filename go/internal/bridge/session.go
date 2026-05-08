@@ -342,7 +342,7 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 		_ = leg.dlg.Bye(context.Background())
 		return
 	}
-	defer rtpConn.Close()
+	defer func() { _ = rtpConn.Close() }()
 
 	// Build SRTP contexts when SRTP was negotiated (localSRTPKey != nil).
 	// decCtx uses the remote key to decrypt inbound packets; encCtx uses the local key to encrypt outbound.
@@ -401,7 +401,7 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 		// will eventually cancel sessionCtx via Terminate().
 		if s.streamClosed.Load() {
 			<-sessionCtx.Done()
-			rtpConn.Close()
+			_ = rtpConn.Close()
 			s.wg.Wait()
 			// No sendStop — WS conn is already closed by CloseStream.
 			s.markTerminated("completed")
@@ -432,11 +432,11 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 			//   6. wsConn.Close() → explicit close of the current connection
 			_ = wsConn.SetReadDeadline(time.Now())
 			wsWg.Wait()
-			rtpConn.Close() // unblock rtpReader
-			s.wg.Wait()     // drain rtpReader + rtpPacer
+			_ = rtpConn.Close() // unblock rtpReader
+			s.wg.Wait()         // drain rtpReader + rtpPacer
 			if !s.streamClosed.Load() {
 				_ = sendStop(wsConn, s.streamSid, s.callSid, s.accountSid) // best-effort
-				wsConn.Close()
+				_ = wsConn.Close()
 			}
 			// Stamp endTime + termReason on the natural-completion path.
 			// StartSession's defer chain reads these into the
@@ -462,8 +462,8 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 			// If CloseStream fired concurrently with the WS error, suppress
 			// the reconnect and park instead.
 			_ = wsConn.SetReadDeadline(time.Now())
-			wsConn.Close() // causes wsPacer's next writeJSON to fail → exits
-			wsWg.Wait()    // wait for BOTH WS goroutines to exit before reconnecting
+			_ = wsConn.Close() // causes wsPacer's next writeJSON to fail → exits
+			wsWg.Wait()        // wait for BOTH WS goroutines to exit before reconnecting
 
 			if s.streamClosed.Load() {
 				// Privacy Gate took precedence — don't reconnect.
@@ -479,7 +479,7 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 					s.log.Error().Str(observability.FieldSIPCallID, s.callID).Msg("WS reconnect budget exhausted — sending BYE")
 					_ = leg.dlg.Bye(context.Background())
 					s.cancel()
-					rtpConn.Close()
+					_ = rtpConn.Close()
 					s.wg.Wait()
 					return
 				}
@@ -487,7 +487,7 @@ func (s *CallSession) run(ctx context.Context, initialWsConn net.Conn) {
 				// WSR-02: re-send handshake on every reconnect before relaunching audio.
 				if err := s.handshake(newConn); err != nil {
 					s.log.Error().Err(err).Str(observability.FieldSIPCallID, s.callID).Msg("reconnect handshake failed — retrying")
-					newConn.Close()
+					_ = newConn.Close()
 					continue // retry reconnect from the top of this inner loop
 				}
 				break // handshake succeeded
@@ -708,10 +708,10 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn, srtpD
 			}
 			// RFC 4733 deduplication by RTP timestamp:
 			// Sender retransmits End=1 packet 3x with the SAME timestamp. Drop retransmissions.
-			if pkt.Header.Timestamp == leg.lastDtmfTS {
+			if pkt.Timestamp == leg.lastDtmfTS {
 				continue
 			}
-			leg.lastDtmfTS = pkt.Header.Timestamp
+			leg.lastDtmfTS = pkt.Timestamp
 			select {
 			case s.dtmfQueue <- digit:
 			default:

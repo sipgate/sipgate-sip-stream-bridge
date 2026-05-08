@@ -41,13 +41,13 @@ func NewAgent(cfg config.Config, log zerolog.Logger) (*Agent, error) {
 
 	srv, err := sipgo.NewServer(ua, sipgo.WithServerLogger(sipSlogLogger))
 	if err != nil {
-		ua.Close()
+		_ = ua.Close()
 		return nil, fmt.Errorf("create sipgo Server: %w", err)
 	}
 
 	cli, err := sipgo.NewClient(ua, sipgo.WithClientLogger(sipSlogLogger))
 	if err != nil {
-		ua.Close()
+		_ = ua.Close()
 		return nil, fmt.Errorf("create sipgo Client: %w", err)
 	}
 

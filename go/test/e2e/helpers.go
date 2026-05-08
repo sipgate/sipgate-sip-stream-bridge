@@ -34,7 +34,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -94,7 +93,7 @@ func newWSCaptureServer(_ testing.TB) *wsCaptureServer {
 			return
 		}
 		go func() {
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			for {
 				payload, op, err := wsutil.ReadClientData(conn)
 				if err != nil {
@@ -373,25 +372,6 @@ func goroutineBaselineDelta(_ *testing.T, settle time.Duration, fn func()) (int,
 	return baseline, post
 }
 
-// collectJSONLogLines splits buf on '\n', skips empty lines, and parses
-// each remaining line as JSON. Lifted verbatim from
-// observability/correlation_test.go's parseLogLines pattern.
-func collectJSONLogLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
-	t.Helper()
-	var lines []map[string]any
-	for _, raw := range bytes.Split(buf.Bytes(), []byte("\n")) {
-		if len(bytes.TrimSpace(raw)) == 0 {
-			continue
-		}
-		var m map[string]any
-		if err := json.Unmarshal(raw, &m); err != nil {
-			t.Fatalf("collectJSONLogLines: parse %q: %v", string(raw), err)
-		}
-		lines = append(lines, m)
-	}
-	return lines
-}
-
 // ── bridgeUnderTest interface + implementations ─────────────────────────────
 
 // bridgeUnderTest is the common surface implemented by both bring-up modes.
@@ -560,45 +540,3 @@ func callSidFor(i int) string {
 	return fmt.Sprintf("CAe2e%029d", i)
 }
 
-// dialForwardCallBuilder synthesises a dual-leg dial-forward call
-// against an inProcessBridge: registers a dual-leg test session with
-// per-leg byeFunc closures wired into the sipDownstreamStub's BYE
-// counter; emits a synthesised WS `start` event to the wsCaptureServer;
-// returns the CallSid. Tests then drive the call lifecycle through the
-// session's Terminate or via DrainAll on the manager.
-func dialForwardCallBuilder(t *testing.T, br bridgeUnderTest, i int) string {
-	t.Helper()
-	callSid := callSidFor(i)
-	cm := br.CallManager()
-	stub := br.StubDownstream()
-	bye0Counter := stub.ByeCounterFor(callSid)
-	bye1Counter := stub.ByeCounterFor(callSid)
-	sess := bridge.NewDualLegTestSessionInManager(
-		cm, callSid, br.AccountSid(),
-		func(_ context.Context) error { bye0Counter.Add(1); return nil },
-		func(_ context.Context) error { bye1Counter.Add(1); return nil },
-	)
-	_ = sess
-	// Emit a synthesised WS start event — represents the moment the
-	// per-call WS connection is open and the bridge is streaming to the
-	// subscriber.
-	br.WSCapture().RecordEvent(callSid, "start", time.Now())
-	return callSid
-}
-
-// simpleCallBuilder synthesises a single-leg streaming call (no <Dial>
-// forward) against an inProcessBridge. Used by the goroutine-leak test —
-// the simplest possible call shape that still exercises the
-// CallManager registration + cleanup paths.
-func simpleCallBuilder(t *testing.T, br bridgeUnderTest, i int) string {
-	t.Helper()
-	callSid := callSidFor(i)
-	cm := br.CallManager()
-	// Use AddSessionInStateForTest (single-leg, no byeFunc) — represents
-	// the streaming call shape that simply ends naturally on customer
-	// hang-up. Cleanup happens via the markTerminated path below.
-	sess := bridge.AddSessionInStateForTest(cm, "test-callid-"+callSid, callSid, bridge.StateStreaming)
-	bridge.MarkTestTerminated(sess, "completed")
-	br.WSCapture().RecordEvent(callSid, "start", time.Now())
-	return callSid
-}

@@ -447,34 +447,6 @@ func (f *Forwarder) emitDialCompleted(opts DialOpts, callerSid, dialCallSid, tar
 	f.emitDialEvent(opts, "completed", "completed", callerSid, dialCallSid, target, log)
 }
 
-// emitDialBusy emits the <Dial>-leg "busy" terminal event (CallStatus=busy)
-// when the callee returns 486 Busy Here.
-func (f *Forwarder) emitDialBusy(opts DialOpts, callerSid, dialCallSid, target string, log zerolog.Logger) {
-	f.emitDialEvent(opts, "busy", "busy", callerSid, dialCallSid, target, log)
-}
-
-// emitDialFailed emits the <Dial>-leg "failed" terminal event
-// (CallStatus=failed) on 5xx, codec-mismatch, OnAnswered failure, generic
-// dial errors, and any other failure not classified as busy/no-answer/
-// canceled.
-func (f *Forwarder) emitDialFailed(opts DialOpts, callerSid, dialCallSid, target string, log zerolog.Logger) {
-	f.emitDialEvent(opts, "failed", "failed", callerSid, dialCallSid, target, log)
-}
-
-// emitDialNoAnswer emits the <Dial>-leg "no-answer" terminal event
-// (CallStatus=no-answer) on 408 Request Timeout, 480 Temporarily
-// Unavailable, or ring-timeout (ctx.DeadlineExceeded).
-func (f *Forwarder) emitDialNoAnswer(opts DialOpts, callerSid, dialCallSid, target string, log zerolog.Logger) {
-	f.emitDialEvent(opts, "no-answer", "no-answer", callerSid, dialCallSid, target, log)
-}
-
-// emitDialCanceled emits the <Dial>-leg "canceled" terminal event
-// (CallStatus=canceled) on 487 Request Terminated or context.Canceled
-// (caller hung up before the callee answered).
-func (f *Forwarder) emitDialCanceled(opts DialOpts, callerSid, dialCallSid, target string, log zerolog.Logger) {
-	f.emitDialEvent(opts, "canceled", "canceled", callerSid, dialCallSid, target, log)
-}
-
 // metrics:bucketer
 //
 // dialTerminalEventName maps a Forwarder DialResult.Status value onto the
@@ -633,9 +605,7 @@ func resolveDisplayCallerID(opts DialOpts, callerFrom, defaultCID string) string
 func normaliseTrunkCallerID(s, countryCode string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "+")
-	if strings.HasPrefix(s, "00") {
-		s = s[2:]
-	}
+	s = strings.TrimPrefix(s, "00")
 	cc := strings.TrimSpace(countryCode)
 	if cc != "" && len(s) > 1 && s[0] == '0' {
 		s = cc + s[1:]
@@ -798,7 +768,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 	// (sipgate) can still present a meaningful Caller-ID to Phone B.
 	callerID, err := resolveCallerID(opts, opts.CallerFrom, f.cfg.DialDefaultCallerID, f.cfg.SIPUser)
 	if err != nil {
-		f.recordFailure(err, startedAt, opts, callerSid, result, "")
+		f.recordFailure(err, startedAt, opts, callerSid, result)
 		return result, err
 	}
 
@@ -807,7 +777,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 	offerSDP, _, err := callee.BuildSDPOffer()
 	if err != nil {
 		wrapped := fmt.Errorf("forwarder: build SDP offer: %w", err)
-		f.recordFailure(wrapped, startedAt, opts, callerSid, result, "")
+		f.recordFailure(wrapped, startedAt, opts, callerSid, result)
 		return result, wrapped
 	}
 
@@ -954,7 +924,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 		}()
 	}
 	if dlg != nil {
-		defer dlg.Close()
+		defer func() { _ = dlg.Close() }()
 	}
 
 	// (6) Map sipgo error / final response → DialResult.
@@ -965,22 +935,22 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 		switch {
 		case errors.As(dialErr, &dlgErr):
 			f.dispatchFinalResponse(dlgErr.Res, result)
-			f.recordFailure(fmt.Errorf("forwarder: dial: %w", dialErr), startedAt, opts, callerSid, result, result.Status)
+			f.recordFailure(fmt.Errorf("forwarder: dial: %w", dialErr), startedAt, opts, callerSid, result)
 			return result, fmt.Errorf("forwarder: dial: %w", dialErr)
 		case errors.Is(dialErr, context.DeadlineExceeded):
 			result.Status = "no-answer"
 			result.Reason = "no_answer"
-			f.recordFailure(dialErr, startedAt, opts, callerSid, result, result.Status)
+			f.recordFailure(dialErr, startedAt, opts, callerSid, result)
 			return result, fmt.Errorf("forwarder: ring timeout: %w", dialErr)
 		case errors.Is(dialErr, context.Canceled):
 			result.Status = "canceled"
 			result.Reason = "canceled"
-			f.recordFailure(dialErr, startedAt, opts, callerSid, result, result.Status)
+			f.recordFailure(dialErr, startedAt, opts, callerSid, result)
 			return result, fmt.Errorf("forwarder: dial canceled: %w", dialErr)
 		default:
 			result.Status = "failed"
 			result.Reason = "error"
-			f.recordFailure(dialErr, startedAt, opts, callerSid, result, result.Status)
+			f.recordFailure(dialErr, startedAt, opts, callerSid, result)
 			return result, fmt.Errorf("forwarder: dial: %w", dialErr)
 		}
 	}
@@ -992,7 +962,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 		err := errors.New("forwarder: dial succeeded but final response missing")
 		result.Status = "failed"
 		result.Reason = "error"
-		f.recordFailure(err, startedAt, opts, callerSid, result, result.Status)
+		f.recordFailure(err, startedAt, opts, callerSid, result)
 		return result, err
 	}
 	result.SIPFinalCode = int(resp.StatusCode)
@@ -1002,7 +972,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 		result.Status = "failed"
 		result.Reason = "error"
 		err := fmt.Errorf("forwarder: unexpected non-2xx final %d %s", resp.StatusCode, resp.Reason)
-		f.recordFailure(err, startedAt, opts, callerSid, result, result.Status)
+		f.recordFailure(err, startedAt, opts, callerSid, result)
 		return result, err
 	}
 
@@ -1019,7 +989,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 		result.Status = "failed"
 		result.Reason = "codec_mismatch"
 		wrapped := fmt.Errorf("forwarder: %w", err)
-		f.recordFailure(wrapped, startedAt, opts, callerSid, result, result.Status)
+		f.recordFailure(wrapped, startedAt, opts, callerSid, result)
 		return result, wrapped
 	}
 
@@ -1028,7 +998,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 		result.Status = "failed"
 		result.Reason = "error"
 		wrapped := fmt.Errorf("forwarder: ACK after 200 OK: %w", err)
-		f.recordFailure(wrapped, startedAt, opts, callerSid, result, result.Status)
+		f.recordFailure(wrapped, startedAt, opts, callerSid, result)
 		return result, wrapped
 	}
 
@@ -1046,7 +1016,7 @@ func (f *Forwarder) Dial(ctx context.Context, callerSid, target string, opts Dia
 		result.Status = "failed"
 		result.Reason = "error"
 		wrapped := fmt.Errorf("forwarder: OnAnswered: %w", err)
-		f.recordFailure(wrapped, startedAt, opts, callerSid, result, result.Status)
+		f.recordFailure(wrapped, startedAt, opts, callerSid, result)
 		return result, wrapped
 	}
 
@@ -1293,11 +1263,10 @@ func (f *Forwarder) dispatchFinalResponse(resp *siplib.Response, result *DialRes
 // non-blocking DrainAndClose). All callers thread these through from
 // Forwarder.Dial's local scope.
 //
-// bucketOutcome runs unconditionally inside this body — the outcome param
-// is preserved for callsite-stability but is re-bucketed before the
-// histogram emit. The allowlist {answered|no_answer|busy|error} is
-// enforced here, not at the callsites.
-func (f *Forwarder) recordFailure(err error, startedAt time.Time, opts DialOpts, callerSid string, result *DialResult, outcome string) {
+// bucketOutcome runs unconditionally inside this body. The allowlist
+// {answered|no_answer|busy|error} is enforced here, not at the
+// callsites — callers do not pass an outcome.
+func (f *Forwarder) recordFailure(err error, startedAt time.Time, opts DialOpts, callerSid string, result *DialResult) {
 	// Prefer the reason already set on result (dispatchFinalResponse / explicit
 	// callers populate it with SIP-final-code-aware buckets like
 	// caller_id_rejected, busy, no_answer, codec_mismatch). Only fall back to
@@ -1328,21 +1297,17 @@ func (f *Forwarder) recordFailure(err error, startedAt time.Time, opts DialOpts,
 	// back to a single bucketer, so an explicit opt-out is the cleanest
 	// gate.
 	f.metrics.ForwardFailedTotal.WithLabelValues(reason).Inc()
-	// Callers historically passed raw result.Status (bypassing
-	// bucketOutcome and emitting outcome={no-answer,canceled,failed} into
-	// the histogram). Bucket unconditionally at this single chokepoint so
-	// callers cannot regress the allowlist contract. The `outcome`
-	// parameter is preserved for callsite-stability but is re-bucketed
-	// here regardless of caller input. The allowlist
-	// {answered|no_answer|busy|error} is enforced here, not at the
-	// callsites.
-	outcome = bucketOutcome(result.Status)
-	// bucketOutcome (annotated with // metrics:bucketer below) is the
-	// single source for the outcome label — the assignment immediately
-	// above guarantees cardinality discipline regardless of caller input.
-	// The allowlist {answered|no_answer|busy|error} is enforced here, not
-	// at the callsites.
-	// metrics:dynamic-allowed outcome: bucketed unconditionally above via bucketOutcome(result.Status)
+	// Bucket unconditionally at this single chokepoint so callers cannot
+	// regress the allowlist contract — historically callers passed raw
+	// result.Status (bypassing bucketOutcome and emitting
+	// outcome={no-answer,canceled,failed} into the histogram). The
+	// allowlist {answered|no_answer|busy|error} is enforced here, not at
+	// the callsites.
+	// metrics:dynamic-allowed outcome: bucketed unconditionally below via bucketOutcome(result.Status)
+	outcome := bucketOutcome(result.Status)
+	// bucketOutcome (annotated with // metrics:bucketer) is the single
+	// source for the outcome label — the assignment above guarantees
+	// cardinality discipline regardless of caller input.
 	f.metrics.ForwardDurationSeconds.WithLabelValues(outcome).Observe(time.Since(startedAt).Seconds())
 
 	f.log.Warn().

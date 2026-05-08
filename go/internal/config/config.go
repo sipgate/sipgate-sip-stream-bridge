@@ -145,7 +145,7 @@ func Load() Config {
 	if cfg.SDPContactIP == "" {
 		if conn, err := net.Dial("udp", "8.8.8.8:80"); err == nil {
 			cfg.SDPContactIP = conn.LocalAddr().(*net.UDPAddr).IP.String()
-			conn.Close()
+			_ = conn.Close()
 		}
 	}
 

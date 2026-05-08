@@ -36,30 +36,30 @@ func TestMain(m *testing.M) {
 	switch os.Getenv("SUBPROC_SCENARIO") {
 	case "missing_sip_user":
 		// All vars set EXCEPT SIP_USER — Load() should exit(1)
-		os.Setenv("SIP_PASSWORD", "secret")
-		os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
-		os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
-		os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
-		os.Setenv("SDP_CONTACT_IP", "1.2.3.4")
+		_ = os.Setenv("SIP_PASSWORD", "secret")
+		_ = os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
+		_ = os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
+		_ = os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
+		_ = os.Setenv("SDP_CONTACT_IP", "1.2.3.4")
 		config.Load()
 		os.Exit(0) // should never reach — Load exits
 	case "inverted_rtp_ports":
-		os.Setenv("SIP_USER", "e12345p0")
-		os.Setenv("SIP_PASSWORD", "secret")
-		os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
-		os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
-		os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
-		os.Setenv("SDP_CONTACT_IP", "1.2.3.4")
-		os.Setenv("RTP_PORT_MIN", "20000")
-		os.Setenv("RTP_PORT_MAX", "10000")
+		_ = os.Setenv("SIP_USER", "e12345p0")
+		_ = os.Setenv("SIP_PASSWORD", "secret")
+		_ = os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
+		_ = os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
+		_ = os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
+		_ = os.Setenv("SDP_CONTACT_IP", "1.2.3.4")
+		_ = os.Setenv("RTP_PORT_MIN", "20000")
+		_ = os.Setenv("RTP_PORT_MAX", "10000")
 		config.Load()
 		os.Exit(0) // should never reach
 	case "missing_sdp_contact_ip":
-		os.Setenv("SIP_USER", "e12345p0")
-		os.Setenv("SIP_PASSWORD", "secret")
-		os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
-		os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
-		os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
+		_ = os.Setenv("SIP_USER", "e12345p0")
+		_ = os.Setenv("SIP_PASSWORD", "secret")
+		_ = os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
+		_ = os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
+		_ = os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
 		cfg := config.Load()
 		if cfg.SDPContactIP == "" {
 			fmt.Fprintln(os.Stderr, "SDPContactIP is empty after Load()")
@@ -68,27 +68,27 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	case "dial_ring_timeout_too_low":
 		setBaseEnv()
-		os.Setenv("DIAL_RING_TIMEOUT_S", "4")
+		_ = os.Setenv("DIAL_RING_TIMEOUT_S", "4")
 		config.Load()
 		os.Exit(0) // should never reach
 	case "dial_ring_timeout_too_high":
 		setBaseEnv()
-		os.Setenv("DIAL_RING_TIMEOUT_S", "601")
+		_ = os.Setenv("DIAL_RING_TIMEOUT_S", "601")
 		config.Load()
 		os.Exit(0) // should never reach
 	case "dial_max_per_session_zero":
 		setBaseEnv()
-		os.Setenv("DIAL_MAX_PER_SESSION", "0")
+		_ = os.Setenv("DIAL_MAX_PER_SESSION", "0")
 		config.Load()
 		os.Exit(0) // should never reach
 	case "dial_max_per_minute_zero":
 		setBaseEnv()
-		os.Setenv("DIAL_MAX_PER_MINUTE", "0")
+		_ = os.Setenv("DIAL_MAX_PER_MINUTE", "0")
 		config.Load()
 		os.Exit(0) // should never reach
 	case "dial_allowed_prefixes_invalid":
 		setBaseEnv()
-		os.Setenv("DIAL_ALLOWED_PREFIXES", "abc")
+		_ = os.Setenv("DIAL_ALLOWED_PREFIXES", "abc")
 		config.Load()
 		os.Exit(0) // should never reach
 	default:
@@ -99,12 +99,12 @@ func TestMain(m *testing.M) {
 // setBaseEnv sets all required env vars to plausible values (used by subprocess scenarios
 // that need a valid base config plus one bad DIAL_* var).
 func setBaseEnv() {
-	os.Setenv("SIP_USER", "e12345p0")
-	os.Setenv("SIP_PASSWORD", "secret")
-	os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
-	os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
-	os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
-	os.Setenv("SDP_CONTACT_IP", "1.2.3.4")
+	_ = os.Setenv("SIP_USER", "e12345p0")
+	_ = os.Setenv("SIP_PASSWORD", "secret")
+	_ = os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
+	_ = os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
+	_ = os.Setenv("WS_TARGET_URL", "wss://example.com/ws")
+	_ = os.Setenv("SDP_CONTACT_IP", "1.2.3.4")
 }
 
 func TestLoad_MissingSIPUser_ExitsNonZero(t *testing.T) {

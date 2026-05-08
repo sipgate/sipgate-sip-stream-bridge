@@ -79,7 +79,7 @@ func main() {
 		logger.Fatal().Err(err).Msg("failed to create SIP agent")
 		os.Exit(1)
 	}
-	defer agent.UA.Close()
+	defer func() { _ = agent.UA.Close() }()
 
 	// Start UDP and TCP SIP transport listeners BEFORE registering
 	// ListenAndServe blocks until ctx is cancelled — must run in goroutines

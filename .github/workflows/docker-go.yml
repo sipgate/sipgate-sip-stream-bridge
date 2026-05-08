@@ -79,15 +79,11 @@ jobs:
         run: make image-size-check
 
       - name: Run golangci-lint
-        # Action @v7 is the first major that recognises golangci-lint v2.x
-        # binaries (built with newer Go toolchains). Action @v6 + `version:
-        # latest` still falls back to v1.64.8 (built with Go 1.24) which
-        # refuses to lint a project targeting `go 1.26`.
-        uses: golangci/golangci-lint-action@v7
-        with:
-          working-directory: go
-          version: latest
-          args: --enable errcheck,govet,staticcheck,unused
+        # golangci-lint is pinned as a `tool` directive in go/go.mod
+        # (Go 1.24+ toolchain feature) so the version is the same here
+        # and on any developer's machine. Same `make lint` everywhere.
+        # Local-equivalent: `make lint`.
+        run: make lint
 
   build-and-push:
     runs-on: ubuntu-latest

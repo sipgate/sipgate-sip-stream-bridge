@@ -316,7 +316,7 @@ func (a *midCallAdapter) fireActionCallback(actionURL, method string, result *si
 		a.logger.Warn().Err(err).Str("action_url", actionURL).Msg("midCallAdapter: action callback POST failed (best-effort, signed)")
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 }
 

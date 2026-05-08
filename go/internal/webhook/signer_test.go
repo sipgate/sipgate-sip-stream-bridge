@@ -273,7 +273,7 @@ func TestSigningTransport_SetsHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	want := "RSOYDt4T1cUTdK1PDd93/VVr8B8="
 	if captured.sig != want {
@@ -303,7 +303,7 @@ func TestSigningTransport_ContextFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	// Empty POST body parses to url.Values{}; signing is over URL-only bytes.
 	want := Sign("t", srv.URL+"/cb", url.Values{})
 	if captured != want {
@@ -328,7 +328,7 @@ func TestSigningTransport_GetSignsURLOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	want := Sign("t", srv.URL+"/cb?x=1", nil)
 	if captured != want {
 		t.Errorf("got %q want %q", captured, want)
@@ -359,7 +359,7 @@ func TestSigningTransportFor_Exported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if captured == "" {
 		t.Error("X-Twilio-Signature header not injected — SigningTransportFor wrapper inert")
 	}

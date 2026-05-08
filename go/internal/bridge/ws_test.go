@@ -41,8 +41,8 @@ func newPipe(t *testing.T) (client, server net.Conn) {
 // wsutil.ReadClientData strips the WS frame on the server end, returning raw JSON.
 func TestSendConnected_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
-	defer client.Close()
-	defer server.Close()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -80,8 +80,8 @@ func TestSendConnected_JSONSchema(t *testing.T) {
 // and customParameters surfaces, customParameters.sipCallId=sipCallID.
 func TestSendStart_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
-	defer client.Close()
-	defer server.Close()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
 
 	req := mockSIPRequest("a", "b.com", "c", "d.com")
 	streamSid := "MZabc"
@@ -165,8 +165,8 @@ func TestSendStart_JSONSchema(t *testing.T) {
 // callSid + accountSid are populated on the Stop body.
 func TestSendStop_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
-	defer client.Close()
-	defer server.Close()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
 
 	streamSid := "MZabc"
 	callSid := "CAtest123"
@@ -254,8 +254,8 @@ func TestWsSignal_DoneClosedAfterSignal(t *testing.T) {
 // Reads two WS frames from the server side and verifies their event fields.
 func TestHandshake_SendsConnectedThenStart(t *testing.T) {
 	clientConn, serverConn := newPipe(t)
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
 
 	req := mockSIPRequest("caller", "sip.example.com", "callee", "sip.example.com")
 	s := &CallSession{
@@ -385,8 +385,8 @@ func TestParseTelephoneEvent_EndBit(t *testing.T) {
 // Verifies event="dtmf", streamSid, digit="5", track="inbound_track", sequenceNumber="42".
 func TestSendDTMF_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
-	defer client.Close()
-	defer server.Close()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
 
 	streamSid := "MZtest123"
 	digit := "5"
@@ -511,8 +511,8 @@ func TestDTMFForwarding_NewTimestamp(t *testing.T) {
 // Uses net.Pipe() round-trip via wsutil.WriteClientText / wsutil.ReadClientData.
 func TestSendMarkEcho_JSONSchema(t *testing.T) {
 	client, server := newPipe(t)
-	defer client.Close()
-	defer server.Close()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
 
 	streamSid := "MZtest123"
 	markName := "greeting-end"
@@ -556,8 +556,8 @@ func TestSendMarkEcho_JSONSchema(t *testing.T) {
 // This verifies the JSON layer and the readWSMessage wrapper exercise the same path used in production.
 func TestWriteJSON_RoundTrip(t *testing.T) {
 	server, client := newPipe(t)
-	defer server.Close()
-	defer client.Close()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = client.Close() }()
 
 	original := ConnectedEvent{
 		Event:    "connected",

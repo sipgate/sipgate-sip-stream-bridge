@@ -16,7 +16,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -41,7 +40,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("listen %s: %v", *addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	log.Printf("test-registrar stub listening on udp://%s (REGISTER → 200 OK)", *addr)
 
@@ -125,5 +124,5 @@ func build200(req string) string {
 		"",
 		"",
 	}
-	return fmt.Sprintf("%s", strings.Join(headers, "\r\n"))
+	return strings.Join(headers, "\r\n")
 }

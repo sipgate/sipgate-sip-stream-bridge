@@ -42,7 +42,7 @@ func BasicAuth(accountSid, authToken string) func(http.Handler) http.Handler {
 			// comparison branch-free at the assembly level.
 			userOK := subtle.ConstantTimeCompare([]byte(user), sidBytes) == 1
 			passOK := subtle.ConstantTimeCompare([]byte(pass), tokBytes) == 1
-			if !(userOK && passOK) {
+			if !userOK || !passOK {
 				unauth(w)
 				return
 			}

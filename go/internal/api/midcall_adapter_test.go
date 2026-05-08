@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -139,39 +138,6 @@ func TestMidCallAdapter_StructurallySatisfiesMidCallTarget(t *testing.T) {
 }
 
 // ── DialTarget tests ─────────────────────────────────────────────────────────
-
-// adapterStubDialFactory satisfies sip.DialClientFactory with the correct
-// siplib.Uri / *siplib.Response concrete types (no interface{}).
-type adapterStubDialFactory struct {
-	dialErr error
-}
-
-func (f *adapterStubDialFactory) Dial(
-	_ context.Context,
-	_ siplib.Uri,
-	_ siplib.Uri,
-	_ []byte,
-	_ sip.DialAuth,
-	_ func(*siplib.Response) error,
-) (sip.DialClient, error) {
-	if f.dialErr != nil {
-		return nil, f.dialErr
-	}
-	return &adapterStubDialClient{}, nil
-}
-
-// adapterStubDialClient simulates an immediately-confirmed dialog.
-type adapterStubDialClient struct{}
-
-func (c *adapterStubDialClient) FinalResponse() *siplib.Response { return nil }
-func (c *adapterStubDialClient) Ack(_ context.Context) error     { return nil }
-func (c *adapterStubDialClient) Bye(_ context.Context) error     { return nil }
-func (c *adapterStubDialClient) Done() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
-}
-func (c *adapterStubDialClient) Close() error { return nil }
 
 // adapterStubWebhookFetcher captures FetchWithFallback calls for inspection.
 // mu guards lastBody/lastURL/lastMethod which may be written from a goroutine
@@ -400,7 +366,6 @@ func TestMidCallAdapter_ActionCallback_NotFiredOnEmptyAction(t *testing.T) {
 // It returns a stubbed DialClient that immediately closes Done() to simulate
 // a confirmed dialog ending without touching the network.
 type fwdTestDialFactory struct {
-	result  *sip.DialResult
 	dialErr error
 }
 
@@ -508,9 +473,6 @@ func TestMidCallAdapter_PerformDial_ForwardsResult(t *testing.T) {
 		}
 	}
 }
-
-// errSentinel is a generic test error.
-var errSentinel = errors.New("test: sentinel error")
 
 // ── signed action-callback POST ─────────────────────────────────────────────
 

@@ -108,18 +108,6 @@ func (s *stubDialClient) Close() error {
 	return nil
 }
 
-// closeDone unblocks the awaitDialogEnd select for tests that drive the
-// dialog open then close it manually.
-func (s *stubDialClient) closeDone() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	select {
-	case <-s.done:
-	default:
-		close(s.done)
-	}
-}
-
 // stubDialFactory satisfies the sip.DialClientFactory interface. Tests
 // preset behaviour:
 //   - returnedClient: the stub DialClient that Dial returns
@@ -141,9 +129,8 @@ type stubDialFactory struct {
 	lastPPI          *siplib.Uri
 	lastBody         []byte
 	lastAuth         DialAuth
-	readByeCalls     int32
-	mu               sync.Mutex
-	receivedHeader   []*siplib.Response
+	readByeCalls int32
+	mu           sync.Mutex
 }
 
 // ReadBye is a no-op for the stub — production code routes BYEs via this

@@ -25,8 +25,12 @@ all: test lint lint-metrics build
 test:
 	cd go && go test -race -count=3 ./...
 
+# lint — golangci-lint via the `go tool` directive in go/go.mod (Go 1.24+
+# toolchain feature). Pinning the linter as a tool dependency guarantees
+# local devs and CI run the exact same binary version. Bump via
+# `cd go && go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@vX.Y.Z`.
 lint:
-	cd go && golangci-lint run
+	cd go && go tool golangci-lint run --enable errcheck,govet,staticcheck,unused
 
 # lint-metrics — cardinality + secret-mask discipline AST walker.
 # Validates every prometheus *Vec.WithLabelValues call site against the

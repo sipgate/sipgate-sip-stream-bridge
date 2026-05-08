@@ -279,7 +279,7 @@ func TestHealth_K8sReadinessSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("StatusCode = %d, want 200 (K8s readiness probe would fail)", resp.StatusCode)

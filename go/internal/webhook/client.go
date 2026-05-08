@@ -129,7 +129,7 @@ func (c *Client) Fetch(ctx context.Context, t FetchTarget) (*FetchResult, error)
 	if err != nil {
 		return nil, fmt.Errorf("webhook: request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {

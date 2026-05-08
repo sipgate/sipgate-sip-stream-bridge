@@ -953,37 +953,6 @@ func (c *callsTestDialClient) Bye(_ context.Context) error    { return nil }
 func (c *callsTestDialClient) Done() <-chan struct{}           { return c.done }
 func (c *callsTestDialClient) Close() error                   { return nil }
 
-// callsTestDialClientSuccess returns a 200 OK + minimal PCMU SDP body so
-// AcceptSDPAnswer succeeds (answered path). The SDP must include a remote
-// RTP destination reachable by the Forwarder (127.0.0.1:12000 is fine for
-// unit tests since no actual RTP is sent).
-func callsTestDialClientSuccess() sip.DialClient {
-	const minimalPCMUSDP = "v=0\r\n" +
-		"o=- 0 0 IN IP4 127.0.0.1\r\n" +
-		"s=-\r\n" +
-		"c=IN IP4 127.0.0.1\r\n" +
-		"t=0 0\r\n" +
-		"m=audio 12000 RTP/AVP 0\r\n" +
-		"a=rtpmap:0 PCMU/8000\r\n" +
-		"a=sendrecv\r\n"
-	resp := siplib.NewResponse(siplib.StatusOK, "OK")
-	resp.SetBody([]byte(minimalPCMUSDP))
-	ch := make(chan struct{})
-	close(ch)
-	return &callsTestDialClientFull{resp: resp, done: ch}
-}
-
-type callsTestDialClientFull struct {
-	resp *siplib.Response
-	done chan struct{}
-}
-
-func (c *callsTestDialClientFull) FinalResponse() *siplib.Response { return c.resp }
-func (c *callsTestDialClientFull) Ack(_ context.Context) error    { return nil }
-func (c *callsTestDialClientFull) Bye(_ context.Context) error    { return nil }
-func (c *callsTestDialClientFull) Done() <-chan struct{}           { return c.done }
-func (c *callsTestDialClientFull) Close() error                   { return nil }
-
 // nonSuccessDialErr wraps a non-2xx status as sipgo.ErrDialogResponse,
 // mimicking what sipgo's WaitAnswer surfaces for 4xx/5xx responses.
 func nonSuccessDialErr(code int, reason string) error {
@@ -1047,11 +1016,10 @@ func mountDialRouter(
 		tracked = &callsTestDialFactory{returnedClient: newCallsTestDialClient()}
 		factory = tracked
 	} else {
+		// If the caller passed a non-callsTestDialFactory (e.g. privacyGateTestFactory)
+		// the type assertion yields a nil tracked, which the call-count
+		// helpers treat as "not tracked".
 		tracked, _ = factory.(*callsTestDialFactory)
-		if tracked == nil {
-			// Caller passed a non-callsTestDialFactory (e.g. privacyGateTestFactory);
-			// use it directly and return a nil tracked for call-count purposes.
-		}
 	}
 
 	forwarder := sip.NewForwarderWithFactory(nil, guardrails, cfg, metrics, zerolog.Nop(), factory)
@@ -1337,7 +1305,7 @@ func TestModifyCall_TwimlDial_ActionCallback(t *testing.T) {
 	r, _, _ := mountDialRouter(t, nil, dialTestConfig(), wc, nil)
 
 	actionURL := url.QueryEscape("https://example.com/dial-action")
-	dialTwiml := fmt.Sprintf(`<Response><Dial action="https://example.com/dial-action" method="POST">+4912345</Dial></Response>`)
+	dialTwiml := `<Response><Dial action="https://example.com/dial-action" method="POST">+4912345</Dial></Response>`
 	form := "Twiml=" + url.QueryEscape(dialTwiml)
 
 	rec := doPOST(t, r, "/2010-04-01/Accounts/"+callsTestSid+"/Calls/"+dialTestActiveSid+".json", form)
