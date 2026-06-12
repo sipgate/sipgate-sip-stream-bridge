@@ -251,6 +251,16 @@ export function buildBye(p: BuildByeParams): string {
  * (loose routing), send to the topmost Route (first proxy); otherwise to the
  * remote Contact. Returns [host, port].
  */
+/**
+ * WS reconnect is permitted ONLY for a still-registered session that is actively
+ * streaming. It must be refused during the <Dial> privacy gate, forwarding, and
+ * teardown — otherwise the intentional ws.close() would be treated as a transient
+ * drop and rejoin the bot to a forwarded call (privacy leak).
+ */
+export function shouldReconnectWs(state: CallState, sessionPresent: boolean): boolean {
+  return sessionPresent && state === CallState.Streaming;
+}
+
 export function byeSendTarget(recordRoutes: string[], remoteTarget: string): [string, number] {
   if (recordRoutes.length > 0) {
     // Route set is Record-Route reversed; the topmost Route is the last RR header.
@@ -839,6 +849,10 @@ export class CallManager {
       mediaFormat: { encoding: codecInfo.encoding, sampleRate: codecInfo.sampleRate, channels: 1 },
     };
     ws.onDisconnect(() => {
+      // Only reconnect on a transient drop while streaming. An intentional close
+      // (privacy gate for <Dial>, or teardown) leaves state != Streaming and MUST
+      // NOT reconnect — otherwise the bot rejoins a forwarded call (privacy leak).
+      if (!shouldReconnectWs(session.state, this.sessions.has(session.callId))) return;
       session.wsReconnecting = true;
       void this.startWsReconnectLoop(session, wsParams).catch((err: unknown) => {
         session.log.error({ err }, 'Reconnect loop unhandled error');
@@ -1045,8 +1059,9 @@ export class CallManager {
     };
 
     const attempt = async (n: number): Promise<void> => {
-      // BYE race guard: if session was terminated externally, exit without zombie reconnect
-      if (!this.sessions.has(session.callId)) {
+      // Bail if the session was terminated, OR left Streaming (privacy gate /
+      // forwarding) — never reconnect the bot into a non-streaming call.
+      if (!shouldReconnectWs(session.state, this.sessions.has(session.callId))) {
         cleanup();
         return;
       }
@@ -1074,6 +1089,7 @@ export class CallManager {
 
         // Re-wire disconnect handler recursively so future drops are also handled
         newWs.onDisconnect(() => {
+          if (!shouldReconnectWs(session.state, this.sessions.has(session.callId))) return;
           session.wsReconnecting = true;
           void this.startWsReconnectLoop(session, params).catch((err: unknown) => {
             session.log.error({ err }, 'Reconnect loop unhandled error');
