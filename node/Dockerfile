@@ -1,13 +1,13 @@
 # Stage 1 — base: enable pnpm via corepack
 FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable
 WORKDIR /app
 
 # Stage 2 — fetcher: download all packages from lockfile into pnpm store.
-# This layer invalidates ONLY when pnpm-lock.yaml changes, not on source changes.
-# Result: fast rebuilds when only TypeScript files change.
+# package.json is copied so corepack auto-selects the pinned packageManager version.
+# Layer invalidates when either file changes.
 FROM base AS fetcher
-COPY pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml ./
 RUN pnpm fetch
 
 # Stage 3 — builder: install from pnpm store (offline), copy source, compile.
@@ -21,7 +21,7 @@ RUN pnpm build
 # Stage 4 — production: minimal runtime image.
 # Only production deps and compiled dist/. No TypeScript, no tsx, no tsup.
 FROM node:22-alpine AS production
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
