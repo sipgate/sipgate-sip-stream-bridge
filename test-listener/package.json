@@ -12,6 +12,6 @@
     "tone":   "MODE=tone   node index.js"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "^8.20.1"
   }
 }
