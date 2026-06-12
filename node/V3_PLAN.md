@@ -15,11 +15,14 @@ Node/TS-Implementierung, bei voller Beibehaltung der v2.1-Daten-Ebene
 | D Status-Callbacks (Kern + Emit-Verdrahtung) | ✅ fertig |
 | E B2BUA `<Dial>` (Client-Dialog, Dual-Leg, Digest qop) | ✅ fertig |
 | F Graceful Shutdown / Dual-Leg-BYE (15 s Drain) | ✅ fertig |
-| G E2E-Parität (sipp) + Doku | 🟡 Doku ✅, sipp-Lauf offen (umgebungsabhängig) |
+| G E2E-Parität (sipp) + Doku | ✅ fertig — 8/8 sipp-Szenarien grün + Live-Trunk |
 
-428 Unit-/Integrationstests grün, typecheck sauber (TS 6). `main` (Major-Bumps)
-ist eingemergt. Offen: der sipp-E2E-Lauf gegen die Node-Binary (sprachneutrales
-Harness unter `tests/e2e/sipp/`) — braucht eine Laufumgebung mit sipp.
+436 Unit-/Integrationstests grün, typecheck sauber (TS 6). `main` (Major-Bumps)
+eingemergt. **Echter sipgate-Trunk verifiziert** (REGISTER/Inbound/WS-Stream/REST/
+B2BUA-`<Dial>`/Dual-Leg-BYE) — dabei zwei latente v2.1-Bugs gefunden + gefixt
+(WS-Reconnect-Privacy-Leck; Caller-BYE-Routing über Record-Route). **Alle 8
+sipp-Szenarien grün** gegen die Node-Binary via `tests/e2e/sipp/run-node-bridge.sh`
+(`SIP_LISTEN_ADDR` + IP-Literal-Registrar nachgerüstet).
 
 ---
 
