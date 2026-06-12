@@ -161,8 +161,7 @@ make build               # cd go && go build ./...
 make test                # go test -race -count=3 ./...    (12 packages)
 make lint                # golangci-lint
 make lint-metrics        # cardinality + secret-mask discipline
-make e2e                 # Go integration tests + sipp scenario `a`  (build-blocking)
-make e2e-advisory        # sipp scenarios b-h  (need real trunk; advisory)
+make e2e                 # Go integration tests + all 8 sipp scenarios  (build-blocking)
 make image-size-check    # docker image budget enforcer (≤6.0 MB)
 ```
 
@@ -226,13 +225,16 @@ WS_TARGET_URL=ws://localhost:8080 cd node && pnpm dev
 
 Then call your sipgate number; the listener logs `connected`, `start`, `media`, `stop`, `dtmf`, `mark`, `clear` events.
 
-## End-to-end SIP testing (Go)
+## End-to-end SIP testing (sipp)
 
-`tests/e2e/sipp/` ships eight [sipp](http://sipp.sourceforge.net/) XML scenarios driving the bridge through realistic SIP flows. `make e2e` runs scenario `a` (inbound default-streaming) as a build-blocking gate against a co-hosted test-registrar stub + stub WS server. `make e2e-advisory` runs `b`-`h` (REST-driven `<Dial>` answer/busy/no-answer/cancel/codec-mismatch, mid-stream hangup, status-callback flapping) which currently need either a real sipgate trunk or a sipp-UAS stub.
+`tests/e2e/sipp/` ships eight [sipp](http://sipp.sourceforge.net/) XML scenarios driving the bridge through realistic SIP flows against a co-hosted test-registrar stub + stub WS server (+ a sipp UAS stub for the `<Dial>` scenarios): inbound default-streaming, REST-driven `<Dial>` answer/busy/no-answer/cancel/codec-mismatch, mid-stream hangup, and status-callback flapping. `make e2e` runs the Go integration tests plus all eight scenarios as a build-blocking gate.
 
 ```bash
-make e2e                                              # scenario a, ~3 s
-SCENARIO=inbound-rest-dial-answer.xml make e2e-advisory   # single advisory scenario
+make e2e                                          # Go integration tests + all 8 scenarios
+bash tests/e2e/sipp/run-sipp.sh inbound-rest-dial-answer   # a single scenario
+
+# Run the same harness against the Node.js bridge:
+BRIDGE_BIN="$(pwd)/tests/e2e/sipp/run-node-bridge.sh" bash tests/e2e/sipp/run-sipp.sh
 ```
 
 ## Repository Layout
@@ -266,7 +268,7 @@ sipgate-sip-stream-bridge/
 |------------|----|---------|
 | Language / runtime | Go 1.26 | TypeScript / Node.js 24 |
 | Docker image | ~5.5 MB (`FROM scratch`) | ~120 MB (`node:22-alpine`) |
-| SIP library | emiago/sipgo v1.3.0 | Raw UDP (no library) |
+| SIP library | emiago/sipgo v1.3.1 | Raw UDP (no library) |
 | Twilio Media Streams `media` | ✅ | ✅ |
 | `mark` event echo | ✅ | ✅ |
 | `clear` event flush | ✅ | ✅ |
