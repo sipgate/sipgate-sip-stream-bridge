@@ -1,2 +1,6 @@
+# Allow esbuild (pulled in by tsup/tsx/vitest) to run its install build script.
+# pnpm v10+ ignores dependency build scripts unless explicitly allow-listed here;
+# esbuild needs its postinstall to link the platform binary, or `pnpm build` fails.
+# Must be present BEFORE `pnpm install` (the Dockerfile copies it ahead of install).
 allowBuilds:
   esbuild: true

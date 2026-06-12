@@ -59,7 +59,7 @@ This implementation is at **v3.0**: full data-plane parity (PCMU/PCMA/G.722, mar
 - **Caller-ID resolution**: outbound `From` user-part follows TwiML `callerId` → `DIAL_DEFAULT_CALLER_ID` → `SIP_USER` → inbound ANI; the displayed caller-ID (preserve-ANI) is carried separately in `P-Preferred-Identity` (RFC 3325), normalised via `DIAL_CALLER_ID_COUNTRY_CODE`.
 - **Status callbacks**: Twilio lifecycle (`initiated` / `ringing` / `answered` / `in-progress` / `completed` / `busy` / `failed` / `no-answer` / `canceled`) HTTP POSTs, `X-Twilio-Signature` HMAC-SHA1 byte-compatible with `twilio-python` / `twilio-node`, monotonic `SequenceNumber`, RFC 2822 `Timestamp`, exponential-backoff retry (`0/1/2/4 s`, 4 attempts) on transport errors / 408 / 429 / 5xx, SSRF guard (RFC 1918 + link-local + localhost rejection — never retried).
 - **REST hardening**: security-headers middleware (HSTS / CSP / `X-Content-Type-Options: nosniff`) on every response including 401/413, mounted **before** Basic Auth; 64 KB request-body cap with a Twilio-shaped 413 JSON error.
-- Docker image with multi-stage build on `node:22-alpine`
+- Docker image with multi-stage build on `node:24-alpine`
 - Graceful shutdown on SIGTERM/SIGINT: 15 s drain budget — stop accepting new HTTP → dual-leg BYE on all calls (+ close WS + drain status callbacks) → unregister → exit
 
 ---
@@ -405,8 +405,8 @@ cd node
 docker build -t sipgate-sip-stream-bridge-node:latest .
 ```
 
-The Dockerfile uses a four-stage build on `node:22-alpine`:
-1. **base** — `node:22-alpine` with corepack (pnpm auto-selected from the pinned `packageManager`)
+The Dockerfile uses a four-stage build on `node:24-alpine`:
+1. **base** — `node:24-alpine` with corepack (pnpm auto-selected from the pinned `packageManager`)
 2. **fetcher** — downloads packages into the pnpm store (cached; re-runs only when `pnpm-lock.yaml` changes)
 3. **builder** — offline install + TypeScript compilation
 4. **production** — minimal runtime image with `dist/` + production `node_modules`, running as the non-root `node` user

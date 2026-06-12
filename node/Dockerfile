@@ -1,5 +1,8 @@
 # Stage 1 — base: enable pnpm via corepack
-FROM node:22-alpine AS base
+FROM node:24-alpine AS base
+# CI=true so pnpm v11 doesn't abort on its interactive modules-purge confirmation
+# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) in the non-TTY Docker build.
+ENV CI=true
 RUN corepack enable
 WORKDIR /app
 
@@ -7,12 +10,12 @@ WORKDIR /app
 # package.json is copied so corepack auto-selects the pinned packageManager version.
 # Layer invalidates when either file changes.
 FROM base AS fetcher
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm fetch
 
 # Stage 3 — builder: install from pnpm store (offline), copy source, compile.
 FROM fetcher AS builder
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # --offline: read from the store fetched above; no network required
 RUN pnpm install --frozen-lockfile --offline
 COPY . .
@@ -20,11 +23,12 @@ RUN pnpm build
 
 # Stage 4 — production: minimal runtime image.
 # Only production deps and compiled dist/. No TypeScript, no tsx, no tsup.
-FROM node:22-alpine AS production
+FROM node:24-alpine AS production
+ENV CI=true
 RUN corepack enable
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # Copy pnpm store from fetcher stage to enable offline prod install
 COPY --from=fetcher /root/.local/share/pnpm/store /root/.local/share/pnpm/store
 RUN pnpm install --prod --frozen-lockfile --offline
