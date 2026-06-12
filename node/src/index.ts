@@ -7,6 +7,8 @@ import { createSipUserAgent } from './sip/userAgent.js';
 import { CallManager } from './bridge/callManager.js';
 import { createApiHandler } from './api/server.js';
 import { StatusClient } from './webhook/status.js';
+import { Guardrails } from './sip/guardrails.js';
+import { Forwarder } from './sip/forwarder.js';
 
 const log = createChildLogger({ component: 'main' });
 
@@ -35,6 +37,21 @@ async function main(): Promise<void> {
 
   log.info({ event: 'sip_booted' }, 'SIP registrar started — waiting for calls');
 
+  // B2BUA <Dial> forwarder (toll-fraud guardrails + outbound leg on the shared socket).
+  const guardrails = new Guardrails({
+    allowedPrefixes: config.DIAL_ALLOWED_PREFIXES.split(',').map((s) => s.trim()).filter((s) => s.length > 0),
+    maxPerSession: config.DIAL_MAX_PER_SESSION,
+    maxPerMinute: config.DIAL_MAX_PER_MINUTE,
+  });
+  const forwarder = new Forwarder({
+    config,
+    sipHandle,
+    guardrails,
+    statusClient,
+    metrics,
+    log: createChildLogger({ component: 'forwarder' }),
+  });
+
   // Twilio-compatible REST control plane (/2010-04-01/Accounts/{Sid}/Calls...).
   // Returns true when it handled an API path; falls through otherwise.
   const apiHandler = createApiHandler({
@@ -42,6 +59,7 @@ async function main(): Promise<void> {
     config,
     metrics,
     log: createChildLogger({ component: 'api' }),
+    forwarder,
   });
 
   // HTTP server: REST control plane + /health + /metrics.

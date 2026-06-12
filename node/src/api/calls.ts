@@ -22,6 +22,8 @@ import type { Logger } from 'pino';
 import type { CallManager } from '../bridge/callManager.js';
 import { parseResponse, parseStatusCallbackEvents, TwimlError } from '../twiml/parse.js';
 import { dispatch } from '../twiml/dispatch.js';
+import type { MidCallTarget } from '../twiml/dispatch.js';
+import type { Forwarder } from '../sip/forwarder.js';
 import { validateCallbackURL } from '../webhook/ssrf.js';
 import type { Metrics, TwimlModifyKind, TwimlModifyOutcome } from '../observability/metrics.js';
 import {
@@ -310,6 +312,7 @@ export async function modifyCallHandler(
   fetcher: TwimlFetcher,
   metrics: Metrics | undefined,
   log: Logger,
+  forwarder?: Forwarder,
 ): Promise<void> {
   // 1. Read + parse the form body (catch oversize → 413/21617).
   let form: URLSearchParams;
@@ -442,11 +445,20 @@ export async function modifyCallHandler(
     return;
   }
 
-  // 9. Dispatch against the mid-call adapter. <Dial> warn-skips (no DialTarget).
-  const adapter = new MidCallAdapter(session, manager, log);
+  // 9. Dispatch against the mid-call target. With a forwarder this is a full
+  // DialTarget (<Dial> bridges to a callee leg); without one it is a
+  // MidCallTarget and <Dial> warn-skips (streaming-only build / tests).
+  const target: MidCallTarget = forwarder
+    ? new MidCallAdapter(session, manager, forwarder, log)
+    : {
+        terminate: (reason: string): void => {
+          manager.terminateByCallSid(session.callSid, reason);
+        },
+        log: (): Logger => session.log ?? log,
+      };
   const runDispatch = async (): Promise<void> => {
     try {
-      await dispatch(doc, adapter);
+      await dispatch(doc, target);
     } catch (err) {
       log.error({ err, callSid, event: 'twiml_dispatch_failed' }, 'twiml dispatch failed');
     }

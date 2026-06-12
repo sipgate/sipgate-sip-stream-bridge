@@ -28,6 +28,7 @@ import type { SipCallbacks, SipHandle } from '../sip/userAgent.js';
 import { createWsClient, type WsCallParams, type WsClient } from '../ws/wsClient.js';
 import { deriveAccountSid } from '../identity/sid.js';
 import { USER_AGENT } from '../version.js';
+import type { OutboundDialog } from '../sip/dialog.js';
 import type { StatusClient, CallbackEvent } from '../webhook/status.js';
 import { buildStatusForm } from '../webhook/callbackForm.js';
 import { subscriptionMatches } from '../webhook/subscription.js';
@@ -127,6 +128,17 @@ export interface CallSession {
   seqCounter: number;
   /** Active status-callback subscription, or null if none */
   statusCallback: StatusCallbackConfig | null;
+
+  // ── v3 B2BUA <Dial> forwarding ──────────────────────────────────────────────
+  /** Callee-leg RTP handler while forwarding; null in streaming mode. Audio from
+   *  the caller is relayed here instead of to the WS once set. */
+  forwardRtp: RtpHandler | null;
+  /** Active outbound dialog while forwarding (for dual-leg BYE on teardown). */
+  forwardDialog: OutboundDialog | null;
+  /** Resolver the forwarder installs so a caller-initiated teardown ends the dial. */
+  onForwardEnd: (() => void) | null;
+  /** <Dial hangupOnStar> — caller pressing '*' during forwarding ends the dial. */
+  hangupOnStar: boolean;
 }
 
 // ── Internal SIP helpers ──────────────────────────────────────────────────────
@@ -717,6 +729,10 @@ export class CallManager {
       sipFinalCode: 200,
       seqCounter: 0,
       statusCallback: this.defaultStatusCallback(),
+      forwardRtp: null,
+      forwardDialog: null,
+      onForwardEnd: null,
+      hangupOnStar: false,
     };
     this.sessions.set(sipCallId, session);
     this.callSidIdx.set(callSid, session);
@@ -750,6 +766,11 @@ export class CallManager {
     let firstRtp = true;
     rtp.on('audio', (payload: Buffer) => {
       this.metrics?.incRtpRx();
+      // Forwarding (B2BUA <Dial>): relay caller audio to the callee leg, not the WS.
+      if (session.forwardRtp) {
+        session.forwardRtp.sendAudio(payload);
+        return;
+      }
       if (session.wsReconnecting) return; // drop during reconnect window — WSR-03
       if (firstRtp) {
         callLog.info({ event: 'first_rtp_audio', bytes: payload.length }, 'First RTP audio packet received from sipgate');
@@ -757,8 +778,18 @@ export class CallManager {
       }
       session.ws.sendAudio(payload);
     });
-    // DTMF → WS backend (route via session.ws so post-reconnect handler picks up new WsClient)
-    rtp.on('dtmf', ({ digit }: { digit: string }) => session.ws.sendDtmf(digit));
+    // DTMF → WS backend in streaming mode; suppressed while forwarding (hangupOnStar
+    // is handled by the forwarder watching the caller leg directly).
+    rtp.on('dtmf', ({ digit }: { digit: string }) => {
+      if (session.forwardRtp) {
+        if (session.hangupOnStar && digit === '*') {
+          callLog.info({ event: 'dial_hangup_on_star' }, 'caller pressed * — ending forwarded call');
+          session.onForwardEnd?.();
+        }
+        return;
+      }
+      session.ws.sendDtmf(digit);
+    });
     // WS backend audio → outbound RTP
     let firstWsAudio = true;
     ws.onAudio((payload) => {
@@ -935,7 +966,21 @@ export class CallManager {
       session.log.info({ event: 'bye_sent', target: session.remoteTarget }, 'SIP BYE sent');
     }
 
-    session.ws.stop();     // sends stop event then closes WS
+    // Dual-leg teardown: hang up the callee and release its RTP socket.
+    if (session.forwardDialog) {
+      void session.forwardDialog.bye();
+      session.forwardDialog = null;
+    }
+    if (session.forwardRtp) {
+      session.forwardRtp.dispose();
+      session.forwardRtp = null;
+    }
+    // Unblock any in-flight performDial() awaiting the call to end (caller hangup).
+    const onEnd = session.onForwardEnd;
+    session.onForwardEnd = null;
+    onEnd?.();
+
+    session.ws.stop();     // sends stop event then closes WS (idempotent post-closeStream)
     session.rtp.dispose(); // closes dgram socket
   }
 

@@ -16,12 +16,29 @@ export interface SipCallbacks {
   onCancel?: (raw: string, rinfo: RemoteInfo) => void;
 }
 
+/**
+ * Handlers for an outbound (UAC) dialog the forwarder owns. Messages whose
+ * Call-ID matches a registered dialog are routed here instead of the inbound
+ * REGISTER/INVITE paths — responses to our INVITE/BYE/CANCEL, and in-dialog
+ * requests from the callee (e.g. its BYE).
+ */
+export interface DialogHandlers {
+  /** A SIP response (SIP/2.0 …) for this dialog's Call-ID. */
+  onResponse?: (raw: string, rinfo: RemoteInfo) => void;
+  /** An in-dialog request (method e.g. "BYE") for this dialog's Call-ID. */
+  onRequest?: (method: string, raw: string, rinfo: RemoteInfo) => void;
+}
+
 export interface SipHandle {
   stop(): void;
   /** Send a raw SIP message buffer to a remote address — used by CallManager to send INVITE responses and BYE */
   sendRaw(buf: Buffer, port: number, host: string): void;
   /** Send REGISTER with Expires:0 and Contact:* to deregister all bindings */
   unregister(): Promise<void>;
+  /** Register an outbound dialog so its Call-ID's responses/requests route to it (B2BUA <Dial>). */
+  registerDialog(callId: string, handlers: DialogHandlers): void;
+  /** Remove an outbound dialog registration. */
+  unregisterDialog(callId: string): void;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -137,6 +154,9 @@ export async function createSipUserAgent(
 
   const socket = dgram.createSocket('udp4');
 
+  // Outbound (UAC) dialogs owned by the B2BUA forwarder, keyed by Call-ID.
+  const dialogs = new Map<string, DialogHandlers>();
+
   function sendRegister(authHeader?: string): void {
     const branch = `z9hG4bK${randomHex(6)}`;
     const msg = buildRegister({
@@ -206,6 +226,18 @@ export async function createSipUserAgent(
       const raw = buf.toString();
       const firstLine = raw.split('\r\n')[0];
 
+      // Route anything belonging to an outbound (UAC) dialog to its owner first.
+      const msgCallId = getHeader(raw, 'Call-ID') ?? '';
+      const dialog = msgCallId !== '' ? dialogs.get(msgCallId) : undefined;
+      if (dialog) {
+        if (firstLine.startsWith('SIP/2.0')) {
+          dialog.onResponse?.(raw, rinfo);
+        } else {
+          dialog.onRequest?.(firstLine.split(' ')[0], raw, rinfo);
+        }
+        return;
+      }
+
       if (firstLine.startsWith('SIP/2.0')) {
         // ---- CSeq routing: OPTIONS responses go to handleOptionsResponse ----
         const cseqVal = getHeader(raw, 'CSeq') ?? '';
@@ -272,6 +304,12 @@ export async function createSipUserAgent(
                 socket.send(sendBuf, port, host, (err) => {
                   if (err) log.error({ err, event: 'sip_send_raw_error' }, 'sendRaw failed');
                 });
+              },
+              registerDialog(dialogCallId: string, handlers: DialogHandlers): void {
+                dialogs.set(dialogCallId, handlers);
+              },
+              unregisterDialog(dialogCallId: string): void {
+                dialogs.delete(dialogCallId);
               },
               unregister(): Promise<void> {
                 const branch = `z9hG4bK${randomHex(6)}`;

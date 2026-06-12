@@ -30,6 +30,7 @@ import type { Logger } from 'pino';
 import type { CallManager } from '../bridge/callManager.js';
 import type { Config } from '../config/index.js';
 import type { ApiMethod, ApiRoute, Metrics } from '../observability/metrics.js';
+import type { Forwarder } from '../sip/forwarder.js';
 import { bucketStatus } from '../observability/metrics.js';
 import { basicAuth } from './auth.js';
 import {
@@ -52,6 +53,8 @@ export interface ApiDeps {
    * Tests inject a fake to avoid real network.
    */
   fetcher?: TwimlFetcher;
+  /** B2BUA forwarder for <Dial>. When absent, <Dial> warn-skips (streaming-only). */
+  forwarder?: Forwarder;
 }
 
 /** Map a router route name to the bounded metrics ApiRoute label. */
@@ -150,7 +153,7 @@ function captureStatus(res: ServerResponse): { res: ServerResponse; code: () => 
  * been handled; false = not an API path (caller handles /health, /metrics, 404).
  */
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse) => boolean {
-  const { manager, config, metrics, log } = deps;
+  const { manager, config, metrics, log, forwarder } = deps;
   const fetcher = deps.fetcher ?? defaultTwimlFetcher;
 
   return (req: IncomingMessage, res: ServerResponse): boolean => {
@@ -207,6 +210,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           fetcher,
           metrics,
           log,
+          forwarder,
         )
           .catch((err: unknown) => {
             log.error({ err, event: 'modify_call_unhandled' }, 'modifyCallHandler unhandled error');

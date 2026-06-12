@@ -198,3 +198,84 @@ export function buildSdpAnswer(
 
   return { sdp: lines.join('\r\n') + '\r\n', localSrtpKey: outLocalSrtpKey, localSrtpSalt: outLocalSrtpSalt };
 }
+
+/**
+ * Thrown by acceptSdpAnswer when the callee's negotiated audio codec is not
+ * PCMU (PT 0). The current end-to-end relay is PCMU-only; transcoding is out
+ * of scope, so a non-PCMU answer is a hard fail-fast.
+ *
+ * Mirrors the Go bridge.ErrCodecMismatch sentinel.
+ */
+export class CodecMismatchError extends Error {
+  /** The offending payload type the callee negotiated as its first audio codec. */
+  readonly negotiatedPt: number;
+
+  constructor(negotiatedPt: number) {
+    super(`callee SDP answer negotiated non-PCMU codec (codec_mismatch): got PT ${negotiatedPt}`);
+    this.name = 'CodecMismatchError';
+    this.negotiatedPt = negotiatedPt;
+  }
+}
+
+/** Parsed fields from a callee SDP answer needed to set up the relay socket. */
+export interface SdpAnswerInfo {
+  remoteIp: string;
+  remotePort: number;
+  dtmfPt: number; // telephone-event PT from the answer (defaults to 101)
+}
+
+/**
+ * Build an SDP OFFER for the outbound <Dial> (B2BUA) callee leg.
+ *
+ * The offer advertises PCMU (PT 0) as the only audio codec plus
+ * telephone-event (PT 101) for DTMF, over plain RTP/AVP — there is NO SRTP on
+ * the outbound leg (no a=crypto:). This mirrors the Go bridge BuildSDPOffer
+ * and the v3.0 audio-mode "twilio".
+ *
+ * Lines are joined with CRLF and a trailing CRLF is appended per RFC 4566.
+ */
+export function buildSdpOffer(localIp: string, localRtpPort: number): string {
+  const lines = [
+    'v=0',
+    `o=sipgate-sip-stream-bridge 0 0 IN IP4 ${localIp}`,
+    's=sipgate-sip-stream-bridge',
+    `c=IN IP4 ${localIp}`,
+    't=0 0',
+    `m=audio ${localRtpPort} RTP/AVP 0 101`,
+    'a=rtpmap:0 PCMU/8000',
+    'a=rtpmap:101 telephone-event/8000',
+    'a=fmtp:101 0-16',
+    'a=ptime:20',
+    'a=sendrecv',
+  ];
+  return lines.join('\r\n') + '\r\n';
+}
+
+/**
+ * Parse the callee's SDP ANSWER to the outbound <Dial> INVITE and extract the
+ * fields needed to point the RTP relay socket at the callee.
+ *
+ * CODEC FAIL-FAST: the negotiated (first non-telephone-event) audio payload
+ * type MUST be 0 (PCMU). Anything else throws CodecMismatchError — transcoding
+ * is out of scope, matching the Go bridge AcceptSDPAnswer.
+ *
+ * Throws Error on a malformed answer (missing c= or m=audio) or when the
+ * answer advertises no audio payload types.
+ */
+export function acceptSdpAnswer(answerSdp: string): SdpAnswerInfo {
+  const parsed = parseSdpOffer(answerSdp);
+  if (!parsed) {
+    throw new Error('SDP answer malformed: missing c=IN IP4 or m=audio line');
+  }
+
+  const { remoteIp, remotePort, dtmfPt, audioPts } = parsed;
+
+  if (audioPts.length === 0) {
+    throw new Error('SDP answer has no audio payload types');
+  }
+  if (audioPts[0] !== 0) {
+    throw new CodecMismatchError(audioPts[0]);
+  }
+
+  return { remoteIp, remotePort, dtmfPt };
+}
