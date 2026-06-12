@@ -88,6 +88,8 @@ export interface CallSession {
   remoteTag: string;
   /** Caller's SIP URI from INVITE From header (without tag) */
   remoteUri: string;
+  /** Our dialog-local URI = the INVITE To-header URI (From-URI of our BYE) */
+  localUri: string;
   /** Contact URI from INVITE (for BYE routing per RFC 3261 §12.2) */
   remoteTarget: string;
   /** Record-Route set from the INVITE — the in-dialog route set for our BYE */
@@ -236,21 +238,19 @@ export function buildBye(p: BuildByeParams): string {
     `Call-ID: ${p.callId}`,
     `CSeq: ${p.cseq} BYE`,
   ];
-  // In-dialog routing: a UAS's route set is the INVITE's Record-Route headers in
-  // REVERSE order. Without this, a BYE to a proxied caller bypasses the proxies
-  // and never reaches the far end (the caller leg lingers).
+  // In-dialog routing (loose routing): echo the INVITE's Record-Route set as Route
+  // headers IN RECEIVED ORDER. sipgate prepends each proxy, so RR[0] is the proxy
+  // adjacent to us (it delivered the INVITE and accepted our 200 OK) and the set
+  // already reads in the direction the BYE travels back to the caller. The BYE is
+  // sent to RR[0]; without this it bypasses the proxies → sipgate 404 "unknown
+  // domain" / drop, and the caller leg lingers.
   if (p.recordRoutes?.length) {
-    for (const rr of [...p.recordRoutes].reverse()) lines.push(`Route: ${rr}`);
+    for (const rr of p.recordRoutes) lines.push(`Route: ${rr}`);
   }
   lines.push(`User-Agent: ${USER_AGENT}`, 'Content-Length: 0', '');
   return lines.join('\r\n') + '\r\n';
 }
 
-/**
- * Resolve the transport target for an in-dialog request. With a route set
- * (loose routing), send to the topmost Route (first proxy); otherwise to the
- * remote Contact. Returns [host, port].
- */
 /**
  * WS reconnect is permitted ONLY for a still-registered session that is actively
  * streaming. It must be refused during the <Dial> privacy gate, forwarding, and
@@ -261,10 +261,14 @@ export function shouldReconnectWs(state: CallState, sessionPresent: boolean): bo
   return sessionPresent && state === CallState.Streaming;
 }
 
+/**
+ * Resolve the transport target for an in-dialog request. With a route set, send
+ * to the topmost (first) Record-Route — the proxy adjacent to us, which is also
+ * where our 200 OK was accepted. Otherwise send to the remote Contact.
+ */
 export function byeSendTarget(recordRoutes: string[], remoteTarget: string): [string, number] {
   if (recordRoutes.length > 0) {
-    // Route set is Record-Route reversed; the topmost Route is the last RR header.
-    return parseContactTarget(recordRoutes[recordRoutes.length - 1]);
+    return parseContactTarget(recordRoutes[0]);
   }
   return parseContactTarget(remoteTarget);
 }
@@ -558,6 +562,22 @@ export class CallManager {
     const remoteContact =
       raw.match(/Contact:\s*<([^>]+)>/i)?.[1] ??
       `sip:${rinfo.address}:${rinfo.port}`;
+    // localUri: the To-header URI we were addressed as — this is the dialog's
+    // local URI and MUST be the From-URI of any in-dialog request we originate.
+    const localUri =
+      toHeader.match(/<([^>]+)>/)?.[1] ?? toHeader.replace(/;.*$/, '').trim();
+    // Dialog headers retained for the in-dialog BYE route set (RFC 3261 §12.2).
+    // Logged at debug only — carries phone numbers, never emitted at info.
+    this.log.debug(
+      {
+        event: 'dialog_headers',
+        sipCallId,
+        toHeader,
+        contact: remoteContact,
+        recordRoutes: extractAllRecordRoutes(raw),
+      },
+      'inbound dialog headers',
+    );
 
     // P-Asserted-Identity carries the real caller number when From is anonymous
     const pai = extractHeader(raw, 'P-Asserted-Identity');
@@ -742,6 +762,7 @@ export class CallManager {
       remoteUri,
       remoteTarget: remoteContact,
       recordRoutes,
+      localUri,
       remoteRtpIp: sdpOffer.remoteIp,
       remoteRtpPort: sdpOffer.remotePort,
       localRtpPort: rtp.localPort,
@@ -991,7 +1012,7 @@ export class CallManager {
         remoteTarget: session.remoteTarget,
         localIp,
         localSipPort: 5060,
-        fromUri: `sip:${this.config.SIP_USER}@${this.config.SIP_DOMAIN}`,
+        fromUri: session.localUri, // dialog-local URI (the INVITE To-URI), NOT SIP_USER
         fromTag: session.localTag,
         toUri: session.remoteUri,
         toTag: session.remoteTag,
@@ -1002,7 +1023,9 @@ export class CallManager {
       // Route via the dialog route set (first proxy) when present, else the Contact.
       const [byeHost, byePort] = byeSendTarget(session.recordRoutes, session.remoteTarget);
       this.sipHandle.sendRaw(Buffer.from(bye), byePort, byeHost);
-      session.log.info({ event: 'bye_sent', target: session.remoteTarget }, 'SIP BYE sent');
+      // sendTo is the proxy IP:port (no phone) — safe at info. Full BYE at debug.
+      session.log.info({ event: 'bye_sent', sendTo: `${byeHost}:${byePort}` }, 'SIP BYE sent');
+      session.log.debug({ event: 'bye_message', bye }, 'BYE message');
     }
 
     // Dual-leg teardown: hang up the callee and release its RTP socket.

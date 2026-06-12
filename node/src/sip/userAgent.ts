@@ -247,6 +247,14 @@ export async function createSipUserAgent(
           handleOptionsResponse(status, null);
           return;
         }
+        // Only REGISTER responses drive the registration state machine. A response
+        // to any other request we originate (e.g. the 200/4xx to a caller-leg BYE,
+        // whose Call-ID isn't a registered dialog) must NOT be treated as a REGISTER
+        // result — otherwise it spuriously resets the re-register / keepalive timers.
+        if (!cseqVal.includes('REGISTER')) {
+          log.debug({ event: 'stray_response', cseq: cseqVal }, 'ignoring non-REGISTER response');
+          return;
+        }
         // else: fall through to existing REGISTER response handling
         const { status, reason } = parseStatusLine(raw);
 
