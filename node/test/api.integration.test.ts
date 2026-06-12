@@ -19,6 +19,7 @@ import { createChildLogger } from '../src/logger/index.js';
 const config = {
   SIP_USER: 'e12345p0',
   AUTH_TOKEN: 'test-token',
+  SIP_LISTEN_ADDR: '0.0.0.0:5060',
 } as unknown as Config;
 
 const accountSid = deriveAccountSid(config.SIP_USER);

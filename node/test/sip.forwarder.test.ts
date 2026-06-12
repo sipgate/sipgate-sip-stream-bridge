@@ -52,6 +52,7 @@ const config = {
   SDP_CONTACT_IP: '198.51.100.4',
   RTP_PORT_MIN: 10000,
   RTP_PORT_MAX: 10099,
+  SIP_LISTEN_ADDR: '127.0.0.1:5060',
 } as unknown as Config;
 
 const opts: DialOpts = {

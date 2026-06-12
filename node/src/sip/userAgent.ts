@@ -2,11 +2,13 @@ import crypto from 'node:crypto';
 import dgram from 'node:dgram';
 import type { RemoteInfo } from 'node:dgram';
 import dns from 'node:dns/promises';
+import net from 'node:net';
 import os from 'node:os';
 
 import type { Logger } from 'pino';
 
 import type { Config } from '../config/index.js';
+import { listenParts } from '../config/listenAddr.js';
 import { USER_AGENT } from '../version.js';
 
 export interface SipCallbacks {
@@ -140,9 +142,12 @@ export async function createSipUserAgent(
   const registrar = config.SIP_REGISTRAR; // e.g. sipconnect.sipgate.de
   const registrarPort = 5060;
 
-  const [registrarIp] = await dns.resolve4(registrar);
+  // Accept an IP-literal registrar (dns.resolve4 only takes hostnames) — needed
+  // for the sipp e2e harness which points SIP_REGISTRAR at 127.0.0.1.
+  const registrarIp = net.isIPv4(registrar) ? registrar : (await dns.resolve4(registrar))[0];
   const localIp = config.SDP_CONTACT_IP ?? getLocalIp();
-  const localPort = 5060;
+  // Bind host + Via/Contact port come from SIP_LISTEN_ADDR (default 0.0.0.0:5060).
+  const { host: bindHost, port: localPort } = listenParts(config.SIP_LISTEN_ADDR);
   const callId = `${randomHex(10)}@sipgate-sip-stream-bridge`;
   const fromTag = randomHex(6);
   let cseq = 1;
@@ -381,7 +386,7 @@ export async function createSipUserAgent(
       // other methods (REGISTER requests from proxies etc.) silently ignored
     });
 
-    socket.bind(localPort, () => {
+    socket.bind(localPort, bindHost, () => {
       sendRegister();
     });
   });

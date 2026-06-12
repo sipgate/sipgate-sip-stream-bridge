@@ -34,6 +34,13 @@ const configSchema = z
     PUBLIC_BASE_URL: z.string().url().optional(),
     // Explicit port for outbound INVITE Request-URI; 0 = DNS/default.
     SIP_OUTBOUND_TARGET_PORT: z.coerce.number().int().min(0).max(65535).default(0),
+    // SIP listener bind address host:port. Drives the inbound socket bind AND the
+    // Via/Contact port. Default 0.0.0.0:5060 (production). The sipp e2e harness sets
+    // 127.0.0.1:5070 so the bridge coexists with a test-registrar stub on :5060.
+    SIP_LISTEN_ADDR: z
+      .string()
+      .regex(/^[^:]+:\d{1,5}$/, 'must be host:port')
+      .default('0.0.0.0:5060'),
 
     // ── v3 status callbacks ───────────────────────────────────────────────────
     // Operator-supplied default StatusCallback installed on every inbound call.
@@ -82,9 +89,9 @@ const configSchema = z
       data.DIAL_ALLOWED_PREFIXES.split(',')
         .map((p) => p.trim())
         .filter((p) => p.length > 0)
-        .every((p) => /^\+?[0-9]+$/.test(p)),
+        .every((p) => /^\+?[0-9]*$/.test(p)),
     {
-      message: 'DIAL_ALLOWED_PREFIXES entries must match ^\\+?[0-9]+$',
+      message: 'DIAL_ALLOWED_PREFIXES entries must match ^\\+?[0-9]*$ (e.g. +49, 0, or + for all)',
       path: ['DIAL_ALLOWED_PREFIXES'],
     },
   );

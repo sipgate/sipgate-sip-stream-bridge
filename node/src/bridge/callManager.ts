@@ -20,6 +20,7 @@ import os from 'node:os';
 import type { Logger } from 'pino';
 
 import type { Config } from '../config/index.js';
+import { listenParts } from '../config/listenAddr.js';
 import { createChildLogger } from '../logger/index.js';
 import type { Metrics } from '../observability/metrics.js';
 import { createRtpHandler, type RtpHandler } from '../rtp/rtpHandler.js';
@@ -308,6 +309,8 @@ export class CallManager {
   private readonly config: Config;
   /** AC… account identifier, derived once from SIP_USER */
   readonly accountSid: string;
+  /** Local SIP port (Via/Contact) from SIP_LISTEN_ADDR. */
+  private readonly localSipPort: number;
   private sipHandle!: SipHandle; // set via setSipHandle() before any calls arrive
   private readonly log: Logger;
   private readonly metrics?: Metrics;
@@ -321,6 +324,7 @@ export class CallManager {
     this.log = log;
     this.metrics = metrics;
     this.accountSid = deriveAccountSid(config.SIP_USER);
+    this.localSipPort = listenParts(config.SIP_LISTEN_ADDR).port;
     // Sweep expired terminated-call snapshots. unref() so the timer never keeps
     // the process (or a test runner) alive on its own.
     this.sweepTimer = setInterval(() => this.sweepRecentlyTerminated(), RECENTLY_TERMINATED_SWEEP_MS);
@@ -546,7 +550,7 @@ export class CallManager {
         to: `${toHeader};tag=${existing.localTag}`,
         callId: sipCallId, cseq, sdpBody: existing.sdpAnswer, localIp,
         sipUser: this.config.SIP_USER, sipDomain: this.config.SIP_DOMAIN,
-        localSipPort: 5060,
+        localSipPort: this.localSipPort,
       });
       this.sipHandle.sendRaw(Buffer.from(ok200), rinfo.port, rinfo.address);
       return;
@@ -741,7 +745,7 @@ export class CallManager {
       localIp,
       sipUser: this.config.SIP_USER,
       sipDomain: this.config.SIP_DOMAIN,
-      localSipPort: 5060,
+      localSipPort: this.localSipPort,
     });
     const okBuf = Buffer.from(ok);
     callLog.info(
@@ -1011,7 +1015,7 @@ export class CallManager {
       const bye = buildBye({
         remoteTarget: session.remoteTarget,
         localIp,
-        localSipPort: 5060,
+        localSipPort: this.localSipPort,
         fromUri: session.localUri, // dialog-local URI (the INVITE To-URI), NOT SIP_USER
         fromTag: session.localTag,
         toUri: session.remoteUri,

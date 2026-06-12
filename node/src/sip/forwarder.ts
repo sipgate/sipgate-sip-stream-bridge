@@ -15,6 +15,7 @@ import os from 'node:os';
 import type { Logger } from 'pino';
 
 import type { Config } from '../config/index.js';
+import { listenParts } from '../config/listenAddr.js';
 import { newCallSid } from '../identity/sid.js';
 import type { ForwardReason, Metrics } from '../observability/metrics.js';
 import type { CallSession } from '../bridge/callManager.js';
@@ -95,11 +96,13 @@ function dialCallStatus(status: DialStatus): string {
 export class Forwarder {
   private readonly d: ForwarderDeps;
   private readonly localIp: string;
+  private readonly localSipPort: number;
   private nextHop: { host: string; port: number } | null = null;
 
   constructor(deps: ForwarderDeps) {
     this.d = deps;
     this.localIp = deps.config.SDP_CONTACT_IP ?? getLocalIp();
+    this.localSipPort = listenParts(deps.config.SIP_LISTEN_ADDR).port;
   }
 
   /** Allocate the callee-leg RTP socket (PCMU). Called after the privacy gate. */
@@ -177,7 +180,7 @@ export class Forwarder {
     // 3. Build URIs + SDP offer, resolve trunk next-hop.
     const targetUri = `sip:${target}@${domain}`;
     const fromUri = `sip:${fromUser}@${domain}`;
-    const contactUri = `sip:${this.d.config.SIP_USER}@${this.localIp}:5060`;
+    const contactUri = `sip:${this.d.config.SIP_USER}@${this.localIp}:${this.localSipPort}`;
     const ppiUri = ppiUser ? `sip:${ppiUser}@${domain}` : undefined;
     const offerSdp = buildSdpOffer(this.localIp, calleeRtp.localPort);
     const nextHop = await this.resolveNextHop();
@@ -214,7 +217,7 @@ export class Forwarder {
     const dialog = new OutboundDialog({
       sipHandle: this.d.sipHandle,
       localIp: this.localIp,
-      localSipPort: 5060,
+      localSipPort: this.localSipPort,
       targetUri,
       targetHost: nextHop.host,
       targetPort: nextHop.port,
