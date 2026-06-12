@@ -3,17 +3,17 @@ module github.com/sipgate/sipgate-sip-stream-bridge
 go 1.26
 
 require (
-	github.com/emiago/sipgo v1.3.0
+	github.com/emiago/sipgo v1.3.1
 	github.com/go-chi/chi/v5 v5.2.5
-	github.com/gobwas/ws v1.3.2
+	github.com/gobwas/ws v1.4.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
-	github.com/pion/rtp v1.10.1
+	github.com/pion/rtp v1.10.2
 	github.com/pion/sdp/v3 v3.0.18
 	github.com/pion/srtp/v2 v2.0.20
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.1
 	github.com/samber/slog-zerolog v1.0.0
 	go-simpler.org/env v0.12.0
 	golang.org/x/tools v0.44.0
@@ -130,7 +130,6 @@ require (
 	github.com/karamaru-alpha/copyloopvar v1.2.2 // indirect
 	github.com/kisielk/errcheck v1.10.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.6 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/kulti/thelper v0.7.1 // indirect
 	github.com/kunwardeep/paralleltest v1.0.15 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
