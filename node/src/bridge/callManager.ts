@@ -26,8 +26,51 @@ import { createRtpHandler, type RtpHandler } from '../rtp/rtpHandler.js';
 import { buildSdpAnswer, parseSdpOffer, selectAudioCodec } from '../sip/sdp.js';
 import type { SipCallbacks, SipHandle } from '../sip/userAgent.js';
 import { createWsClient, type WsCallParams, type WsClient } from '../ws/wsClient.js';
+import { deriveAccountSid } from '../identity/sid.js';
+import { USER_AGENT } from '../version.js';
+import type { StatusClient, CallbackEvent } from '../webhook/status.js';
+import { buildStatusForm } from '../webhook/callbackForm.js';
+import { subscriptionMatches } from '../webhook/subscription.js';
+import { CallState, isActiveState, twilioStatus } from './state.js';
+
+/** Per-call status-callback subscription (operator default or REST-supplied). */
+export interface StatusCallbackConfig {
+  url: string;
+  method: string;
+  events: Set<string>;
+  /** Operator-trusted (bypasses SSRF guard) — true only for the configured default. */
+  trusted: boolean;
+}
 
 // ── Public types ──────────────────────────────────────────────────────────────
+
+/**
+ * Read-only projection of a call for the REST control plane (active sessions and
+ * recently-terminated snapshots share this shape). Field names/types line up with
+ * the api/json.ts CallView serializer input.
+ */
+export interface BridgeCall {
+  callSid: string;
+  accountSid: string;
+  from: string;
+  to: string;
+  status: string;
+  direction: string;
+  startTime: Date | null;
+  endTime: Date | null;
+  duration: number | null;
+  answeredBy: string | null;
+  parentCallSid: string | null;
+}
+
+/** Immutable snapshot retained after teardown so GET /Calls/{Sid} still resolves. */
+interface TerminatedCall extends BridgeCall {
+  terminatedAt: number; // epoch ms — for TTL sweep
+}
+
+/** Recently-terminated retention window + sweep cadence (mirrors Go v3). */
+const RECENTLY_TERMINATED_TTL_MS = 5 * 60_000;
+const RECENTLY_TERMINATED_SWEEP_MS = 30_000;
 
 export interface CallSession {
   /** SIP Call-ID (from INVITE header) */
@@ -62,9 +105,29 @@ export interface CallSession {
   sdpAnswer: string;
   /** Silence byte for the negotiated codec — used for NAT hole-punch and reconnect silence */
   silenceByte: number;
-}
 
-const USER_AGENT = 'sipgate-sip-stream-bridge/0.1.0';
+  // ── v3 control-plane metadata ───────────────────────────────────────────────
+  /** AC… account identifier (derived once from SIP_USER) */
+  accountSid: string;
+  /** Caller number/URI (From, or P-Asserted-Identity when present) */
+  fromNumber: string;
+  /** Dialed number/URI (Request-URI) */
+  toNumber: string;
+  /** Wall-clock at INVITE acceptance */
+  startTime: Date;
+  /** Wall-clock when the call was answered (200 OK) — for CallDuration */
+  answeredAt: Date | null;
+  /** Lifecycle state (drives REST status + mid-call modify gating) */
+  state: CallState;
+  /** Teardown reason recorded at termination (maps to terminal Twilio status) */
+  terminalReason: string | null;
+  /** Final SIP response code captured for the call, if any */
+  sipFinalCode: number;
+  /** Monotonic per-call status-callback sequence counter (0-indexed) */
+  seqCounter: number;
+  /** Active status-callback subscription, or null if none */
+  statusCallback: StatusCallbackConfig | null;
+}
 
 // ── Internal SIP helpers ──────────────────────────────────────────────────────
 
@@ -186,26 +249,104 @@ function parseContactTarget(uri: string): [string, number] {
 
 export class CallManager {
   private readonly sessions = new Map<string, CallSession>();
+  /** CallSid → live session, for the REST control plane (active calls only) */
+  private readonly callSidIdx = new Map<string, CallSession>();
+  /** CallSid → snapshot of recently-terminated calls (TTL-swept) */
+  private readonly recentlyTerminated = new Map<string, TerminatedCall>();
   /** Call-IDs currently being set up (between first INVITE and 200 OK stored) — dedup retransmissions */
   private readonly pendingInvites = new Set<string>();
   /** Call-IDs for which CANCEL was received before 200 OK was sent */
   private readonly cancelledInvites = new Set<string>();
   private readonly config: Config;
+  /** AC… account identifier, derived once from SIP_USER */
+  readonly accountSid: string;
   private sipHandle!: SipHandle; // set via setSipHandle() before any calls arrive
   private readonly log: Logger;
   private readonly metrics?: Metrics;
+  private statusClient?: StatusClient;
   /** Set to true during terminateAll() — causes new INVITEs to receive 503 (LCY-01) */
   private isShuttingDown = false;
+  private readonly sweepTimer: ReturnType<typeof setInterval>;
 
   constructor(config: Config, log: Logger, metrics?: Metrics) {
     this.config = config;
     this.log = log;
     this.metrics = metrics;
+    this.accountSid = deriveAccountSid(config.SIP_USER);
+    // Sweep expired terminated-call snapshots. unref() so the timer never keeps
+    // the process (or a test runner) alive on its own.
+    this.sweepTimer = setInterval(() => this.sweepRecentlyTerminated(), RECENTLY_TERMINATED_SWEEP_MS);
+    this.sweepTimer.unref?.();
+  }
+
+  private sweepRecentlyTerminated(): void {
+    const cutoff = Date.now() - RECENTLY_TERMINATED_TTL_MS;
+    for (const [callSid, snap] of this.recentlyTerminated) {
+      if (snap.terminatedAt < cutoff) this.recentlyTerminated.delete(callSid);
+    }
   }
 
   /** Wire the SipHandle produced by createSipUserAgent into the manager */
   setSipHandle(handle: SipHandle): void {
     this.sipHandle = handle;
+  }
+
+  /** Wire the StatusClient used to deliver call-progress callbacks. */
+  setStatusClient(client: StatusClient): void {
+    this.statusClient = client;
+  }
+
+  /** Build the operator-default StatusCallback subscription, if configured. */
+  private defaultStatusCallback(): StatusCallbackConfig | null {
+    const url = this.config.STATUS_CALLBACK_DEFAULT_URL;
+    if (!url) return null;
+    const events = new Set(
+      this.config.STATUS_CALLBACK_DEFAULT_EVENTS.split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0),
+    );
+    return { url, method: this.config.STATUS_CALLBACK_DEFAULT_METHOD, events, trusted: true };
+  }
+
+  /** Replace a session's status-callback subscription (REST StatusCallback=). */
+  setStatusCallback(session: CallSession, cfg: StatusCallbackConfig | null): void {
+    session.statusCallback = cfg;
+  }
+
+  /**
+   * Emit a single status-callback event if the session has a matching subscription.
+   * SequenceNumber is monotonic per call; terminal events carry CallDuration.
+   */
+  private emitStatusEvent(
+    session: CallSession,
+    event: string,
+    callStatus: string,
+    extras?: { callDurationSec?: number; sipResponseCode?: number },
+  ): void {
+    const sub = session.statusCallback;
+    if (!sub || !this.statusClient) return;
+    if (!subscriptionMatches(sub.events, event)) return;
+
+    const form = buildStatusForm({
+      callSid: session.callSid,
+      accountSid: session.accountSid,
+      from: session.fromNumber,
+      to: session.toNumber,
+      direction: 'inbound',
+      callStatus,
+      sequenceNumber: session.seqCounter++,
+      timestamp: new Date(),
+      callDurationSec: extras?.callDurationSec,
+      sipResponseCode: extras?.sipResponseCode,
+    });
+    const evt: CallbackEvent = {
+      url: sub.url,
+      method: sub.method,
+      form,
+      event,
+      trusted: sub.trusted,
+    };
+    this.statusClient.enqueue(session.callSid, evt);
   }
 
   /** Returns SipCallbacks to pass to createSipUserAgent */
@@ -236,9 +377,85 @@ export class CallManager {
     };
   }
 
+  // ── v3 control-plane query + modify surface ─────────────────────────────────
+
+  /** Build the read-only BridgeCall projection from a live session. */
+  private toBridgeCall(s: CallSession, endTime?: Date): BridgeCall {
+    const end = endTime ?? null;
+    const durationSec =
+      end && s.answeredAt ? Math.max(0, Math.round((end.getTime() - s.answeredAt.getTime()) / 1000)) : null;
+    return {
+      callSid: s.callSid,
+      accountSid: s.accountSid,
+      from: s.fromNumber,
+      to: s.toNumber,
+      status: twilioStatus(s.state, s.terminalReason ?? undefined),
+      direction: 'inbound',
+      startTime: s.startTime,
+      endTime: end,
+      duration: durationSec,
+      answeredBy: null,
+      parentCallSid: null,
+    };
+  }
+
+  /** List active + recently-terminated calls, most-recently-started first. */
+  list(): BridgeCall[] {
+    const out: BridgeCall[] = [];
+    for (const s of this.sessions.values()) out.push(this.toBridgeCall(s));
+    for (const t of this.recentlyTerminated.values()) out.push(t);
+    out.sort((a, b) => (b.startTime?.getTime() ?? 0) - (a.startTime?.getTime() ?? 0));
+    return out;
+  }
+
+  /** Look up a call by CallSid (active wins over a stale terminated snapshot). */
+  getByCallSid(callSid: string): BridgeCall | undefined {
+    const live = this.callSidIdx.get(callSid);
+    if (live) return this.toBridgeCall(live);
+    return this.recentlyTerminated.get(callSid);
+  }
+
+  /** Resolve the live session for mid-call modify; undefined if not active. */
+  getSessionByCallSid(callSid: string): CallSession | undefined {
+    return this.callSidIdx.get(callSid);
+  }
+
+  /** True while the session is modifiable (neither terminated nor hung up). */
+  isActive(callSid: string): boolean {
+    const s = this.callSidIdx.get(callSid);
+    return s !== undefined && isActiveState(s.state);
+  }
+
+  /**
+   * Privacy gate primitive: close the WS stream cleanly (bot disconnected) while
+   * leaving the RTP path alive, so a subsequent <Dial> can relay media. Idempotent.
+   */
+  closeStream(session: CallSession, reason: string): void {
+    if (session.state === CallState.DialingOut || !isActiveState(session.state)) return;
+    session.state = CallState.DialingOut;
+    if (session.silenceInterval !== null) {
+      clearInterval(session.silenceInterval);
+      session.silenceInterval = null;
+    }
+    session.ws.stop(); // sends stop event (reason carried in logs) then closes WS
+    session.log.info({ event: 'stream_closed', reason }, 'WS stream closed (privacy gate)');
+  }
+
+  /**
+   * REST-driven termination by CallSid (sends BYE to the caller). Returns true if
+   * a live session was found and torn down. Idempotent for already-terminated calls.
+   */
+  terminateByCallSid(callSid: string, reason: string): boolean {
+    const session = this.callSidIdx.get(callSid);
+    if (!session) return false;
+    this.terminateSession(session, reason, true);
+    return true;
+  }
+
   /** Terminate all active sessions in parallel — for graceful shutdown */
   async terminateAll(): Promise<void> {
     this.isShuttingDown = true; // reject new INVITEs with 503 during drain (LCY-01)
+    clearInterval(this.sweepTimer);
     const sessions = [...this.sessions.values()];
     // Clear first so terminateSession idempotency guard doesn't block
     this.sessions.clear();
@@ -490,9 +707,27 @@ export class CallManager {
       silenceInterval: null,
       sdpAnswer: sdpAnswerStr,
       silenceByte: rtp.silenceByte,
+      accountSid: this.accountSid,
+      fromNumber: fromUri,
+      toNumber: toUri,
+      startTime: new Date(),
+      answeredAt: new Date(),
+      state: CallState.Streaming,
+      terminalReason: null,
+      sipFinalCode: 200,
+      seqCounter: 0,
+      statusCallback: this.defaultStatusCallback(),
     };
     this.sessions.set(sipCallId, session);
+    this.callSidIdx.set(callSid, session);
     this.metrics?.incActiveCalls();
+
+    // Lifecycle status callbacks for the inbound (auto-answered) call. These
+    // collapse to near-instant for a streaming bridge; subscription filtering
+    // decides which actually POST.
+    this.emitStatusEvent(session, 'initiated', 'queued');
+    this.emitStatusEvent(session, 'ringing', 'ringing');
+    this.emitStatusEvent(session, 'answered', 'in-progress');
 
     // 9a. Retransmit 200 OK until ACK arrives (RFC 3261 §13.3.1.4)
     // Timer doubles from T1=500ms up to T2=4000ms per attempt.
@@ -641,7 +876,31 @@ export class CallManager {
   private terminateSession(session: CallSession, reason: string, sendBye: boolean): void {
     if (!this.sessions.has(session.callId)) return; // idempotent
     this.sessions.delete(session.callId);
+    this.callSidIdx.delete(session.callSid);
+    // Record terminal state + retain a read-only snapshot so GET /Calls/{Sid}
+    // resolves for a grace window after teardown.
+    session.state = reason === 'remote_bye' ? CallState.HungUp : CallState.Terminated;
+    session.terminalReason = reason;
+    const endTime = new Date();
+    this.recentlyTerminated.set(session.callSid, {
+      ...this.toBridgeCall(session, endTime),
+      terminatedAt: endTime.getTime(),
+    });
     this.metrics?.decActiveCalls();
+
+    // Terminal status callback (carries CallDuration), then drain + close the
+    // per-call delivery queue so the worker doesn't leak past teardown.
+    if (this.statusClient && session.statusCallback) {
+      const terminalStatus = twilioStatus(session.state, reason);
+      const callDurationSec = session.answeredAt
+        ? Math.max(0, Math.round((endTime.getTime() - session.answeredAt.getTime()) / 1000))
+        : undefined;
+      this.emitStatusEvent(session, terminalStatus, terminalStatus, {
+        callDurationSec,
+        sipResponseCode: session.sipFinalCode,
+      });
+      void this.statusClient.drainAndClose(session.callSid);
+    }
 
     // Cancel any pending 200 OK retransmit timer
     if (session.okRetransmitTimer !== null) {

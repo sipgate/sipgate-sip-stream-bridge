@@ -7,6 +7,7 @@ import os from 'node:os';
 import type { Logger } from 'pino';
 
 import type { Config } from '../config/index.js';
+import { USER_AGENT } from '../version.js';
 
 export interface SipCallbacks {
   onInvite?: (raw: string, rinfo: RemoteInfo) => void;
@@ -22,8 +23,6 @@ export interface SipHandle {
   /** Send REGISTER with Expires:0 and Contact:* to deregister all bindings */
   unregister(): Promise<void>;
 }
-
-const USER_AGENT = 'sipgate-sip-stream-bridge/0.1.0';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

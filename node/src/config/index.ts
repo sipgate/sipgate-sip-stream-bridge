@@ -24,11 +24,70 @@ const configSchema = z
       .default(false),
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
     HTTP_PORT: z.coerce.number().int().min(1).max(65535).default(9090),
+
+    // ── v3 control plane ──────────────────────────────────────────────────────
+    // REST Basic Auth password + X-Twilio-Signature HMAC key. Empty is allowed
+    // for v2.1 parity (streaming-only); warn-worthy below 32 chars but not fatal.
+    AUTH_TOKEN: z.string().default(''),
+    // External base URL behind a reverse proxy — used to reconstruct the signed
+    // URL for X-Twilio-Signature when the public URL differs from the bound one.
+    PUBLIC_BASE_URL: z.string().url().optional(),
+    // Explicit port for outbound INVITE Request-URI; 0 = DNS/default.
+    SIP_OUTBOUND_TARGET_PORT: z.coerce.number().int().min(0).max(65535).default(0),
+
+    // ── v3 status callbacks ───────────────────────────────────────────────────
+    // Operator-supplied default StatusCallback installed on every inbound call.
+    // Empty = disabled. Trusted (bypasses the SSRF guard).
+    STATUS_CALLBACK_DEFAULT_URL: z
+      .string()
+      .url()
+      .refine((u) => /^https?:\/\//i.test(u), 'must be http(s)://')
+      .optional(),
+    STATUS_CALLBACK_DEFAULT_METHOD: z.enum(['POST', 'GET']).default('POST'),
+    STATUS_CALLBACK_DEFAULT_EVENTS: z.string().default('initiated,ringing,answered,completed'),
+
+    // ── v3 <Dial> / B2BUA forwarding ──────────────────────────────────────────
+    // Toll-fraud allow-list of E.164 prefixes (CSV). Empty = DENY ALL (default-deny).
+    DIAL_ALLOWED_PREFIXES: z.string().default(''),
+    // Fallback caller-ID when TwiML <Dial callerId> is absent.
+    DIAL_DEFAULT_CALLER_ID: z.string().optional(),
+    // E.164 country code without "+" (e.g. "49") for trunk caller-ID normalization.
+    DIAL_CALLER_ID_COUNTRY_CODE: z.string().regex(/^[0-9]+$/, 'digits only, no +').optional(),
+    DIAL_RING_TIMEOUT_S: z.coerce.number().int().min(5).max(600).default(30),
+    DIAL_MAX_PER_SESSION: z.coerce.number().int().min(1).default(3),
+    DIAL_MAX_PER_MINUTE: z.coerce.number().int().min(1).default(60),
   })
   .refine((data) => data.RTP_PORT_MIN < data.RTP_PORT_MAX, {
     message: 'RTP_PORT_MIN must be less than RTP_PORT_MAX',
     path: ['RTP_PORT_MIN'],
-  });
+  })
+  .refine(
+    (data) =>
+      data.STATUS_CALLBACK_DEFAULT_EVENTS.split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0)
+        .every((e) =>
+          [
+            'initiated', 'ringing', 'answered', 'in-progress',
+            'completed', 'busy', 'failed', 'no-answer', 'canceled',
+          ].includes(e),
+        ),
+    {
+      message: 'STATUS_CALLBACK_DEFAULT_EVENTS must be a CSV of valid call-status events',
+      path: ['STATUS_CALLBACK_DEFAULT_EVENTS'],
+    },
+  )
+  .refine(
+    (data) =>
+      data.DIAL_ALLOWED_PREFIXES.split(',')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0)
+        .every((p) => /^\+?[0-9]+$/.test(p)),
+    {
+      message: 'DIAL_ALLOWED_PREFIXES entries must match ^\\+?[0-9]+$',
+      path: ['DIAL_ALLOWED_PREFIXES'],
+    },
+  );
 
 export type Config = z.infer<typeof configSchema>;
 

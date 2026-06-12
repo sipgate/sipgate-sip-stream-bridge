@@ -5,6 +5,8 @@ import { createChildLogger } from './logger/index.js';
 import { Metrics } from './observability/metrics.js';
 import { createSipUserAgent } from './sip/userAgent.js';
 import { CallManager } from './bridge/callManager.js';
+import { createApiHandler } from './api/server.js';
+import { StatusClient } from './webhook/status.js';
 
 const log = createChildLogger({ component: 'main' });
 
@@ -18,6 +20,10 @@ async function main(): Promise<void> {
 
   const callManager = new CallManager(config, createChildLogger({ component: 'call-manager' }), metrics);
 
+  // Status-callback delivery (X-Twilio-Signature, SSRF-guarded, retrying).
+  const statusClient = new StatusClient(config.AUTH_TOKEN, metrics, createChildLogger({ component: 'status-callback' }));
+  callManager.setStatusClient(statusClient);
+
   const sipHandle = await createSipUserAgent(
     config,
     createChildLogger({ component: 'sip' }),
@@ -29,8 +35,18 @@ async function main(): Promise<void> {
 
   log.info({ event: 'sip_booted' }, 'SIP registrar started — waiting for calls');
 
-  // HTTP server: /health (OBS-02) and /metrics (OBS-03)
+  // Twilio-compatible REST control plane (/2010-04-01/Accounts/{Sid}/Calls...).
+  // Returns true when it handled an API path; falls through otherwise.
+  const apiHandler = createApiHandler({
+    manager: callManager,
+    config,
+    metrics,
+    log: createChildLogger({ component: 'api' }),
+  });
+
+  // HTTP server: REST control plane + /health + /metrics.
   const httpServer = http.createServer((req, res) => {
+    if (apiHandler(req, res)) return;
     if (req.method === 'GET' && req.url === '/health') {
       const body = JSON.stringify(metrics.getHealth());
       res.writeHead(200, { 'Content-Type': 'application/json' });
