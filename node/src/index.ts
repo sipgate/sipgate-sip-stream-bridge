@@ -83,20 +83,21 @@ async function main(): Promise<void> {
     log.info({ event: 'http_server_started', port: config.HTTP_PORT }, 'HTTP server started');
   });
 
-  // Graceful shutdown handler (LCY-01)
-  // CONTEXT.md locked decision: SIGTERM + SIGINT same handler, 5s drain timeout,
-  // sequence: BYE all calls + close all WS in parallel → then UNREGISTER → exit
+  // Graceful shutdown: SIGTERM + SIGINT share one handler. Drain budget 15s,
+  // sequence: stop new HTTP → BYE all calls (both legs for forwarded calls) +
+  // close all WS + drain status callbacks → UNREGISTER → exit.
+  const DRAIN_BUDGET_MS = 15_000;
   async function shutdown(signal: string): Promise<void> {
     log.info({ event: 'shutdown_start', signal }, 'Graceful shutdown initiated');
 
     const drainTimeout = setTimeout(() => {
-      log.warn({ event: 'shutdown_forced' }, 'Shutdown drain timeout after 5s — forcing exit');
+      log.warn({ event: 'shutdown_forced', budgetMs: DRAIN_BUDGET_MS }, 'Shutdown drain timeout — forcing exit');
       process.exit(0);
-    }, 5000);
+    }, DRAIN_BUDGET_MS);
 
     try {
       httpServer.close(); // stop accepting new HTTP requests
-      await callManager.terminateAll(); // BYE + stop event + WS.close in parallel
+      await callManager.terminateAll(); // dual-leg BYE + stop event + WS.close + status drain
       await sipHandle.unregister();     // REGISTER with Expires:0, Contact:*
       metrics.setSipRegistered(false);
       log.info({ event: 'shutdown_complete' }, 'Graceful shutdown complete');

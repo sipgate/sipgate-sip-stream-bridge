@@ -11,14 +11,15 @@ Node/TS-Implementierung, bei voller Beibehaltung der v2.1-Daten-Ebene
 |-----------|--------|
 | A Fundament + Bridge-Erweiterung | ✅ fertig |
 | B REST read-only (list/get) | ✅ fertig |
-| C TwiML + Mid-Call Modify + `<Hangup>` | ✅ fertig (`<Dial>` warn-skipped bis E) |
-| D Status-Callbacks (Kern + Emit-Verdrahtung) | ✅ fertig (E2E-Feuern via sipp in G) |
-| E B2BUA `<Dial>` (Client-Dialog, Dual-Leg, Digest qop) | ⏳ offen — der XL-Teil |
-| F Graceful Shutdown / Dual-Leg-BYE | ⏳ offen |
-| G E2E-Parität (sipp) + Doku | ⏳ offen |
+| C TwiML + Mid-Call Modify + `<Hangup>` | ✅ fertig |
+| D Status-Callbacks (Kern + Emit-Verdrahtung) | ✅ fertig |
+| E B2BUA `<Dial>` (Client-Dialog, Dual-Leg, Digest qop) | ✅ fertig |
+| F Graceful Shutdown / Dual-Leg-BYE (15 s Drain) | ✅ fertig |
+| G E2E-Parität (sipp) + Doku | 🟡 Doku ✅, sipp-Lauf offen (umgebungsabhängig) |
 
-356 Unit-/Integrationstests grün, typecheck sauber (TS 6). `main` (Major-Bumps)
-ist eingemergt.
+428 Unit-/Integrationstests grün, typecheck sauber (TS 6). `main` (Major-Bumps)
+ist eingemergt. Offen: der sipp-E2E-Lauf gegen die Node-Binary (sprachneutrales
+Harness unter `tests/e2e/sipp/`) — braucht eine Laufumgebung mit sipp.
 
 ---
 

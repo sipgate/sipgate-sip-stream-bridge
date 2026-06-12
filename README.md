@@ -4,10 +4,10 @@ Bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media
 
 Two implementations live in this repository, both deployed in production:
 
-- **[Go](./go/)** — currently at **v3.0**: streaming bridge + Twilio-compatible REST control plane (list / read / modify calls in progress, mid-call TwiML interrupt, B2BUA `<Dial>` for forwarding, status-callback HTTP POSTs with `X-Twilio-Signature` HMAC).
-- **[Node.js / TypeScript](./node/)** — currently at **v2.1**: streaming bridge with full data-plane parity (PCMU/PCMA/G.722, mark/clear/dtmf, SRTP, OPTIONS keepalive, graceful drain). The v3.0 control-plane surface is on the roadmap and will follow.
+- **[Go](./go/)** — at **v3.0**: streaming bridge + Twilio-compatible REST control plane (list / read / modify calls in progress, mid-call TwiML interrupt, B2BUA `<Dial>` for forwarding, status-callback HTTP POSTs with `X-Twilio-Signature` HMAC).
+- **[Node.js / TypeScript](./node/)** — at **v3.0**: full data-plane parity (PCMU/PCMA/G.722, mark/clear/dtmf, SRTP, OPTIONS keepalive, graceful drain) **plus** the same Twilio-compatible REST control plane (REST API, mid-call TwiML `<Hangup>`/`<Dial>`, B2BUA forwarding, status callbacks). The outbound SIP leg is a purpose-built UAC dialog on the shared socket (no external SIP library).
 
-Pick the Go implementation if you need dynamic mid-call control or `<Dial>` forwarding today; pick either for streaming-only workloads.
+Pick either implementation — both cover streaming, dynamic mid-call control, and `<Dial>` forwarding.
 
 ```
                     ┌─ sipgate trunk (SIP/UDP) ─┐
@@ -15,7 +15,7 @@ Pick the Go implementation if you need dynamic mid-call control or `<Dial>` forw
                     ▼                            │
                 ┌────────────────────────────────────────────┐
    inbound ───►│            sipgate-sip-stream-bridge        │◄─── REST control
-                │           (Go or Node.js streaming bridge)  │     (Go only)
+                │           (Go or Node.js streaming bridge)  │
                 │                                            │
                 │  SIP Handler ─► CallManager ─► RTP socket  │
                 │                       │                    │
@@ -24,7 +24,7 @@ Pick the Go implementation if you need dynamic mid-call control or `<Dial>` forw
                 │           Twilio Media Streams protocol    │
                 │              (mark / clear / dtmf)         │
                 │                                            │
-                │  B2BUA forwarder (Go only):                │
+                │  B2BUA forwarder (Go + Node.js):           │
                 │    <Dial> → outbound INVITE → trunk        │
                 │    privacy gate: WS stop BEFORE INVITE     │
                 └────────────────────────────────────────────┘
@@ -36,9 +36,9 @@ Pick the Go implementation if you need dynamic mid-call control or `<Dial>` forw
                                   customer endpoint
 ```
 
-## v3.0 control plane (Go today; Node.js to follow)
+## v3.0 control plane
 
-Both implementations cover the streaming bridge use case at v2.1 parity. The Go implementation has, in addition, the v3.0 Twilio-compatible REST API for **modifying calls already in progress** plus the operational hardening to run the result in production. The Node.js implementation will receive the same surface in a follow-up milestone.
+Both implementations cover the streaming bridge use case at v2.1 parity **and** the v3.0 Twilio-compatible REST API for **modifying calls already in progress** (mid-call TwiML interrupt, B2BUA `<Dial>` forwarding, status callbacks). The Go implementation additionally ships operational tooling (metrics-cardinality lint, sipp e2e harness, operator runbook); the Node.js control plane is built on a purpose-built UAC dialog over its hand-rolled SIP stack.
 
 | Feature | Description |
 |---------|-------------|
@@ -93,7 +93,7 @@ Environment variables only — `.env` is auto-loaded; production sets vars direc
 | `SIP_REGISTRAR` | SIP registrar address |
 | `WS_TARGET_URL` | WebSocket URL of the bot backend |
 
-### Required by the Go REST control plane
+### Required by the v3.0 REST control plane (Go + Node.js)
 
 | Variable | Description |
 |----------|-------------|
@@ -264,7 +264,7 @@ sipgate-sip-stream-bridge/
 
 | Capability | Go | Node.js |
 |------------|----|---------|
-| Language / runtime | Go 1.26 | TypeScript / Node.js 22 |
+| Language / runtime | Go 1.26 | TypeScript / Node.js 24 |
 | Docker image | ~5.5 MB (`FROM scratch`) | ~120 MB (`node:22-alpine`) |
 | SIP library | emiago/sipgo v1.3.0 | Raw UDP (no library) |
 | Twilio Media Streams `media` | ✅ | ✅ |
@@ -274,17 +274,17 @@ sipgate-sip-stream-bridge/
 | SRTP (`SRTP_ENABLED=true`) | ✅ AES-128-CM-HMAC-SHA1-80 SDES | ✅ AES-128-CM-HMAC-SHA1-80 SDES |
 | WS reconnect (1s/2s/4s, 30s budget) | ✅ | ✅ |
 | SIP OPTIONS keepalive | ✅ | ✅ |
-| Graceful shutdown | ✅ ordered drain (15 s budget, dual-leg) | ✅ BYE + UNREGISTER |
+| Graceful shutdown | ✅ ordered drain (15 s budget, dual-leg) | ✅ ordered drain (15 s budget, dual-leg) |
 | `GET /health` + `GET /metrics` | ✅ | ✅ |
-| **REST API (`/2010-04-01/...`)** | ✅ chi + Basic Auth | ✗ |
-| **Mid-call `POST /Calls/{Sid}`** | ✅ TwiML interrupt | ✗ |
-| **B2BUA `<Dial>` + privacy gate** | ✅ | ✗ |
-| **Status callbacks + HMAC** | ✅ X-Twilio-Signature | ✗ |
-| **Toll-fraud guardrails** | ✅ DIAL_ALLOWED_PREFIXES + rate limits | ✗ |
-| **Cardinality lint (CI)** | ✅ `make lint-metrics` | ✗ |
-| **Security headers + 64 KB body cap** | ✅ | ✗ |
+| **REST API (`/2010-04-01/...`)** | ✅ chi + Basic Auth | ✅ mini-router + Basic Auth |
+| **Mid-call `POST /Calls/{Sid}`** | ✅ TwiML interrupt | ✅ TwiML interrupt |
+| **B2BUA `<Dial>` + privacy gate** | ✅ | ✅ UAC dialog on shared socket |
+| **Status callbacks + HMAC** | ✅ X-Twilio-Signature | ✅ X-Twilio-Signature |
+| **Toll-fraud guardrails** | ✅ DIAL_ALLOWED_PREFIXES + rate limits | ✅ DIAL_ALLOWED_PREFIXES + rate limits |
+| **Cardinality lint (CI)** | ✅ `make lint-metrics` | ✗ (convention + review) |
+| **Security headers + 64 KB body cap** | ✅ | ✅ |
 
-Both implementations are deployed today. The Node.js implementation is at v2.1 — production-ready for streaming-only workloads — and will gain the v3.0 control-plane surface in a follow-up milestone. The Go implementation is at v3.0 today and is the choice for workloads that require dynamic mid-call control or `<Dial>` forwarding.
+Both implementations now expose the v3.0 Twilio-compatible control plane. The Go implementation additionally ships the metrics-cardinality lint and the sipp e2e harness as build gates; the Node.js control plane is unit/integration-tested and shares the same byte-level Twilio fixtures (X-Twilio-Signature HMAC).
 
 → **[Go implementation README](./go/README.md)**
 
