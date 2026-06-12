@@ -90,6 +90,8 @@ export interface CallSession {
   remoteUri: string;
   /** Contact URI from INVITE (for BYE routing per RFC 3261 §12.2) */
   remoteTarget: string;
+  /** Record-Route set from the INVITE — the in-dialog route set for our BYE */
+  recordRoutes: string[];
   remoteRtpIp: string;
   remoteRtpPort: number;
   localRtpPort: number;
@@ -219,11 +221,13 @@ interface BuildByeParams {
   toTag: string;
   callId: string;
   cseq: number;
+  /** Record-Route set from the INVITE (document order); routed in reverse per RFC 3261 §12.2. */
+  recordRoutes?: string[];
 }
 
-function buildBye(p: BuildByeParams): string {
+export function buildBye(p: BuildByeParams): string {
   const branch = 'z9hG4bK' + crypto.randomBytes(6).toString('hex');
-  return [
+  const lines = [
     `BYE ${p.remoteTarget} SIP/2.0`,
     `Via: SIP/2.0/UDP ${p.localIp}:${p.localSipPort};branch=${branch};rport`,
     'Max-Forwards: 70',
@@ -231,10 +235,28 @@ function buildBye(p: BuildByeParams): string {
     `To: <${p.toUri}>;tag=${p.toTag}`,
     `Call-ID: ${p.callId}`,
     `CSeq: ${p.cseq} BYE`,
-    `User-Agent: ${USER_AGENT}`,
-    'Content-Length: 0',
-    '',
-  ].join('\r\n') + '\r\n';
+  ];
+  // In-dialog routing: a UAS's route set is the INVITE's Record-Route headers in
+  // REVERSE order. Without this, a BYE to a proxied caller bypasses the proxies
+  // and never reaches the far end (the caller leg lingers).
+  if (p.recordRoutes?.length) {
+    for (const rr of [...p.recordRoutes].reverse()) lines.push(`Route: ${rr}`);
+  }
+  lines.push(`User-Agent: ${USER_AGENT}`, 'Content-Length: 0', '');
+  return lines.join('\r\n') + '\r\n';
+}
+
+/**
+ * Resolve the transport target for an in-dialog request. With a route set
+ * (loose routing), send to the topmost Route (first proxy); otherwise to the
+ * remote Contact. Returns [host, port].
+ */
+export function byeSendTarget(recordRoutes: string[], remoteTarget: string): [string, number] {
+  if (recordRoutes.length > 0) {
+    // Route set is Record-Route reversed; the topmost Route is the last RR header.
+    return parseContactTarget(recordRoutes[recordRoutes.length - 1]);
+  }
+  return parseContactTarget(remoteTarget);
 }
 
 /**
@@ -709,6 +731,7 @@ export class CallManager {
       remoteTag,
       remoteUri,
       remoteTarget: remoteContact,
+      recordRoutes,
       remoteRtpIp: sdpOffer.remoteIp,
       remoteRtpPort: sdpOffer.remotePort,
       localRtpPort: rtp.localPort,
@@ -960,8 +983,10 @@ export class CallManager {
         toTag: session.remoteTag,
         callId: session.callId,
         cseq: session.cseq,
+        recordRoutes: session.recordRoutes,
       });
-      const [byeHost, byePort] = parseContactTarget(session.remoteTarget);
+      // Route via the dialog route set (first proxy) when present, else the Contact.
+      const [byeHost, byePort] = byeSendTarget(session.recordRoutes, session.remoteTarget);
       this.sipHandle.sendRaw(Buffer.from(bye), byePort, byeHost);
       session.log.info({ event: 'bye_sent', target: session.remoteTarget }, 'SIP BYE sent');
     }
