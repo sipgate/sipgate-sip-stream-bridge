@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/gobwas/ws"
-	"github.com/pion/rtp"
-	pionSRTP "github.com/pion/srtp/v2"
+	"github.com/pion/rtp/v2"
+	pionSRTP "github.com/pion/srtp/v3"
 	"github.com/rs/zerolog"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
@@ -1114,7 +1114,7 @@ func (s *CallSession) rtpPacer(ctx context.Context, rtpConn *net.UDPConn, srtpEn
 			// Encrypt to SRTP when an encryption context is available.
 			outPacket := encoded
 			if srtpEncCtx != nil {
-				encrypted, err := srtpEncCtx.EncryptRTP(encBuf[:0], encoded, &pkt.Header)
+				encrypted, err := srtpEncCtx.EncryptRTP(encBuf[:0], encoded, nil)
 				if err != nil {
 					s.log.Warn().Err(err).Str(observability.FieldSIPCallID, s.callID).Msg("rtpPacer: SRTP encrypt failed — skipping frame")
 					seqNo++
