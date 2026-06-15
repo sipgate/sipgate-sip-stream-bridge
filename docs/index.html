@@ -1265,6 +1265,11 @@ docker run \
             <td class="col-twilio">—</td>
             <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> ~10 MB (Go-Version)</span></td>
           </tr>
+          <tr>
+            <td>🎙️ Audio-Qualität</td>
+            <td class="col-twilio">8 kHz Schmalband (µ-law)</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Bis zu 16 kHz HD-Audio (G.722)</span></td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -1344,6 +1349,8 @@ docker run \
       <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Prometheus Metriken <span class="feature-code">/metrics</span></span></div>
       <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>Selbst gehostet — volle Kontrolle</span></div>
       <div class="feature-chip reveal reveal-delay-2"><div class="feature-check">✓</div><span>Verschlüsselte Audioübertragung (SRTP) <span class="feature-code">SRTP_ENABLED=true</span></span></div>
+      <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Anruf-Weiterleitungen — Calls direkt an andere Ziele durchstellen</span></div>
+      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>HD-Audio — 16 kHz statt Twilios 8 kHz <span class="feature-code">AUDIO_MODE=best</span></span></div>
     </div>
   </div>
 </section>
