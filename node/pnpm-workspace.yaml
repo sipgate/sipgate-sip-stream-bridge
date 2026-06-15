@@ -4,3 +4,7 @@
 # Must be present BEFORE `pnpm install` (the Dockerfile copies it ahead of install).
 allowBuilds:
   esbuild: true
+
+overrides:
+  vite: "7.3.2"
+  esbuild: "0.28.1"
