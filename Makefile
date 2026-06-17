@@ -13,12 +13,15 @@
 #   make build            — go build ./... under the Go module
 #   make e2e              — Go integration tests + 8 sipp scenarios
 #   make image-size-check — Docker image budget enforcer (≤6.0 MB)
+#   make ui               — build the operator UI bundle (Svelte+Vite) in ./ui
+#   make ui-go            — build UI + copy bundle into the Go embed dir
+#   make ui-node          — build UI + copy bundle into the Node serve dir
 #   make all              — test + lint + lint-metrics + build
 #
 # CI integration: .github/workflows/docker-go.yml invokes the same
 # targets so local development and CI behave identically.
 
-.PHONY: all test lint lint-metrics build e2e image-size-check
+.PHONY: all test lint lint-metrics build e2e image-size-check ui ui-go ui-node
 
 all: test lint lint-metrics build
 
@@ -44,6 +47,28 @@ lint-metrics:
 
 build:
 	cd go && go build ./...
+
+# ui — build the single shared operator-UI bundle (Svelte + Vite) into ui/dist.
+# This is the one canonical artifact; ui-go / ui-node fan it out to each backend.
+ui:
+	cd ui && npm ci && npm run build
+
+# ui-go — copy the vite bundle into the Go embed directory
+# (go/internal/web/dist). //go:embed reads this dir at compile time, so this
+# MUST run before `make build` / `docker build go/` to ship the real UI rather
+# than the committed placeholder. The Go build itself stays decoupled from the
+# Node toolchain — `make build` compiles fine against the placeholder.
+ui-go: ui
+	rm -rf go/internal/web/dist/assets
+	cp -R ui/dist/. go/internal/web/dist/
+
+# ui-node — copy the vite bundle into the Node serve directory (node/dist/ui),
+# served at runtime by createUiHandler. Run AFTER `pnpm build` (tsup rewrites
+# node/dist) so the assets survive — see node/Dockerfile.
+ui-node: ui
+	rm -rf node/dist/ui
+	mkdir -p node/dist/ui
+	cp -R ui/dist/. node/dist/ui/
 
 # e2e — end-to-end scenario suite. Runs the Go integration tests at
 # go/test/e2e/ plus all 8 sipp scenarios under tests/e2e/sipp/ against

@@ -1,0 +1,46 @@
+/*
+ * sipgate visual language — Neo-token NAMING convention as plain CSS custom
+ * properties. The real sipgate design system (@panda/ui + Neo Tokens) is a
+ * private, React-only package and cannot be a dependency of this open-source,
+ * Svelte repo. These values mirror sipgate's brand (near-black surfaces, white
+ * text, lime used ONLY as a small accent) — matching the sipgate-live-style
+ * tooling. No private dependency.
+ *
+ * Discipline (from the @panda/ui skill): components reference --neo-color-*
+ * tokens, never hardcoded hex.
+ */
+:root {
+  /* Brand — lime is an ACCENT ONLY (logo square, thin top rules). Never a
+     large fill. Dark "ink" is the primary brand surface (header, etc.). */
+  --neo-color-brand-primary: #deff00; /* sipgate signature lime — accent */
+  --neo-color-ink: #0a0a0a; /* near-black brand surface */
+  --neo-color-on-ink: #ffffff;
+  --neo-color-on-ink-muted: rgba(255, 255, 255, 0.6);
+
+  /* Backgrounds */
+  --neo-color-background-primary: #ffffff;
+  --neo-color-background-secondary: #f7f7f7;
+
+  /* Text */
+  --neo-color-text-primary: #1a1a1a;
+  --neo-color-text-secondary: #818885;
+
+  /* Borders */
+  --neo-color-border-primary: #e7e6e6;
+
+  /* Semantic / status */
+  --neo-color-success: #006660; /* teal — in-progress / completed */
+  --neo-color-success-soft: #d7f5e6;
+  --neo-color-accent: #2b50ed; /* blue — ringing / queued */
+  --neo-color-accent-soft: #e7ecff;
+  --neo-color-error: #c0392b; /* failed / busy / no-answer / canceled */
+  --neo-color-error-soft: #fdecea;
+
+  /* Layout scale */
+  --neo-radius: 8px;
+  --neo-gap: 1.5rem;
+  --neo-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --neo-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

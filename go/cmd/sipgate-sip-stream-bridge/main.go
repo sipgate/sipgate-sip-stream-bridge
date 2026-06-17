@@ -19,6 +19,7 @@ import (
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/identity"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/sip"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/web"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/webhook"
 )
 
@@ -236,6 +237,19 @@ func main() {
 	r.Get("/health", newHealthHandler(registrar, callManager, accountSid))
 
 	r.Method("GET", "/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
+
+	// Read-only operator UI (embedded Svelte bundle) at /ui. The static bundle
+	// is served UNauthenticated — it holds no secrets; the UI logs in via its
+	// own form and then calls the REST API with AccountSid:authToken explicitly,
+	// so the Twilio API stays strict (no UI special-casing). Mounted OUTSIDE the
+	// /2010-04-01 subtree so it does NOT inherit the API's strict
+	// `default-src 'none'` CSP — web.Handler sets its own UI CSP.
+	r.Mount("/ui", web.Handler())
+
+	// Convenience redirect: bare / → the operator UI.
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/", http.StatusFound)
+	})
 
 	// Mount Twilio-compatible REST API:
 	//   GET  /2010-04-01/Accounts/{AccountSid}/Calls.json

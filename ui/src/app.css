@@ -1,0 +1,20 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--neo-color-background-primary);
+  color: var(--neo-color-text-primary);
+  font-family: var(--neo-font);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+#app {
+  min-height: 100vh;
+}

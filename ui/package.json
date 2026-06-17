@@ -1,0 +1,17 @@
+{
+  "name": "sip-stream-bridge-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only operator monitor for sipgate-sip-stream-bridge. Built once with Vite, embedded same-origin into both the Go and Node bridges.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "svelte": "^5.43.2",
+    "vite": "^7.3.2"
+  }
+}

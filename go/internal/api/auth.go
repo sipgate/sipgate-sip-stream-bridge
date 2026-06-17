@@ -12,6 +12,11 @@ import (
 // comparisons use subtle.ConstantTimeCompare to defeat timing oracles that
 // would otherwise let an attacker recover a few characters per request.
 //
+// This is strict Twilio behaviour: only the AccountSid is accepted as the
+// username. The operator UI authenticates the same way — it logs in via its
+// own form and sends AccountSid:authToken explicitly — so the REST API needs no
+// special-casing for the UI.
+//
 // The middleware ALSO validates that the {AccountSid} URL-path param matches
 // the configured AccountSid. Mismatch returns 401 (NOT 404) — auth boundary;
 // 404 would leak which AccountSid values exist on the server, enabling

@@ -11,7 +11,13 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source and build static binary
+# Copy source and build static binary.
+#
+# The operator UI is embedded at compile time via //go:embed from
+# internal/web/dist. That directory must hold the real vite bundle BEFORE this
+# build (the `COPY . .` from the ./go context picks it up). Run `make ui-go`
+# first — CI does this in the "Build operator UI bundle" step; a fresh checkout
+# that skips it embeds the committed placeholder index.html instead.
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build \

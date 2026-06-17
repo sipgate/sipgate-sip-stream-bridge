@@ -52,6 +52,7 @@ Both implementations cover the streaming bridge use case at v2.1 parity **and** 
 | **Graceful shutdown** | Single drain entry-point with 15 s budget for dual-leg BYE, ordered as: stop accepting new HTTP → finish in-flight → drain SIP → unregister. Fits inside the 30 s K8s pod-termination grace. Goroutine count returns to baseline after the drain. |
 | **Observability** | Bounded label cardinality enforced by a CI lint (`make lint-metrics`); secret masking on phone-number / URL log fields; per-call structured logs with `call_sid` / `account_sid` / `forward_leg_id`; RTP port-pool gauge. |
 | **Image budget** | Static `FROM scratch` runtime, build-blocking CI gate at ≤6.0 MB. |
+| **Operator UI** | Read-only web monitor at `/ui` (same origin → no CORS) listing active + recently-terminated calls and SIP-registration / active-call health. Static bundle served unauthenticated; the UI logs in via its own form and calls the REST API with `AccountSid:AUTH_TOKEN` explicitly, so the Twilio API stays strict. One Svelte + Vite bundle embedded into both backends (Go `//go:embed`, Node static serve); polls `/health` + `GET /Calls.json`. `/` redirects to `/ui/`. sipgate-branded. Build: `make ui-go` / `make ui-node`. |
 
 ## Quick Start
 

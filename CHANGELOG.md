@@ -11,6 +11,37 @@ derived view; if the two diverge, the CHANGELOG wins.
 
 ## [Unreleased]
 
+### Added
+
+- **Operator UI** (`/ui`): read-only web monitor for active + recently-terminated
+  calls and SIP-registration / active-call health. A single Svelte + Vite bundle
+  (`ui/`) built once via `make ui` and embedded same-origin into both backends —
+  Go via `//go:embed`, Node served from `dist/ui` (no CORS). The static bundle is
+  served unauthenticated; the UI authenticates via its own login form and calls
+  the REST API with `AccountSid:AUTH_TOKEN` explicitly (token held in
+  `sessionStorage`), so the Twilio REST API stays strict — no UI special-casing.
+  `/` redirects to `/ui/`. sipgate-branded (near-black header, lime accent); polls
+  `/health` then `GET /2010-04-01/Accounts/{Sid}/Calls.json`. The UI route uses a
+  distinct CSP (opens `'self'` for its hashed assets) without weakening the REST
+  API's `default-src 'none'`. Build wiring: `make ui-go` / `make ui-node`.
+
+### Fixed
+
+- **Node: no inbound audio behind NAT** (e.g. a Docker bridge network whose
+  auto-detected SDP IP is unroutable). The Node data plane sent only a single
+  outbound RTP hole-punch packet at answer, so the NAT pinhole was not held open
+  and symmetric-RTP inbound never latched — the bot received zero media packets.
+  Node now runs a continuous 20 ms outbound-RTP keepalive pacer (matching Go's
+  always-on pacer): it fills idle/GC-gap ticks with codec silence and never
+  doubles a live bot-audio frame, restoring data-plane parity with Go. Setting
+  `SDP_CONTACT_IP` to a routable address remains the explicit alternative.
+
+### Changed
+
+- Node `/health` now returns the four-field snake_case contract
+  (`registered`, `account_sid`, `active_calls`, `active_forwards`) matching the
+  Go handler, so the operator UI reads identical fields on either backend.
+
 ## [3.1.0] - 2026-06-17
 
 ### Added
