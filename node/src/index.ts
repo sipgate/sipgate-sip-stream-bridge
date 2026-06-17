@@ -6,6 +6,7 @@ import { Metrics } from './observability/metrics.js';
 import { createSipUserAgent } from './sip/userAgent.js';
 import { CallManager } from './bridge/callManager.js';
 import { createApiHandler } from './api/server.js';
+import { createUiHandler } from './web/server.js';
 import { StatusClient } from './webhook/status.js';
 import { Guardrails } from './sip/guardrails.js';
 import { Forwarder } from './sip/forwarder.js';
@@ -62,17 +63,36 @@ async function main(): Promise<void> {
     forwarder,
   });
 
-  // HTTP server: REST control plane + /health + /metrics.
+  // Read-only operator UI (embedded Svelte bundle) at /ui. Static assets are
+  // served unauthenticated; the UI logs in via its own form and calls the REST
+  // API with AccountSid:authToken explicitly (Twilio API stays strict).
+  const uiHandler = createUiHandler();
+
+  // HTTP server: REST control plane + /ui + /health + /metrics.
   const httpServer = http.createServer((req, res) => {
     if (apiHandler(req, res)) return;
-    if (req.method === 'GET' && req.url === '/health') {
-      const body = JSON.stringify(metrics.getHealth());
+    if (req.method === 'GET' && req.url === '/') {
+      // Convenience redirect: bare / → the operator UI.
+      res.writeHead(302, { Location: '/ui/' });
+      res.end();
+    } else if (req.method === 'GET' && req.url === '/health') {
+      // Four-field snake_case contract, byte-aligned with the Go /health
+      // handler so the operator UI reads the same fields on either backend.
+      const health = metrics.getHealth();
+      const body = JSON.stringify({
+        registered: health.registered,
+        account_sid: callManager.accountSid,
+        active_calls: health.activeCalls,
+        active_forwards: callManager.activeForwardCount(),
+      });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(body);
     } else if (req.method === 'GET' && req.url === '/metrics') {
       const body = metrics.getPrometheus();
       res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
       res.end(body);
+    } else if (uiHandler(req, res)) {
+      return;
     } else {
       res.writeHead(404, { 'Content-Length': '0' });
       res.end();

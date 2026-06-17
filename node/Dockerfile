@@ -18,6 +18,10 @@ FROM fetcher AS builder
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # --offline: read from the store fetched above; no network required
 RUN pnpm install --frozen-lockfile --offline
+# `COPY . .` from the ./node context includes dist/ui when the operator UI bundle
+# has been staged by `make ui-node` (CI does this before the image build). tsup
+# does not clean dist/, so `pnpm build` writes dist/index.js alongside the staged
+# dist/ui, and the production stage's `COPY --from=builder /app/dist` ships both.
 COPY . .
 RUN pnpm build
 
