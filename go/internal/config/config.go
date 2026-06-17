@@ -48,8 +48,16 @@ type Config struct {
 	StatusCallbackDefaultMethod string `env:"STATUS_CALLBACK_DEFAULT_METHOD" default:"POST" usage:"HTTP method for the default StatusCallback (POST or GET)"`
 	StatusCallbackDefaultEvents string `env:"STATUS_CALLBACK_DEFAULT_EVENTS" default:"initiated,ringing,answered,completed" usage:"CSV of subscribed events (subset of initiated|ringing|answered|in-progress|completed|busy|failed|no-answer|canceled)"`
 
-	// WebSocket target (CFG-02) — env var name WS_TARGET_URL matches v1.0 exactly
-	WSTargetURL string `env:"WS_TARGET_URL,required" usage:"Target WebSocket URL (e.g. wss://my-bot.example.com/ws)"`
+	// WebSocket target or Voice URL — exactly one must be set (mutual exclusion enforced by Load()).
+	// WS_TARGET_URL: static target, v1.0 env var name preserved for drop-in compatibility.
+	// VOICE_URL: webhook called on each INVITE; response TwiML <Connect><Stream url=.../>
+	// provides the per-call WS target dynamically.
+	WSTargetURL        string `env:"WS_TARGET_URL"         usage:"Static target WebSocket URL (e.g. wss://my-bot.example.com/ws). Mutually exclusive with VOICE_URL."`
+	VoiceURL           string `env:"VOICE_URL"             usage:"Webhook URL called on INVITE; response TwiML <Connect><Stream url=.../> provides the per-call WS URL. Mutually exclusive with WS_TARGET_URL."`
+	VoiceMethod        string `env:"VOICE_METHOD"          default:"POST" usage:"HTTP method for VOICE_URL webhook (POST or GET)"`
+	VoiceFallbackURL   string `env:"VOICE_FALLBACK_URL"    usage:"Fallback webhook URL if VOICE_URL returns HTTP 5xx or times out"`
+	VoiceFallbackMethod string `env:"VOICE_FALLBACK_METHOD" default:"POST" usage:"HTTP method for VOICE_FALLBACK_URL (POST or GET)"`
+	VoiceTimeoutS      int    `env:"VOICE_TIMEOUT_S"       default:"5"    usage:"Max seconds to wait for VOICE_URL webhook response (1–15)"`
 
 	// SDP contact IP (CFG-04) — optional: defaults to outbound local IP if not set
 	SDPContactIP string `env:"SDP_CONTACT_IP" usage:"Externally-reachable IP address for SDP contact line (default: auto-detected local IP)"`
@@ -146,6 +154,61 @@ func Load() Config {
 		if conn, err := net.Dial("udp", "8.8.8.8:80"); err == nil {
 			cfg.SDPContactIP = conn.LocalAddr().(*net.UDPAddr).IP.String()
 			_ = conn.Close()
+		}
+	}
+
+	// WS_TARGET_URL / VOICE_URL mutual exclusion — exactly one must be set.
+	wsSet := cfg.WSTargetURL != ""
+	voiceSet := cfg.VoiceURL != ""
+	if wsSet == voiceSet {
+		if wsSet {
+			fmt.Fprintf(os.Stderr,
+				`{"level":"fatal","msg":"WS_TARGET_URL and VOICE_URL are mutually exclusive — set exactly one"}`+"\n")
+		} else {
+			fmt.Fprintf(os.Stderr,
+				`{"level":"fatal","msg":"either WS_TARGET_URL or VOICE_URL must be set"}`+"\n")
+		}
+		os.Exit(1)
+	}
+	// VOICE_URL cross-field validation (only when VoiceURL is set).
+	if voiceSet {
+		if !strings.HasPrefix(cfg.VoiceURL, "http://") && !strings.HasPrefix(cfg.VoiceURL, "https://") {
+			fmt.Fprintf(os.Stderr,
+				`{"level":"fatal","msg":"VOICE_URL must start with http:// or https://","value":%q}`+"\n",
+				cfg.VoiceURL)
+			os.Exit(1)
+		}
+		switch strings.ToUpper(cfg.VoiceMethod) {
+		case "POST", "GET":
+			cfg.VoiceMethod = strings.ToUpper(cfg.VoiceMethod)
+		default:
+			fmt.Fprintf(os.Stderr,
+				`{"level":"fatal","msg":"VOICE_METHOD must be POST or GET","value":%q}`+"\n",
+				cfg.VoiceMethod)
+			os.Exit(1)
+		}
+		if cfg.VoiceFallbackURL != "" {
+			if !strings.HasPrefix(cfg.VoiceFallbackURL, "http://") && !strings.HasPrefix(cfg.VoiceFallbackURL, "https://") {
+				fmt.Fprintf(os.Stderr,
+					`{"level":"fatal","msg":"VOICE_FALLBACK_URL must start with http:// or https://","value":%q}`+"\n",
+					cfg.VoiceFallbackURL)
+				os.Exit(1)
+			}
+			switch strings.ToUpper(cfg.VoiceFallbackMethod) {
+			case "POST", "GET":
+				cfg.VoiceFallbackMethod = strings.ToUpper(cfg.VoiceFallbackMethod)
+			default:
+				fmt.Fprintf(os.Stderr,
+					`{"level":"fatal","msg":"VOICE_FALLBACK_METHOD must be POST or GET","value":%q}`+"\n",
+					cfg.VoiceFallbackMethod)
+				os.Exit(1)
+			}
+		}
+		if cfg.VoiceTimeoutS < 1 || cfg.VoiceTimeoutS > 15 {
+			fmt.Fprintf(os.Stderr,
+				`{"level":"fatal","msg":"VOICE_TIMEOUT_S must be in [1, 15]","value":%d}`+"\n",
+				cfg.VoiceTimeoutS)
+			os.Exit(1)
 		}
 	}
 

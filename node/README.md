@@ -1,8 +1,8 @@
-# sipgate-sip-stream-bridge — Node.js implementation (v3.0)
+# sipgate-sip-stream-bridge — Node.js implementation (v3.1)
 
 A Node.js/TypeScript service that bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) protocol — drop-in compatible with any Twilio Media Streams consumer (AI voice bots, call recording, real-time transcription) — **plus** a Twilio-compatible REST control plane for modifying calls already in progress (mid-call TwiML interrupt, B2BUA `<Dial>` forwarding, status callbacks).
 
-This implementation is at **v3.0**: full data-plane parity (PCMU/PCMA/G.722, mark/clear/dtmf, SRTP, OPTIONS keepalive, graceful drain) and the same Twilio-compatible REST control plane as the [Go implementation](../go/). The outbound SIP leg is a purpose-built UAC dialog on the shared SIP socket — no external SIP library.
+This implementation is at **v3.1**: full data-plane parity (PCMU/PCMA/G.722, mark/clear/dtmf, SRTP, OPTIONS keepalive, graceful drain) and the same Twilio-compatible REST control plane as the [Go implementation](../go/). The outbound SIP leg is a purpose-built UAC dialog on the shared SIP socket — no external SIP library.
 
 ```
                     ┌─ sipgate trunk (SIP/UDP) ─┐
@@ -80,7 +80,19 @@ All configuration is via environment variables. Copy `../.env.example` to `../.e
 | `SIP_PASSWORD` | SIP password for the SIP-ID above | `s3cr3t` |
 | `SIP_DOMAIN` | SIP domain — used in the `From`/`To` URI | `sipconnect.sipgate.de` |
 | `SIP_REGISTRAR` | Hostname of the SIP registrar | `sipconnect.sipgate.de` |
-| `WS_TARGET_URL` | WebSocket URL of the Twilio Media Streams consumer | `ws://localhost:8080` |
+| `WS_TARGET_URL` **or** `VOICE_URL` | Exactly one must be set (mutually exclusive). `WS_TARGET_URL` — static WebSocket URL for every call. `VOICE_URL` — Twilio-compatible webhook URL; the bridge POSTs call metadata before answering and uses the `<Connect><Stream url=...>` WS URL from the TwiML response. | `ws://localhost:8080` |
+
+### Voice-URL webhook (optional — use instead of `WS_TARGET_URL`)
+
+Enables per-call dynamic WS routing. See [`docs/operator/VOICE_URL.md`](../docs/operator/VOICE_URL.md) for the full runbook.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VOICE_URL` | *(unset)* | Webhook URL that returns TwiML `<Connect><Stream>` per call. Must be `https://` (or `http://localhost` for local dev). |
+| `VOICE_METHOD` | `POST` | HTTP method for Voice-URL requests: `POST` or `GET`. |
+| `VOICE_FALLBACK_URL` | *(unset)* | Fallback webhook URL on HTTP 5xx or network error. |
+| `VOICE_FALLBACK_METHOD` | `POST` | HTTP method for fallback requests. |
+| `VOICE_TIMEOUT_S` | `5` | Total fetch timeout in seconds (1–15). |
 
 ### Data plane (optional)
 
@@ -200,7 +212,7 @@ curl -u "$ACCOUNT_SID:$AUTH_TOKEN" -X POST "$BASE/Calls/$CALL_SID.json" \
 
 ## WebSocket Protocol
 
-sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to `WS_TARGET_URL`.
+sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to the resolved WS URL — either `WS_TARGET_URL` directly or the URL returned by the `VOICE_URL` webhook.
 
 ### sipgate-sip-stream-bridge → backend
 
@@ -326,7 +338,7 @@ If the backend disconnects during an active call:
 | Component | File | Responsibility |
 |-----------|------|----------------|
 | Entrypoint | `src/index.ts` | Wires all components; HTTP server (REST + health/metrics); 15 s graceful drain |
-| Version | `src/version.ts` | SIP User-Agent / Server header (`sipgate-sip-stream-bridge/3.0`) |
+| Version | `src/version.ts` | SIP User-Agent / Server header (`sipgate-sip-stream-bridge/3.1`) |
 | Config | `src/config/index.ts` | Zod-validated environment variables; fails fast on startup |
 | Logger | `src/logger/index.ts` | Pino JSON logger; `createChildLogger` adds call context; masks `AUTH_TOKEN` / `SIP_PASSWORD` |
 | Identity | `src/identity/sid.ts` | `newCallSid()` (random) + `deriveAccountSid()` (deterministic from `SIP_USER`) |

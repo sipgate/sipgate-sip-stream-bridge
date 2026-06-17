@@ -102,6 +102,12 @@ type Metrics struct {
 	// under any reasonable cardinality cap.
 	StatusCallbackFailuresTotal *prometheus.CounterVec // labels: reason
 
+	// VoiceFetchTotal: voice-URL webhook fetch outcomes (pre-answer dynamic WS
+	// URL resolution). Bounded label cardinality:
+	//   outcome ∈ {ok, timeout, http_error, twiml_error, fallback_ok}
+	// metrics:allowlist outcome=ok|timeout|http_error|twiml_error|fallback_ok
+	VoiceFetchTotal *prometheus.CounterVec // labels: outcome
+
 	Registry *prometheus.Registry
 }
 
@@ -233,6 +239,13 @@ func NewMetrics() *Metrics {
 		Help:      "Outbound status callback failures, bucketed by reason (timeout|4xx|5xx|connect_error|exhausted_retries|ssrf_rejected|queue_full).",
 	}, []string{"reason"})
 
+	// metrics:allowlist outcome=ok|timeout|http_error|twiml_error|fallback_ok
+	voiceFetchTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "sipgate_bridge",
+		Name:      "voice_fetch_total",
+		Help:      "Voice-URL pre-answer webhook fetch outcomes (ok|timeout|http_error|twiml_error|fallback_ok).",
+	}, []string{"outcome"})
+
 	// Use reg.MustRegister (NOT prometheus.MustRegister) — custom registry only (Research Pitfall 4)
 	reg.MustRegister(
 		activeCalls, sipReg, rtpRx, rtpTx, wsReconnects, markEchoed, clearReceived, sipOptionsFailures,
@@ -243,6 +256,7 @@ func NewMetrics() *Metrics {
 		forwardDurationSeconds, authChallengeKind,
 		rtpPortPoolInUse, rtpPortPoolSize, rtpPortAcquireFailuresTotal,
 		statusCallbackAttemptsTotal, statusCallbackFailuresTotal,
+		voiceFetchTotal,
 	)
 
 	return &Metrics{
@@ -268,6 +282,7 @@ func NewMetrics() *Metrics {
 		RTPPortAcquireFailuresTotal: rtpPortAcquireFailuresTotal,
 		StatusCallbackAttemptsTotal: statusCallbackAttemptsTotal,
 		StatusCallbackFailuresTotal: statusCallbackFailuresTotal,
+		VoiceFetchTotal:             voiceFetchTotal,
 		Registry:                    reg,
 	}
 }

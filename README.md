@@ -4,8 +4,8 @@ Bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media
 
 Two implementations live in this repository, both deployed in production:
 
-- **[Go](./go/)** — at **v3.0**: streaming bridge + Twilio-compatible REST control plane (list / read / modify calls in progress, mid-call TwiML interrupt, B2BUA `<Dial>` for forwarding, status-callback HTTP POSTs with `X-Twilio-Signature` HMAC).
-- **[Node.js / TypeScript](./node/)** — at **v3.0**: full data-plane parity (PCMU/PCMA/G.722, mark/clear/dtmf, SRTP, OPTIONS keepalive, graceful drain) **plus** the same Twilio-compatible REST control plane (REST API, mid-call TwiML `<Hangup>`/`<Dial>`, B2BUA forwarding, status callbacks). The outbound SIP leg is a purpose-built UAC dialog on the shared socket (no external SIP library).
+- **[Go](./go/)** — at **v3.1**: streaming bridge + Twilio-compatible REST control plane (list / read / modify calls in progress, mid-call TwiML interrupt, B2BUA `<Dial>` for forwarding, status-callback HTTP POSTs with `X-Twilio-Signature` HMAC).
+- **[Node.js / TypeScript](./node/)** — at **v3.1**: full data-plane parity (PCMU/PCMA/G.722, mark/clear/dtmf, SRTP, OPTIONS keepalive, graceful drain) **plus** the same Twilio-compatible REST control plane (REST API, mid-call TwiML `<Hangup>`/`<Dial>`, B2BUA forwarding, status callbacks). The outbound SIP leg is a purpose-built UAC dialog on the shared socket (no external SIP library).
 
 Pick either implementation — both cover streaming, dynamic mid-call control, and `<Dial>` forwarding.
 
@@ -91,7 +91,7 @@ Environment variables only — `.env` is auto-loaded; production sets vars direc
 | `SIP_PASSWORD` | SIP password |
 | `SIP_DOMAIN` | SIP registrar domain (e.g. `sipconnect.sipgate.de`) |
 | `SIP_REGISTRAR` | SIP registrar address |
-| `WS_TARGET_URL` | WebSocket URL of the bot backend |
+| `WS_TARGET_URL` **or** `VOICE_URL` | Exactly one must be set (mutually exclusive). `WS_TARGET_URL` — static WebSocket URL for every call. `VOICE_URL` — Twilio-compatible webhook that returns TwiML `<Connect><Stream>` per call; bridge POSTs before answering and uses the WS URL from the TwiML response. |
 
 ### Required by the v3.0 REST control plane (Go + Node.js)
 
@@ -281,6 +281,7 @@ sipgate-sip-stream-bridge/
 | **REST API (`/2010-04-01/...`)** | ✅ chi + Basic Auth | ✅ mini-router + Basic Auth |
 | **Mid-call `POST /Calls/{Sid}`** | ✅ TwiML interrupt | ✅ TwiML interrupt |
 | **B2BUA `<Dial>` + privacy gate** | ✅ | ✅ UAC dialog on shared socket |
+| **Voice-URL webhook (`VOICE_URL`)** | ✅ pre-answer, fallback, HMAC | ✅ pre-answer, fallback, HMAC |
 | **Status callbacks + HMAC** | ✅ X-Twilio-Signature | ✅ X-Twilio-Signature |
 | **Toll-fraud guardrails** | ✅ DIAL_ALLOWED_PREFIXES + rate limits | ✅ DIAL_ALLOWED_PREFIXES + rate limits |
 | **Cardinality lint (CI)** | ✅ `make lint-metrics` | ✗ (convention + review) |

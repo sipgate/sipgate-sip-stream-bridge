@@ -207,6 +207,18 @@ var phase17Allowlists = []allowlistFixture{
 		},
 		MaxSeries: 7,
 	},
+	{
+		Vector:         "VoiceFetchTotal",
+		PrometheusName: "sipgate_bridge_voice_fetch_total",
+		CommentLabels:  []string{"outcome"},
+		Allowed: [][]string{
+			{"ok"}, {"timeout"}, {"http_error"}, {"twiml_error"}, {"fallback_ok"},
+		},
+		Apply: func(m *observability.Metrics, row []string) {
+			m.VoiceFetchTotal.WithLabelValues(row[0]).Inc()
+		},
+		MaxSeries: 5,
+	},
 }
 
 // TestCardinalityBound_AllVecsWithinAllowlist exercises every documented

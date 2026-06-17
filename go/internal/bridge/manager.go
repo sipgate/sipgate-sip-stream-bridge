@@ -519,6 +519,7 @@ func (m *CallManager) StartSessionWithPreRegistered(
 	localSRTPKey []byte,
 	localSRTPSalt []byte,
 	streamURL string,
+	customParams map[string]string,
 	log zerolog.Logger,
 ) {
 	// The sip.PreRegisteredSession iface is satisfied ONLY by *CallSession in
@@ -526,6 +527,7 @@ func (m *CallManager) StartSessionWithPreRegistered(
 	// code path constructs a value of this interface; see sip-package
 	// docstring for the architectural invariant).
 	session := psession.(*CallSession)
+	session.customParams = customParams
 
 	callID := req.CallID().Value()
 	// CON-02: always release port — covers WS dial failure and call end.
@@ -657,6 +659,6 @@ func (m *CallManager) StartSession(
 		psession,
 		dlg, req, callerSDP, rtpPort, audioPT,
 		localSRTPKey, localSRTPSalt,
-		streamURL, log,
+		streamURL, nil, log,
 	)
 }

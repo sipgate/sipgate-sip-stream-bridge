@@ -11,6 +11,20 @@ derived view; if the two diverge, the CHANGELOG wins.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-06-17
+
+### Added
+
+- **Voice-URL webhook** (`VOICE_URL` / `VOICE_FALLBACK_URL`): Twilio-compatible
+  alternative to `WS_TARGET_URL`. The bridge POSTs call metadata to the
+  configured URL before answering (pre-answer), parses the TwiML
+  `<Connect><Stream url="..."><Parameter .../>` response, and uses the
+  per-call WS URL returned. Falls back to `VOICE_FALLBACK_URL` on HTTP 5xx
+  or network error. `X-Twilio-Signature` HMAC signing on all outbound POSTs.
+  `http://localhost` and `http://127.0.0.1` allowed for local dev.
+  `WS_TARGET_URL` and `VOICE_URL` are mutually exclusive (XOR enforced at
+  startup). Implemented in both Go and Node.js.
+
 ### Fixed
 
 - `make image-size-check` now measures the gzip-compressed saved
@@ -170,5 +184,6 @@ format.)
   `***` via `NewSecretMaskWriter`). Note: env vars themselves are NOT
   masked — see `docs/operator/INCIDENT_RESPONSE.md`.
 
-[Unreleased]: https://github.com/sipgate/audio-dock/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/sipgate/audio-dock/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/sipgate/audio-dock/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/sipgate/audio-dock/releases/tag/v3.0.0

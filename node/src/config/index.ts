@@ -7,7 +7,20 @@ const configSchema = z
     SIP_PASSWORD: z.string().min(1, 'SIP_PASSWORD is required'),
     SIP_DOMAIN: z.string().min(1, 'SIP_DOMAIN is required (e.g. sipconnect.sipgate.de)'),
     SIP_REGISTRAR: z.string().min(1, 'SIP_REGISTRAR is required (e.g. sipconnect.sipgate.de)'),
-    WS_TARGET_URL: z.string().url('WS_TARGET_URL must be a valid WebSocket URL'),
+
+    // WS target or Voice URL — exactly one must be set (XOR enforced by .refine below).
+    WS_TARGET_URL: z.string().url('WS_TARGET_URL must be a valid WebSocket URL').optional(),
+    VOICE_URL: z
+      .string()
+      .refine((u) => /^https?:\/\//i.test(u), 'VOICE_URL must start with http:// or https://')
+      .optional(),
+    VOICE_METHOD: z.enum(['POST', 'GET']).default('POST'),
+    VOICE_FALLBACK_URL: z
+      .string()
+      .refine((u) => /^https?:\/\//i.test(u), 'VOICE_FALLBACK_URL must start with http:// or https://')
+      .optional(),
+    VOICE_FALLBACK_METHOD: z.enum(['POST', 'GET']).default('POST'),
+    VOICE_TIMEOUT_S: z.coerce.number().int().min(1).max(15).default(5),
 
     // Optional with defaults
     RTP_PORT_MIN: z.coerce.number().int().min(1024).max(65534).default(10000),
@@ -64,6 +77,17 @@ const configSchema = z
     DIAL_MAX_PER_SESSION: z.coerce.number().int().min(1).default(3),
     DIAL_MAX_PER_MINUTE: z.coerce.number().int().min(1).default(60),
   })
+  .refine(
+    (data) => {
+      const wsSet = data.WS_TARGET_URL !== undefined && data.WS_TARGET_URL !== '';
+      const voiceSet = data.VOICE_URL !== undefined && data.VOICE_URL !== '';
+      return wsSet !== voiceSet; // XOR: exactly one must be set
+    },
+    {
+      message: 'Exactly one of WS_TARGET_URL or VOICE_URL must be set (they are mutually exclusive)',
+      path: ['WS_TARGET_URL'],
+    },
+  )
   .refine((data) => data.RTP_PORT_MIN < data.RTP_PORT_MAX, {
     message: 'RTP_PORT_MIN must be less than RTP_PORT_MAX',
     path: ['RTP_PORT_MIN'],

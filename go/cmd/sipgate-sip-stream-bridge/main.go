@@ -51,17 +51,21 @@ func main() {
 	}
 	logger = logger.Level(level)
 
-	logger.Info().
+	startLog := logger.Info().
 		Str("sip_user", cfg.SIPUser).
 		Str("sip_domain", cfg.SIPDomain).
 		Str("sip_registrar", cfg.SIPRegistrar).
-		Str("ws_target_url", cfg.WSTargetURL).
 		Str("sdp_contact_ip", cfg.SDPContactIP).
 		Int("rtp_port_min", cfg.RTPPortMin).
 		Int("rtp_port_max", cfg.RTPPortMax).
 		Int("sip_expires", cfg.SIPExpires).
-		Bool("srtp_enabled", cfg.SRTPEnabled).
-		Msg("sipgate-sip-stream-bridge starting")
+		Bool("srtp_enabled", cfg.SRTPEnabled)
+	if cfg.WSTargetURL != "" {
+		startLog = startLog.Str("ws_target_url", cfg.WSTargetURL)
+	} else {
+		startLog = startLog.Str("voice_url", cfg.VoiceURL)
+	}
+	startLog.Msg("sipgate-sip-stream-bridge starting")
 
 	// Create Prometheus metrics registry
 	metrics := observability.NewMetrics()
@@ -158,6 +162,20 @@ func main() {
 	// callee hangs up first on a B2BUA bridge, the outbound dialog never
 	// observes the BYE and Forwarder.Dial deadlocks the API handler.
 	handler := sip.NewHandler(agent, callManager, cfg, logger, forwarder)
+
+	// Wire Voice-URL pre-answer fetcher when VOICE_URL is configured.
+	// Mutually exclusive with WSTargetURL — validated in config.Load().
+	if cfg.VoiceURL != "" {
+		voiceWC := webhook.NewVoiceClient(
+			cfg.VoiceURL, cfg.VoiceMethod,
+			cfg.VoiceFallbackURL, cfg.VoiceFallbackMethod,
+			cfg.AuthToken,
+			cfg.VoiceTimeoutS,
+			metrics,
+			logger.With().Str("component", "voice-client").Logger(),
+		)
+		handler.SetVoiceClient(voiceWC)
+	}
 
 	// Wire the parent-leg status-callback emission surface on the Handler.
 	// The lookup closure resolves the per-CallSid subscription from the

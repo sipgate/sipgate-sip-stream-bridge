@@ -1,8 +1,8 @@
-# sipgate-sip-stream-bridge — Go implementation (v3.0)
+# sipgate-sip-stream-bridge — Go implementation (v3.1)
 
 A Go service that bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) protocol, **plus** a Twilio-compatible REST control plane for modifying calls already in progress. Drop-in compatible with any Twilio Media Streams consumer — AI voice bots, call recording, real-time transcription — and with the Twilio Call-resource REST API for live call control (list / read / modify, mid-call TwiML interrupt, `<Dial>` forwarding, status callbacks).
 
-Default behaviour is unchanged from v2.x: every inbound call auto-answers and streams to `WS_TARGET_URL` with zero extra configuration. The v3.0 control plane is opt-in (set `AUTH_TOKEN` to enable the REST API; set `DIAL_ALLOWED_PREFIXES` to permit `<Dial>` forwarding).
+Default behaviour is unchanged from v2.x: every inbound call auto-answers and streams to the configured WebSocket backend with zero extra configuration (`WS_TARGET_URL` for a static URL; `VOICE_URL` for per-call dynamic routing via a TwiML webhook). The v3.0 control plane is opt-in (set `AUTH_TOKEN` to enable the REST API; set `DIAL_ALLOWED_PREFIXES` to permit `<Dial>` forwarding).
 
 ```
 sipgate SIP trunk  ←──────────────────────────────────────────────────────→  caller / callee
@@ -83,7 +83,19 @@ All configuration is via environment variables. Copy `../.env.example` to `../.e
 | `SIP_PASSWORD` | SIP password for the SIP-ID above | `s3cr3t` |
 | `SIP_DOMAIN` | SIP domain — used in the `From`/`To` URI | `sipconnect.sipgate.de` |
 | `SIP_REGISTRAR` | Hostname of the SIP registrar | `sipconnect.sipgate.de` |
-| `WS_TARGET_URL` | WebSocket URL of the Twilio Media Streams consumer | `wss://my-bot.example.com/ws` |
+| `WS_TARGET_URL` **or** `VOICE_URL` | Exactly one must be set (mutually exclusive). `WS_TARGET_URL` — static WebSocket URL for every call. `VOICE_URL` — Twilio-compatible webhook URL; the bridge POSTs call metadata before answering and uses the `<Connect><Stream url=...>` WS URL from the TwiML response. | `wss://my-bot.example.com/ws` |
+
+### Voice-URL webhook (optional — use instead of `WS_TARGET_URL`)
+
+Enables per-call dynamic WS routing. See [`docs/operator/VOICE_URL.md`](../docs/operator/VOICE_URL.md) for the full runbook.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VOICE_URL` | (unset) | Webhook URL that returns TwiML `<Connect><Stream>` per call. Must be `https://` (or `http://localhost` for local dev). |
+| `VOICE_METHOD` | `POST` | HTTP method for Voice-URL requests: `POST` or `GET`. |
+| `VOICE_FALLBACK_URL` | (unset) | Fallback webhook URL on HTTP 5xx or network error. |
+| `VOICE_FALLBACK_METHOD` | `POST` | HTTP method for fallback requests. |
+| `VOICE_TIMEOUT_S` | `5` | Total fetch timeout in seconds (1–15). |
 
 ### Data plane (optional)
 
@@ -312,7 +324,7 @@ curl -u "$ACCOUNT_SID:$AUTH_TOKEN" -X POST "$BASE/Calls/$CALL_SID.json" \
 
 ## WebSocket Protocol
 
-sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to `WS_TARGET_URL`.
+sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protocol](https://www.twilio.com/docs/voice/media-streams/websocket-messages). One WebSocket connection is opened per call to the resolved WS URL — either `WS_TARGET_URL` directly or the URL returned by the `VOICE_URL` webhook.
 
 ### sipgate-sip-stream-bridge → backend
 

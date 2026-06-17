@@ -1,6 +1,7 @@
 package sip
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/identity"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
+	"github.com/sipgate/sipgate-sip-stream-bridge/internal/twiml"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/webhook"
 )
 
@@ -98,6 +100,8 @@ type CallManagerIface interface {
 	// StartSessionWithPreRegistered consumes a session built by
 	// PreRegisterSession and attaches legs[0] + runs the bridge. MUST NOT
 	// reassign streamSid (BLOCKER 2 contract — owned by PreRegisterSession).
+	// customParams (may be nil) are merged into the WS start event's
+	// customParameters field — populated from Voice-URL TwiML <Parameter> children.
 	StartSessionWithPreRegistered(
 		session PreRegisteredSession,
 		dlg *sipgo.DialogServerSession,
@@ -108,6 +112,7 @@ type CallManagerIface interface {
 		localSRTPKey []byte,
 		localSRTPSalt []byte,
 		streamURL string,
+		customParams map[string]string,
 		log zerolog.Logger,
 	)
 }
@@ -151,6 +156,12 @@ type Handler struct {
 	statusWC     *webhook.StatusClient
 	statusLookup StatusSubscriptionLookup
 	accountSid   string // process-global AccountSid; the callManager.AccountSid() at boot
+
+	// voiceClient is the pre-answer Voice-URL fetcher. Non-nil when VOICE_URL
+	// is configured (mutually exclusive with static WSTargetURL). When non-nil,
+	// onInvite posts call metadata to the configured URL and waits for a TwiML
+	// <Connect><Stream url=...> response BEFORE sending 200 OK (pre-answer).
+	voiceClient *webhook.VoiceClient
 }
 
 // ByeReader is satisfied by anything that can route an incoming BYE to a
@@ -223,18 +234,29 @@ func (h *Handler) SetStatusEmission(statusWC *webhook.StatusClient, lookup Statu
 	h.accountSid = accountSid
 }
 
-// onInvite handles inbound INVITE requests with the v2.1 inline-answer flow:
+// SetVoiceClient wires the pre-answer Voice-URL fetcher. Call once at boot
+// after NewHandler when VOICE_URL is configured. Nil-safe: if never called,
+// onInvite uses cfg.WSTargetURL directly (static mode).
+func (h *Handler) SetVoiceClient(vc *webhook.VoiceClient) {
+	h.voiceClient = vc
+}
+
+// onInvite handles inbound INVITE requests:
+//
+// Static mode (WSTargetURL set):
 //
 //	ReadInvite → ParseCallerSDP → AcquirePort → 100 Trying → 180 Ringing →
-//	BuildSDPAnswer → RespondSDP(200 OK) → go StartSession
+//	BuildSDPAnswer → RespondSDP(200 OK) → go StartSession(WSTargetURL)
+//
+// Voice-URL mode (VoiceURL set, voiceClient non-nil):
+//
+//	ReadInvite → ParseCallerSDP → AcquirePort → 100 Trying → 180 Ringing →
+//	POST VoiceURL → parse TwiML → extract streamURL + customParams →
+//	BuildSDPAnswer → RespondSDP(200 OK) → go StartSession(streamURL, customParams)
 //
 // The 200 OK is emitted on the same goroutine as INVITE receipt (sipgo's
 // server-transaction requires this — see RESEARCH §1). StartSession is then
 // launched as a goroutine to dial WS and run the RTP bridge post-answer.
-//
-// The default WS target is cfg.WSTargetURL. Future webhook-driven dispatch
-// (via the <Connect><Stream url=…/> verb) overrides this; the default
-// path always streams to the configured default target.
 func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	// Mint CallSid up-front so every log line below carries it (COMPAT-03).
 	callSid := identity.NewCallSid()
@@ -347,6 +369,54 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	// CallSession's status-callback subscription.
 	h.emitRinging(callSid, fromURI, toURI, log)
 
+	// ── Voice-URL pre-answer fetch (only when VOICE_URL is configured) ──────
+	// Resolve the per-call WS target by POSTing call metadata to the operator's
+	// VOICE_URL and parsing the TwiML <Connect><Stream url=.../> response.
+	// This happens AFTER 180 Ringing (carrier sees alerting) but BEFORE 200 OK
+	// (faithful pre-answer: call fails cleanly with 503 if the webhook is down).
+	streamURL := h.cfg.WSTargetURL
+	var voiceCustomParams map[string]string
+	if h.voiceClient != nil {
+		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), time.Duration(h.cfg.VoiceTimeoutS)*time.Second)
+		defer fetchCancel()
+
+		voiceBody, urlUsed, fetchErr := h.voiceClient.Fetch(fetchCtx, webhook.VoiceParams{
+			CallSid:       callSid,
+			AccountSid:    accountSid,
+			From:          fromURI,
+			To:            toURI,
+			PublicBaseURL: h.cfg.PublicBaseURL,
+		})
+		if fetchErr != nil {
+			session.SetSIPFinalCode(503)
+			log.Warn().Err(fetchErr).Msg("voice-url fetch failed — rejecting INVITE")
+			h.callManager.ReleasePort(rtpPort)
+			_ = dlg.Respond(503, "Service Unavailable", nil)
+			return
+		}
+		log.Debug().Str("voice_url_used", urlUsed).Msg("voice-url fetch ok")
+
+		resp, parseErr := twiml.Parse(voiceBody)
+		if parseErr != nil {
+			session.SetSIPFinalCode(503)
+			log.Warn().Str("twiml_error", parseErr.Message).Msg("voice-url TwiML parse failed — rejecting INVITE")
+			h.callManager.ReleasePort(rtpPort)
+			_ = dlg.Respond(503, "Service Unavailable", nil)
+			return
+		}
+		extracted, params, extractErr := twiml.ExtractStreamURL(resp)
+		if extractErr != nil {
+			session.SetSIPFinalCode(503)
+			log.Warn().Err(extractErr).Msg("voice-url TwiML missing <Connect><Stream> — rejecting INVITE")
+			h.callManager.ReleasePort(rtpPort)
+			_ = dlg.Respond(503, "Service Unavailable", nil)
+			return
+		}
+		streamURL = extracted
+		voiceCustomParams = params
+	}
+	// ── end Voice-URL block ──────────────────────────────────────────────────
+
 	// Build the SDP answer for our side of the media path.
 	sdpBytes, negotiatedPT, localSRTPKey, localSRTPSalt := BuildSDPAnswer(h.cfg.SDPContactIP, rtpPort, callerSDP, h.cfg.AudioMode, h.cfg.SRTPEnabled)
 	if h.cfg.SRTPEnabled && !callerSDP.IsSRTP {
@@ -384,7 +454,7 @@ func (h *Handler) onInvite(req *siplib.Request, tx siplib.ServerTransaction) {
 	success = true
 	go h.callManager.StartSessionWithPreRegistered(
 		session, dlg, req, callerSDP, rtpPort, negotiatedPT,
-		localSRTPKey, localSRTPSalt, h.cfg.WSTargetURL, log,
+		localSRTPKey, localSRTPSalt, streamURL, voiceCustomParams, log,
 	)
 }
 

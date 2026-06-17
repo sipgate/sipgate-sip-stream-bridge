@@ -8,6 +8,8 @@ export interface WsCallParams {
   to: string;
   sipCallId: string;
   mediaFormat: { encoding: string; sampleRate: number; channels: number };
+  /** Extra key/value pairs from Voice-URL TwiML <Parameter> children, merged into customParameters. */
+  extraCustomParameters?: Record<string, string>;
 }
 
 export interface WsClient {
@@ -52,7 +54,7 @@ export function createWsClient(
   params: WsCallParams,
   log: Logger,
 ): Promise<WsClient> {
-  const { streamSid, callSid, from, to, sipCallId, mediaFormat } = params;
+  const { streamSid, callSid, from, to, sipCallId, mediaFormat, extraCustomParameters } = params;
 
   return new Promise<WsClient>((resolve, reject) => {
     const ws = new WebSocket(url);
@@ -76,6 +78,10 @@ export function createWsClient(
       );
 
       // Send start event immediately (sequenceNumber '1')
+      // Merge extra params from Voice-URL TwiML <Parameter> children.
+      // Reserved keys (From, To, sipCallId) take precedence.
+      const reservedCustomParams: Record<string, string> = { From: from, To: to, sipCallId };
+      const customParameters: Record<string, string> = { ...extraCustomParameters, ...reservedCustomParams };
       ws.send(
         JSON.stringify({
           event: 'start',
@@ -85,11 +91,7 @@ export function createWsClient(
             accountSid: '',
             callSid,
             tracks: ['inbound', 'outbound'],
-            customParameters: {
-              From: from,
-              To: to,
-              sipCallId,
-            },
+            customParameters,
             mediaFormat,
           },
           streamSid,

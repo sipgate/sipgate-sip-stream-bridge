@@ -108,6 +108,10 @@ type CallSession struct {
 	callSid       string      // CA-prefixed Twilio callSid (distinct from SIP Call-ID)
 	streamSid     string
 	accountSid    string      // populated by main.go wiring; "" in boot path before wiring
+	// customParams holds extra key/value pairs from the Voice-URL TwiML
+	// <Parameter> children. Merged into the WS start event's customParameters
+	// field (reserved keys like CallSid/AccountSid take precedence).
+	customParams  map[string]string
 	// REST-API metadata. Captured once at StartSession; from/to/startTime are
 	// immutable thereafter. endTime/termReason are stamped exactly once by markTerminated()
 	// from the StartSession defer chain on the same goroutine that owns the session — so
@@ -600,7 +604,7 @@ func (s *CallSession) handshake(wsConn net.Conn) error {
 		return fmt.Errorf("sendConnected: %w", err)
 	}
 	leg := s.primary()
-	return sendStart(wsConn, s.streamSid, s.callSid, s.accountSid, s.callID, leg.dlg.InviteRequest, leg.mediaEncoding, leg.mediaSampleRate)
+	return sendStart(wsConn, s.streamSid, s.callSid, s.accountSid, s.callID, leg.dlg.InviteRequest, leg.mediaEncoding, leg.mediaSampleRate, s.customParams)
 }
 
 // reconnect attempts to re-dial the target WebSocket with exponential backoff.

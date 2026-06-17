@@ -10,6 +10,20 @@ import (
 	"unicode"
 )
 
+// ExtractStreamURL returns the url and Parameters from the first
+// <Connect><Stream url=...> verb in resp. Returns an error if no such verb
+// exists or if the <Stream> url attribute is empty.
+func ExtractStreamURL(resp *Response) (string, map[string]string, error) {
+	for _, v := range resp.Verbs {
+		c, ok := v.(*Connect)
+		if !ok || c.Stream == nil || c.Stream.URL == "" {
+			continue
+		}
+		return c.Stream.URL, c.Stream.Parameters, nil
+	}
+	return "", nil, fmt.Errorf("twiml: no <Connect><Stream url=...> found in response")
+}
+
 // ParseStatusCallbackEvents tokenizes a StatusCallbackEvent attribute or
 // form-param value. Twilio accepts BOTH space-separated AND comma-separated
 // forms; this helper accepts both (and any mix) and rejects unknown event

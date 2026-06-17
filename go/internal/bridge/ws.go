@@ -113,17 +113,21 @@ func sendConnected(conn net.Conn) error {
 // the top-level Start fields (StartEventBody.{CallSid,AccountSid}) AND inside
 // customParameters. Twilio's downstream consumers vary in which surface they
 // read from, so emitting on both is required for bit-for-bit parity.
-func sendStart(conn net.Conn, streamSid, callSid, accountSid, callID string, req *siplib.Request, encoding string, sampleRate int) error {
+func sendStart(conn net.Conn, streamSid, callSid, accountSid, callID string, req *siplib.Request, encoding string, sampleRate int, extraParams map[string]string) error {
 	customParams := map[string]string{
-		"sipCallId": callID,
-		"From":      req.From().Address.String(),
-		"To":        req.To().Address.String(),
+		"sipCallId":  callID,
+		"From":       req.From().Address.String(),
+		"To":         req.To().Address.String(),
+		"CallSid":    callSid,
+		"AccountSid": accountSid,
 	}
-	// Identity surfaces — emit CallSid + AccountSid into customParameters in
-	// addition to the top-level Start.{CallSid,AccountSid} fields. Twilio's
-	// downstream consumers vary in which surface they read from.
-	customParams["CallSid"] = callSid
-	customParams["AccountSid"] = accountSid
+	// Merge caller-supplied extra params (from Voice-URL <Parameter> children).
+	// Reserved keys above take precedence — never overwrite identity fields.
+	for k, v := range extraParams {
+		if _, reserved := customParams[k]; !reserved {
+			customParams[k] = v
+		}
+	}
 	return writeJSON(conn, StartEvent{
 		Event:          "start",
 		SequenceNumber: "1",

@@ -597,6 +597,21 @@ function skipToEnd(tz: Tokenizer, name: string): void {
   }
 }
 
+/**
+ * extractStreamURL returns the url and parameters from the first
+ * <Connect><Stream url="..."/> verb in resp.
+ * Throws if no such verb exists or if the Stream url is empty.
+ */
+export function extractStreamURL(resp: Response): { url: string; params: Record<string, string> } {
+  for (const verb of resp.verbs) {
+    if (verb.kind !== 'Connect') continue;
+    const connect = verb as import('./verbs.js').Connect;
+    if (!connect.stream?.url) continue;
+    return { url: connect.stream.url, params: connect.stream.parameters ?? {} };
+  }
+  throw new Error('twiml: no <Connect><Stream url="..."> found in response');
+}
+
 /** parseIntStrict parses a base-10 integer, returning undefined on any non-integer. */
 function parseIntStrict(v: string | undefined): number | undefined {
   if (v === undefined) return undefined;

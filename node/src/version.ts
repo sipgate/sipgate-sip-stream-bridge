@@ -5,4 +5,4 @@
  * responses, BYE, outbound INVITE). Reflects the product milestone this
  * implementation targets (v3 control plane).
  */
-export const USER_AGENT = 'sipgate-sip-stream-bridge/3.0';
+export const USER_AGENT = 'sipgate-sip-stream-bridge/3.1';

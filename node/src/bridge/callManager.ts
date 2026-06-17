@@ -33,6 +33,9 @@ import type { OutboundDialog } from '../sip/dialog.js';
 import type { StatusClient, CallbackEvent } from '../webhook/status.js';
 import { buildStatusForm } from '../webhook/callbackForm.js';
 import { subscriptionMatches } from '../webhook/subscription.js';
+import { fetchVoiceUrl } from '../webhook/voiceFetch.js';
+import { parseResponse } from '../twiml/parse.js';
+import { extractStreamURL } from '../twiml/parse.js';
 import { CallState, isActiveState, twilioStatus } from './state.js';
 
 /** Per-call status-callback subscription (operator default or REST-supplied). */
@@ -111,6 +114,8 @@ export interface CallSession {
   sdpAnswer: string;
   /** Silence byte for the negotiated codec — used for NAT hole-punch and reconnect silence */
   silenceByte: number;
+  /** Resolved WS target URL (static from WS_TARGET_URL or dynamic from Voice-URL TwiML) — used for reconnects */
+  wsStreamURL: string;
 
   // ── v3 control-plane metadata ───────────────────────────────────────────────
   /** AC… account identifier (derived once from SIP_USER) */
@@ -688,11 +693,46 @@ export class CallManager {
     });
     this.sipHandle.sendRaw(Buffer.from(ringing), rinfo.port, rinfo.address);
 
-    // 7. Attempt WS connection (2-second timeout handled inside createWsClient)
+    // 7. Resolve WS target URL: static (WS_TARGET_URL) or dynamic (VOICE_URL webhook).
+    // Voice-URL fetch happens BEFORE 200 OK (pre-answer): if it fails the call rejects 503.
+    let streamURL: string;
+    let extraCustomParameters: Record<string, string> | undefined;
+    if (this.config.WS_TARGET_URL) {
+      streamURL = this.config.WS_TARGET_URL;
+    } else {
+      try {
+        const { body, urlUsed } = await fetchVoiceUrl(
+          { callSid, accountSid: this.accountSid, from: fromUri, to: toUri },
+          this.config,
+        );
+        callLog.debug({ event: 'voice_url_fetched', urlUsed }, 'voice-url fetch ok');
+        const twimlText = new TextDecoder().decode(body);
+        const resp = parseResponse(twimlText);
+        const extracted = extractStreamURL(resp);
+        streamURL = extracted.url;
+        extraCustomParameters = Object.keys(extracted.params).length > 0 ? extracted.params : undefined;
+      } catch (err) {
+        callLog.warn({ err, event: 'voice_url_failed' }, 'voice-url fetch/parse failed — sending 503');
+        const resp503 = buildResponse({
+          status: 503,
+          reason: 'Service Unavailable',
+          vias,
+          from,
+          to: toHeader,
+          callId: sipCallId,
+          cseq,
+        });
+        this.sipHandle.sendRaw(Buffer.from(resp503), rinfo.port, rinfo.address);
+        rtp.dispose();
+        return;
+      }
+    }
+
+    // 8. Attempt WS connection (2-second timeout handled inside createWsClient)
     let ws: WsClient;
     try {
       ws = await createWsClient(
-        this.config.WS_TARGET_URL,
+        streamURL,
         {
           streamSid,
           callSid,
@@ -700,6 +740,7 @@ export class CallManager {
           to: toUri,
           sipCallId,
           mediaFormat: { encoding: codecInfo.encoding, sampleRate: codecInfo.sampleRate, channels: 1 },
+          extraCustomParameters,
         },
         callLog,
       );
@@ -777,6 +818,7 @@ export class CallManager {
       silenceInterval: null,
       sdpAnswer: sdpAnswerStr,
       silenceByte: rtp.silenceByte,
+      wsStreamURL: streamURL,
       accountSid: this.accountSid,
       fromNumber: fromUri,
       toNumber: toUri,
@@ -872,6 +914,7 @@ export class CallManager {
       to: toUri,
       sipCallId,
       mediaFormat: { encoding: codecInfo.encoding, sampleRate: codecInfo.sampleRate, channels: 1 },
+      extraCustomParameters: extraCustomParameters,
     };
     ws.onDisconnect(() => {
       // Only reconnect on a transient drop while streaming. An intentional close
@@ -1097,7 +1140,7 @@ export class CallManager {
       session.log.info({ event: 'ws_reconnect_attempt', attempt: n, delay }, 'Attempting WS reconnect');
 
       try {
-        const newWs = await createWsClient(this.config.WS_TARGET_URL, params, session.log);
+        const newWs = await createWsClient(session.wsStreamURL, params, session.log);
         // Success: clear silence, reset flag, swap in new WsClient
         cleanup();
         session.wsReconnecting = false;
