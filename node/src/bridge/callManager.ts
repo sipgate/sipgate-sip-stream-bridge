@@ -110,6 +110,13 @@ export interface CallSession {
   wsReconnecting: boolean;
   /** Silence injection interval during WS reconnect — cleared on teardown to prevent send-after-dispose crash */
   silenceInterval: ReturnType<typeof setInterval> | null;
+  /** Continuous outbound-RTP keepalive pacer (NAT pinhole + symmetric-RTP latch).
+   *  Fills idle/GC-gap ticks with codec silence so inbound RTP traverses NAT even
+   *  when the SDP advertises an unroutable IP. Cleared on teardown. */
+  keepaliveInterval: ReturnType<typeof setInterval> | null;
+  /** Wall-clock (ms) of the last outbound RTP packet — gates the keepalive pacer
+   *  so it only fills genuine gaps and never doubles a live bot-audio frame. */
+  lastRtpTxAt: number;
   /** SDP answer sent in 200 OK — reused for retransmission to avoid re-negotiation */
   sdpAnswer: string;
   /** Silence byte for the negotiated codec — used for NAT hole-punch and reconnect silence */
@@ -465,6 +472,18 @@ export class CallManager {
     return out;
   }
 
+  /**
+   * Count of sessions currently in a B2BUA <Dial> forward (callee leg up).
+   * Mirrors Go's CallManager.ActiveForwardCount() for the /health contract.
+   */
+  activeForwardCount(): number {
+    let n = 0;
+    for (const s of this.sessions.values()) {
+      if (s.forwardDialog !== null) n++;
+    }
+    return n;
+  }
+
   /** Look up a call by CallSid (active wins over a stale terminated snapshot). */
   getByCallSid(callSid: string): BridgeCall | undefined {
     const live = this.callSidIdx.get(callSid);
@@ -493,6 +512,10 @@ export class CallManager {
     if (session.silenceInterval !== null) {
       clearInterval(session.silenceInterval);
       session.silenceInterval = null;
+    }
+    if (session.keepaliveInterval !== null) {
+      clearInterval(session.keepaliveInterval);
+      session.keepaliveInterval = null;
     }
     session.ws.stop(); // sends stop event (reason carried in logs) then closes WS
     session.log.info({ event: 'stream_closed', reason }, 'WS stream closed (privacy gate)');
@@ -816,6 +839,8 @@ export class CallManager {
       okRetransmitTimer: null,
       wsReconnecting: false,
       silenceInterval: null,
+      keepaliveInterval: null,
+      lastRtpTxAt: 0,
       sdpAnswer: sdpAnswerStr,
       silenceByte: rtp.silenceByte,
       wsStreamURL: streamURL,
@@ -898,6 +923,7 @@ export class CallManager {
         firstWsAudio = false;
       }
       this.metrics?.incRtpTx();
+      session.lastRtpTxAt = Date.now(); // bot audio fills this tick — keepalive stays quiet
       rtp.sendAudio(payload);
     });
     // Mark events from outbound drain → echo back to WS backend
@@ -928,6 +954,21 @@ export class CallManager {
     });
     // Enable RTP forwarding — no audio forwarded until here
     rtp.startForwarding();
+
+    // Continuous outbound-RTP keepalive pacer. Mirrors Go's never-stopping 20 ms
+    // pacer (session.go): on every tick send the bot's audio if it filled the
+    // tick, otherwise emit codec silence. The steady outbound stream opens and
+    // holds the NAT pinhole so symmetric-RTP inbound can return to the packet
+    // source address — required when the advertised SDP IP is unroutable (e.g.
+    // a Docker bridge container IP). The 20 ms gate means it only fills genuine
+    // gaps (idle audio or a GC stall) and never doubles a live bot-audio frame.
+    session.keepaliveInterval = setInterval(() => {
+      if (session.forwardRtp !== null || session.wsReconnecting) return; // those paths send their own RTP
+      if (Date.now() - session.lastRtpTxAt < 20) return; // bot audio is filling the tick
+      this.metrics?.incRtpTx();
+      session.lastRtpTxAt = Date.now();
+      session.rtp.sendAudio(Buffer.alloc(160, session.silenceByte));
+    }, 20);
     } finally {
       this.pendingInvites.delete(sipCallId);
       this.cancelledInvites.delete(sipCallId);
@@ -1050,6 +1091,12 @@ export class CallManager {
       clearInterval(session.silenceInterval);
       session.silenceInterval = null;
     }
+    // Stop the keepalive pacer before the RTP socket is disposed (same
+    // send-after-dispose hazard as the reconnect silence interval above).
+    if (session.keepaliveInterval !== null) {
+      clearInterval(session.keepaliveInterval);
+      session.keepaliveInterval = null;
+    }
 
     session.log.info({ event: 'call_ended', reason, sendBye }, 'Call terminated');
 
@@ -1149,6 +1196,7 @@ export class CallManager {
         // Re-wire WS audio → RTP (old ws.onAudio listeners are on the dead socket and won't fire)
         newWs.onAudio((payload) => {
           this.metrics?.incRtpTx();
+          session.lastRtpTxAt = Date.now(); // keep the keepalive pacer quiet while bot audio flows
           session.rtp.sendAudio(payload);
         });
 
