@@ -3,1014 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>sipgate SIP Stream Bridge — Twilio ersetzen. DSGVO-konform. Open Source.</title>
+<title>sipgate SIP Stream Bridge - Twilio ersetzen. CLOUD-Act-frei. DSGVO-konform. Open Source.</title>
+<meta name="description" content="Drop-in Open-Source-Bridge von Twilio Media Streams zu sipgate SIP-Trunking. Self-hosted - dein Audio verlässt nie deinen Server. Kostenlos, kein Code-Umbau.">
+<link rel="alternate" hreflang="de" href="https://sipgate.github.io/sipgate-sip-stream-bridge/">
+<link rel="alternate" hreflang="en" href="https://sipgate.github.io/sipgate-sip-stream-bridge/en/">
+<link rel="alternate" hreflang="x-default" href="https://sipgate.github.io/sipgate-sip-stream-bridge/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --white:      #FFFFFF;
-    --black:      #121212;
-    --grey-light: #F7F7F7;
-    --grey:       #E7E6E6;
-    --grey-dark:  #818885;
-    --electric-lime:      #DEFF00;
-    --electric-lime-dark: #202500;
-    --soft-lime:          #EFFDC1;
-    --lavender:       #E2D8FF;
-    --lavender-light: #F3F0FF;
-    --lavender-dark:  #342364;
-    --font-primary: 'Space Grotesk', sans-serif;
-    --radius-sm: 8px;
-    --radius-md: 16px;
-    --radius-lg: 24px;
-    --radius-xl: 32px;
-  }
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; font-size: 16px; }
-  body {
-    font-family: var(--font-primary);
-    background: var(--white);
-    color: var(--black);
-    overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  /* ── NAV ─────────────────────────────── */
-  nav {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 100;
-    background: rgba(255,255,255,0.97);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--grey);
-    height: 64px;
-    display: flex;
-    align-items: center;
-    padding: 0 clamp(24px, 5vw, 80px);
-  }
-
-  .nav-inner {
-    width: 100%;
-    max-width: 1280px;
-    margin: 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 32px;
-  }
-
-  .nav-logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    text-decoration: none;
-    flex-shrink: 0;
-  }
-
-  .nav-logo img { height: 24px; width: auto; }
-
-  .nav-logo-divider {
-    width: 1px;
-    height: 20px;
-    background: var(--grey);
-  }
-
-  .nav-logo-product {
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--black);
-    letter-spacing: -0.2px;
-  }
-
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    list-style: none;
-  }
-
-  .nav-links a {
-    font-size: 14px;
-    font-weight: 500;
-    color: #555;
-    text-decoration: none;
-    padding: 6px 14px;
-    border-radius: var(--radius-sm);
-    transition: color 0.2s, background 0.2s;
-  }
-
-  .nav-links a:hover { color: var(--black); background: var(--grey-light); }
-
-  .nav-cta {
-    background: var(--black) !important;
-    color: var(--white) !important;
-    font-weight: 700 !important;
-    padding: 8px 20px !important;
-    border-radius: 100px !important;
-    transition: background 0.2s, transform 0.2s !important;
-  }
-
-  .nav-cta:hover {
-    background: #333 !important;
-    transform: translateY(-1px);
-    color: var(--white) !important;
-  }
-
-  .hamburger {
-    display: none;
-    flex-direction: column;
-    gap: 5px;
-    cursor: pointer;
-    background: none;
-    border: none;
-    padding: 4px;
-  }
-
-  .hamburger span {
-    display: block;
-    width: 24px;
-    height: 2px;
-    background: var(--black);
-    border-radius: 2px;
-    transition: transform 0.3s, opacity 0.3s;
-  }
-
-  .hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-  .hamburger.open span:nth-child(2) { opacity: 0; }
-  .hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-
-  .mobile-menu {
-    display: none;
-    position: fixed;
-    top: 64px; left: 0; right: 0;
-    background: var(--white);
-    border-bottom: 1px solid var(--grey);
-    padding: 16px 24px 24px;
-    z-index: 99;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .mobile-menu.open { display: flex; }
-
-  .mobile-menu a {
-    font-size: 16px;
-    font-weight: 500;
-    color: var(--black);
-    text-decoration: none;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--grey);
-  }
-
-  .mobile-menu a:last-child {
-    border-bottom: none;
-    margin-top: 8px;
-    color: var(--white);
-    background: var(--black);
-    text-align: center;
-    border-radius: 100px;
-    padding: 12px 24px;
-    font-weight: 700;
-  }
-
-  /* ── HERO ────────────────────────────── */
-  .hero {
-    background: var(--white);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 120px clamp(24px,5vw,80px) 80px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .hero-bg-shape {
-    position: absolute;
-    top: -80px; right: -150px;
-    width: 600px;
-    height: 600px;
-    background: var(--electric-lime);
-    border-radius: 50%;
-    opacity: 0.15;
-    filter: blur(100px);
-    pointer-events: none;
-  }
-
-  .hero-inner {
-    position: relative;
-    z-index: 1;
-    max-width: 900px;
-    width: 100%;
-    text-align: center;
-  }
-
-  .hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--grey-light);
-    border: 1px solid var(--grey);
-    border-radius: 100px;
-    padding: 6px 16px;
-    margin-bottom: 40px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--grey-dark);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .hero-badge-dot {
-    width: 6px;
-    height: 6px;
-    background: var(--lavender-dark);
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(0.8); }
-  }
-
-  .hero-headline {
-    font-size: clamp(44px, 7.5vw, 88px);
-    line-height: 1.05;
-    letter-spacing: -0.03em;
-    margin-bottom: 28px;
-    font-weight: 700;
-    color: var(--black);
-  }
-
-  .hero-headline em {
-    font-style: normal;
-    color: var(--lavender-dark);
-  }
-
-  .hero-sub {
-    font-size: clamp(16px, 2.5vw, 20px);
-    line-height: 1.6;
-    color: #555;
-    max-width: 620px;
-    margin: 0 auto 48px;
-    font-weight: 400;
-  }
-
-  .hero-ctas {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-bottom: 64px;
-  }
-
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--black);
-    color: var(--white);
-    font-family: var(--font-primary);
-    font-weight: 700;
-    font-size: 15px;
-    padding: 14px 28px;
-    border-radius: 100px;
-    text-decoration: none;
-    transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
-    border: none;
-    cursor: pointer;
-  }
-
-  .btn-primary:hover {
-    background: #333;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  }
-
-  .btn-ghost {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: transparent;
-    color: var(--black);
-    font-family: var(--font-primary);
-    font-weight: 600;
-    font-size: 15px;
-    padding: 14px 28px;
-    border-radius: 100px;
-    border: 1.5px solid var(--grey);
-    text-decoration: none;
-    transition: border-color 0.2s, background 0.2s;
-    cursor: pointer;
-  }
-
-  .btn-ghost:hover { border-color: #999; background: var(--grey-light); }
-
-  .hero-flow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0;
-    flex-wrap: wrap;
-  }
-
-  .flow-box {
-    background: var(--grey-light);
-    border: 1px solid var(--grey);
-    border-radius: var(--radius-md);
-    padding: 16px 24px;
-    text-align: center;
-    min-width: 160px;
-  }
-
-  .flow-box.bridge {
-    border-color: var(--electric-lime);
-    background: var(--soft-lime);
-    box-shadow: 0 4px 24px rgba(222,255,0,0.25);
-  }
-
-  .flow-box-flag { font-size: 28px; margin-bottom: 6px; }
-  .flow-box-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--grey-dark);
-    margin-bottom: 4px;
-  }
-  .flow-box-name { font-size: 14px; font-weight: 700; color: var(--black); }
-  .flow-box.bridge .flow-box-name { color: var(--lavender-dark); }
-
-  .flow-arrow { font-size: 20px; color: var(--grey-dark); padding: 0 12px; flex-shrink: 0; }
-
-  /* ── SHARED ───────────────────────────── */
-  .section-inner { max-width: 1120px; margin: 0 auto; }
-
-  .eyebrow {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--lavender-dark);
-    margin-bottom: 16px;
-  }
-
-  .section-h2 {
-    font-weight: 700;
-    font-size: clamp(32px, 5vw, 52px);
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    margin-bottom: 24px;
-    color: var(--black);
-  }
-
-  .lead {
-    font-size: clamp(16px, 2vw, 19px);
-    line-height: 1.7;
-    color: #555;
-    max-width: 680px;
-    margin-bottom: 48px;
-  }
-
-  /* ── WHAT IS IT ──────────────────────── */
-  .section-what {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--grey-light);
-  }
-
-  .what-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 64px;
-    align-items: center;
-  }
-
-  .what-text p {
-    font-size: 17px;
-    line-height: 1.75;
-    color: #444;
-    margin-bottom: 20px;
-  }
-
-  .what-text strong { color: var(--black); font-weight: 700; }
-
-  .what-visual {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    background: var(--white);
-    border-radius: var(--radius-xl);
-    padding: 40px 32px;
-    border: 1px solid var(--grey);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.05);
-  }
-
-  .what-flow-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    justify-content: center;
-  }
-
-  .wf-box {
-    background: var(--grey-light);
-    border: 1.5px solid var(--grey);
-    border-radius: var(--radius-md);
-    padding: 14px 18px;
-    text-align: center;
-    flex: 1;
-    max-width: 160px;
-  }
-
-  .wf-box.lime {
-    border-color: var(--electric-lime);
-    background: var(--soft-lime);
-    box-shadow: 0 4px 16px rgba(222,255,0,0.15);
-  }
-
-  .wf-flag { font-size: 24px; margin-bottom: 4px; }
-  .wf-label {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--grey-dark);
-    margin-bottom: 2px;
-  }
-  .wf-name { font-size: 13px; font-weight: 700; color: var(--black); }
-  .wf-box.lime .wf-name { color: var(--lavender-dark); }
-
-  .what-caption {
-    font-size: 12px;
-    color: var(--grey-dark);
-    text-align: center;
-    margin-top: 8px;
-  }
-
-  /* ── WHY SIPGATE ─────────────────────── */
-  .section-why {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--white);
-  }
-
-  .why-header { text-align: center; margin-bottom: 64px; }
-
-  .bento-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
-  }
-
-  .bento-card {
-    background: var(--grey-light);
-    border-radius: var(--radius-xl);
-    padding: 40px;
-    border: 1px solid var(--grey);
-    transition: transform 0.3s, box-shadow 0.3s;
-  }
-
-  .bento-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 16px 48px rgba(0,0,0,0.08);
-  }
-
-  .bento-card.featured {
-    background: var(--black);
-    border-color: transparent;
-  }
-
-  .bento-card.featured .bento-title { color: var(--white); }
-  .bento-card.featured .bento-text { color: rgba(255,255,255,0.65); }
-
-  .bento-icon { font-size: 40px; margin-bottom: 20px; display: block; }
-
-  .bento-title {
-    font-weight: 700;
-    font-size: 20px;
-    margin-bottom: 12px;
-    color: var(--black);
-    line-height: 1.3;
-  }
-
-  .bento-text { font-size: 15px; line-height: 1.7; color: #555; }
-
-  .bento-tag {
-    display: inline-block;
-    background: var(--electric-lime);
-    color: var(--electric-lime-dark);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 4px 12px;
-    border-radius: 100px;
-    margin-top: 16px;
-  }
-
-  /* ── HOW IT WORKS ────────────────────── */
-  .section-how {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--grey-light);
-  }
-
-  .how-header { text-align: center; margin-bottom: 72px; }
-
-  .steps-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 24px;
-    max-width: 720px;
-    margin: 0 auto;
-  }
-
-  .step-card {
-    background: var(--white);
-    border: 1px solid var(--grey);
-    border-radius: var(--radius-xl);
-    padding: 36px 28px 32px;
-    transition: box-shadow 0.3s;
-  }
-
-  .step-card:hover { box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
-
-  .step-number {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--black);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 18px;
-    color: var(--white);
-    margin-bottom: 24px;
-  }
-
-  .step-title {
-    font-weight: 700;
-    font-size: 18px;
-    color: var(--black);
-    margin-bottom: 16px;
-  }
-
-  .code-block {
-    background: var(--black);
-    border-radius: var(--radius-md);
-    padding: 16px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 12px;
-    line-height: 1.7;
-    color: rgba(255,255,255,0.7);
-    overflow-x: auto;
-    position: relative;
-    white-space: pre;
-  }
-
-  .code-block .k { color: var(--electric-lime); font-weight: 600; }
-  .code-block .v { color: #9DFFB0; }
-  .code-block .c { color: rgba(255,255,255,0.35); }
-
-  .copy-btn {
-    position: absolute;
-    top: 10px; right: 10px;
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 6px;
-    color: rgba(255,255,255,0.5);
-    font-family: var(--font-primary);
-    font-size: 11px;
-    font-weight: 600;
-    padding: 4px 10px;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-  }
-
-  .copy-btn:hover { background: rgba(255,255,255,0.18); color: var(--white); }
-  .copy-btn.copied { color: var(--electric-lime); }
-
-  .step-desc { font-size: 14px; line-height: 1.7; color: #555; margin-top: 14px; }
-  .step-desc a { color: var(--lavender-dark); font-weight: 600; text-decoration: none; }
-
-  .how-tagline {
-    text-align: center;
-    margin-top: 64px;
-    font-weight: 700;
-    font-size: clamp(20px, 3vw, 28px);
-    color: var(--black);
-  }
-
-  /* ── COMPARISON TABLE ────────────────── */
-  .section-compare {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--white);
-  }
-
-  .compare-header { text-align: center; margin-bottom: 64px; }
-
-  .compare-table-wrap {
-    overflow-x: auto;
-    border-radius: var(--radius-xl);
-    border: 1px solid var(--grey);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.05);
-  }
-
-  table { width: 100%; border-collapse: collapse; font-size: 15px; }
-
-  thead tr { background: var(--grey-light); }
-  thead th {
-    padding: 20px 28px;
-    text-align: left;
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--grey-dark);
-  }
-  thead th.col-sipgate { color: var(--lavender-dark); }
-
-  tbody tr { border-bottom: 1px solid var(--grey); transition: background 0.2s; }
-  tbody tr:last-child { border-bottom: none; }
-  tbody tr:hover { background: var(--grey-light); }
-
-  tbody td { padding: 18px 28px; vertical-align: middle; color: #444; line-height: 1.4; }
-  tbody td:first-child { font-weight: 600; color: var(--black); }
-  tbody td.col-twilio { color: var(--grey-dark); }
-  tbody td.col-sipgate { font-weight: 700; color: var(--lavender-dark); }
-
-  .check { display: inline-flex; align-items: center; gap: 6px; }
-  .check-mark {
-    width: 20px; height: 20px;
-    background: var(--lavender-dark);
-    border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 11px; color: var(--white); flex-shrink: 0;
-  }
-
-  /* ── DOCKER IMAGES ───────────────────── */
-  .section-docker {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--soft-lime);
-  }
-
-  .docker-header { text-align: center; margin-bottom: 56px; }
-
-  .docker-cards {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 24px;
-    margin-bottom: 48px;
-    max-width: 720px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  .docker-card {
-    background: var(--white);
-    border-radius: var(--radius-xl);
-    padding: 36px 32px;
-    border: 1.5px solid rgba(0,0,0,0.06);
-    transition: transform 0.3s, box-shadow 0.3s;
-  }
-
-  .docker-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 16px 48px rgba(0,0,0,0.1);
-  }
-
-  .docker-card-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--electric-lime);
-    color: var(--electric-lime-dark);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 4px 12px;
-    border-radius: 100px;
-    margin-bottom: 20px;
-  }
-
-  .docker-card-title { font-weight: 700; font-size: 22px; color: var(--black); margin-bottom: 8px; }
-  .docker-card-sub { font-size: 14px; color: var(--grey-dark); margin-bottom: 24px; }
-
-  .docker-cmd {
-    background: var(--black);
-    border-radius: var(--radius-md);
-    padding: 16px 20px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 12px;
-    color: var(--electric-lime);
-    word-break: break-all;
-    line-height: 1.6;
-    position: relative;
-    margin-bottom: 20px;
-  }
-
-  .docker-cmd .cmd-dim { color: rgba(255,255,255,0.35); }
-
-  .docker-stats { display: flex; gap: 16px; flex-wrap: wrap; }
-
-  .docker-stat {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: var(--lavender-dark);
-    font-weight: 600;
-  }
-
-  .docker-stat::before {
-    content: '✓';
-    width: 18px; height: 18px;
-    background: rgba(0,102,96,0.12);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px; color: var(--lavender-dark); font-weight: 700; flex-shrink: 0;
-  }
-
-  .tags-table-wrap {
-    background: var(--white);
-    border-radius: var(--radius-xl);
-    overflow: hidden;
-    border: 1.5px solid rgba(0,0,0,0.06);
-    max-width: 720px;
-    margin: 0 auto;
-  }
-
-  .tags-table-title { padding: 24px 32px 0; font-weight: 700; font-size: 18px; color: var(--black); }
-
-  .tags-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .tags-table thead tr { background: var(--grey-light); }
-  .tags-table thead th {
-    padding: 14px 32px;
-    text-align: left;
-    font-weight: 700; font-size: 12px;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    color: var(--grey-dark);
-    border-bottom: 1px solid var(--grey);
-  }
-  .tags-table tbody tr { border-bottom: 1px solid var(--grey); }
-  .tags-table tbody tr:last-child { border-bottom: none; }
-  .tags-table tbody td { padding: 16px 32px; color: #444; }
-  .tags-table tbody td:first-child {
-    font-family: 'SF Mono', monospace;
-    font-size: 13px; color: var(--lavender-dark); font-weight: 600;
-  }
-
-  /* ── FEATURES ────────────────────────── */
-  .section-features {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--grey-light);
-  }
-
-  .features-header { text-align: center; margin-bottom: 64px; }
-
-  .features-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 12px;
-    max-width: 960px;
-    margin: 0 auto;
-  }
-
-  .feature-chip {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: var(--white);
-    border: 1px solid var(--grey);
-    border-radius: var(--radius-lg);
-    padding: 18px 22px;
-    font-weight: 600;
-    font-size: 15px;
-    color: var(--black);
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .feature-chip:hover {
-    border-color: var(--lavender-dark);
-    box-shadow: 0 4px 16px rgba(0,102,96,0.08);
-  }
-
-  .feature-check {
-    width: 24px; height: 24px;
-    background: var(--lavender-dark);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; color: var(--white); flex-shrink: 0;
-  }
-
-  .feature-code { font-family: 'SF Mono', monospace; font-size: 13px; color: var(--lavender-dark); }
-
-  /* ── FAQ ─────────────────────────────── */
-  .section-faq {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--white);
-  }
-
-  .faq-header { text-align: center; margin-bottom: 64px; }
-
-  .faq-list {
-    max-width: 760px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .faq-item {
-    background: var(--grey-light);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--grey);
-    overflow: hidden;
-    transition: box-shadow 0.2s;
-  }
-
-  .faq-item.open { box-shadow: 0 4px 24px rgba(0,0,0,0.06); border-color: #ccc; }
-
-  .faq-question {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 22px 28px;
-    cursor: pointer;
-    font-weight: 700;
-    font-size: 16px;
-    color: var(--black);
-    user-select: none;
-    gap: 16px;
-  }
-
-  .faq-question:hover { color: var(--lavender-dark); }
-
-  .faq-icon {
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    border: 1.5px solid var(--grey);
-    background: var(--white);
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    transition: transform 0.3s, border-color 0.2s, background 0.2s;
-    font-size: 16px;
-    color: var(--grey-dark);
-  }
-
-  .faq-item.open .faq-icon {
-    transform: rotate(45deg);
-    border-color: var(--black);
-    background: var(--black);
-    color: var(--white);
-  }
-
-  .faq-answer { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1); }
-
-  .faq-answer-inner { padding: 0 28px 24px; font-size: 15px; line-height: 1.75; color: #555; }
-  .faq-answer-inner a { color: var(--lavender-dark); font-weight: 600; text-decoration: none; }
-
-  /* ── FINAL CTA ───────────────────────── */
-  .section-cta {
-    padding: 120px clamp(24px,5vw,80px);
-    background: var(--electric-lime);
-    text-align: center;
-  }
-
-  .cta-inner { position: relative; z-index: 1; }
-
-  .cta-eyebrow {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: rgba(0,0,0,0.45);
-    margin-bottom: 24px;
-  }
-
-  .cta-headline {
-    font-size: clamp(40px, 6vw, 80px);
-    line-height: 1.05;
-    letter-spacing: -0.02em;
-    margin-bottom: 48px;
-    font-weight: 700;
-    color: var(--black);
-  }
-
-  .terminal {
-    background: var(--black);
-    border-radius: var(--radius-xl);
-    max-width: 680px;
-    margin: 0 auto 48px;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-  }
-
-  .terminal-bar {
-    background: rgba(255,255,255,0.06);
-    padding: 12px 20px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-  }
-
-  .terminal-dot { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,0.15); }
-  .terminal-title { font-size: 12px; color: rgba(255,255,255,0.3); margin-left: 8px; font-family: 'SF Mono', monospace; }
-
-  .terminal-body {
-    padding: 24px 28px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 14px;
-    line-height: 1.8;
-    text-align: left;
-    position: relative;
-  }
-
-  .terminal-prompt { color: var(--electric-lime); margin-right: 12px; user-select: none; }
-  .terminal-cmd { color: var(--white); }
-  .terminal-flag { color: #AABCFF; }
-  .terminal-img { color: #9DFFB0; }
-
-  .cta-links { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
-
-  .cta-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 14px 28px;
-    border-radius: 100px;
-    font-weight: 700;
-    font-size: 14px;
-    text-decoration: none;
-    transition: transform 0.2s, box-shadow 0.2s;
-  }
-
-  .cta-link.dark { background: var(--black); color: var(--white); }
-  .cta-link.dark:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
-
-  .cta-link.outline { border: 1.5px solid rgba(0,0,0,0.25); color: var(--black); }
-  .cta-link.outline:hover { border-color: var(--black); transform: translateY(-2px); }
-
-  /* ── FOOTER ──────────────────────────── */
-  footer {
-    background: var(--black);
-    padding: 32px clamp(24px,5vw,80px);
-    text-align: center;
-    font-size: 13px;
-    color: rgba(255,255,255,0.35);
-    font-weight: 500;
-  }
-
-  footer span { color: rgba(255,255,255,0.15); margin: 0 12px; }
-  footer a { color: rgba(255,255,255,0.35); text-decoration: none; }
-  footer a:hover { color: rgba(255,255,255,0.6); }
-
-  /* ── SCROLL ANIMATIONS ───────────────── */
-  .reveal {
-    opacity: 0;
-    transform: translateY(24px);
-    transition: opacity 0.55s cubic-bezier(0.4,0,0.2,1), transform 0.55s cubic-bezier(0.4,0,0.2,1);
-  }
-
-  .reveal.visible { opacity: 1; transform: none; }
-  .reveal-delay-1 { transition-delay: 0.1s; }
-  .reveal-delay-2 { transition-delay: 0.2s; }
-  .reveal-delay-3 { transition-delay: 0.3s; }
-  .reveal-delay-4 { transition-delay: 0.4s; }
-
-  /* ── RESPONSIVE ──────────────────────── */
-  @media (max-width: 900px) {
-    .what-grid { grid-template-columns: 1fr; }
-    .bento-grid { grid-template-columns: 1fr; }
-  }
-
-  @media (max-width: 768px) {
-    .nav-links { display: none; }
-    .hamburger { display: flex; }
-    .flow-box { min-width: 100px; padding: 12px 14px; }
-    .flow-box-flag { font-size: 22px; }
-    .flow-box-name { font-size: 12px; }
-    .flow-arrow { padding: 0 6px; font-size: 16px; }
-  }
-
-  @media (max-width: 480px) {
-    .hero-ctas { flex-direction: column; }
-    .btn-primary, .btn-ghost { width: 100%; justify-content: center; }
-    .cta-links { flex-direction: column; align-items: stretch; }
-    .cta-link { justify-content: center; }
-    .hero-flow { flex-direction: column; align-items: center; }
-    .flow-arrow { transform: rotate(90deg); padding: 4px 0; }
-  }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -1026,6 +27,7 @@
       <li><a href="#was">Über die Bridge</a></li>
       <li><a href="#warum">Warum sipgate</a></li>
       <li><a href="#faq">FAQ</a></li>
+      <li><a href="en/" class="language-switch" aria-label="Switch to English"><span aria-hidden="true">🌐</span> English</a></li>
       <li><a href="#how" class="nav-cta">Kostenlos starten</a></li>
     </ul>
     <button class="hamburger" id="hamburger" aria-label="Menü öffnen">
@@ -1038,6 +40,7 @@
   <a href="#was">Über die Bridge</a>
   <a href="#warum">Warum sipgate</a>
   <a href="#faq">FAQ</a>
+  <a href="en/" class="language-switch" aria-label="Switch to English"><span aria-hidden="true">🌐</span> English</a>
   <a href="#how">Kostenlos starten</a>
 </div>
 
@@ -1050,10 +53,10 @@
       Open Source · Made in Germany
     </div>
     <h1 class="hero-headline reveal reveal-delay-1">
-      Twilio Media Streams —<br><em>ohne Twilio.</em>
+      Twilio Media Streams -<br><em>ohne Twilio.</em>
     </h1>
     <p class="hero-sub reveal reveal-delay-2">
-      Drop-in Bridge von Twilio zu sipgate SIP-Trunking.<br>Kein Code-Umbau. DSGVO-konform. Kostenlos.
+      Drop-in Bridge von Twilio zu sipgate SIP-Trunking.<br>Kein Code-Umbau. Self-hosted - dein Audio verlässt nie deinen Server. kostenlos.
     </p>
     <div class="hero-ctas reveal reveal-delay-3">
       <a href="#how" class="btn-primary">Jetzt kostenlos loslegen</a>
@@ -1086,7 +89,7 @@
         <div class="eyebrow reveal">Was ist das?</div>
         <h2 class="section-h2 reveal reveal-delay-1">Twilio raus, sipgate rein. Dein Code bleibt.</h2>
         <p class="reveal reveal-delay-2">
-          Du nutzt Twilio Media Streams für Voice-Bots oder Echtzeit-Audio? Die SIP Stream Bridge ersetzt Twilio — nicht deinen Code. Sie emuliert die Twilio-WebSocket-Schnittstelle und leitet Calls über sipgate SIP-Trunking.
+          Du nutzt Twilio Media Streams für Voice-Bots oder Echtzeit-Audio? Die SIP Stream Bridge ersetzt Twilio - nicht deinen Code. Sie emuliert die Twilio-WebSocket-Schnittstelle und leitet Calls über sipgate SIP-Trunking.
         </p>
         <p class="reveal reveal-delay-3">
           <strong>Selbes Protokoll, selbe Events, selbe Payloads.</strong> Dein Code läuft weiter, nur Twilio ist raus.
@@ -1129,19 +132,19 @@
     <div class="bento-grid">
       <div class="bento-card featured reveal">
         <span class="bento-icon">🏢</span>
-        <div class="bento-title">Daten bleiben in der EU</div>
-        <div class="bento-text">Bei Twilio laufen deine Calls über einen US Anbieter, unter US-Recht. Mit sipgate bleibt alles in der EU. Kein transatlantischer Umweg, kein Datenschutz-Risiko.</div>
-        <span class="bento-tag">Serverstandort: Düsseldorf</span>
+        <div class="bento-title">Audio verlässt nie die EU</div>
+        <div class="bento-text">Twilio unterliegt als US-Unternehmen dem CLOUD Act - unabhängig vom Serverstandort. Die Bridge läuft self-hosted auf deiner eigenen Maschine, die Telefonie über sipgate - einen deutschen Carrier mit Servern in Deutschland. Kein transatlantischer Umweg, kein CLOUD Act, kein Datenschutz-Risiko.</div>
+        <span class="bento-tag">Self-hosted · CLOUD-Act-frei</span>
       </div>
       <div class="bento-card reveal reveal-delay-1">
         <span class="bento-icon">🔒</span>
-        <div class="bento-title">DSGVO — ohne Papierkram</div>
-        <div class="bento-text">Kein AV-Vertrag mit einem US-Unternehmen. Keine Standardvertragsklauseln. sipgate sitzt in Deutschland — damit ist DSGVO kein juristisches Projekt, sondern der Default.</div>
+        <div class="bento-title">DSGVO - ohne Papierkram</div>
+        <div class="bento-text">Kein AV-Vertrag mit einem US-Unternehmen. Keine Standardvertragsklauseln. sipgate sitzt in Deutschland - damit ist DSGVO kein juristisches Projekt, sondern der Default.</div>
       </div>
       <div class="bento-card reveal reveal-delay-2">
         <span class="bento-icon">💶</span>
         <div class="bento-title">Faire Preise, kein Middleman</div>
-        <div class="bento-text">Lokale Festnetz- und Mobilfunknummern direkt von sipgate — ohne Aufschlag durch einen US-Vermittler. Die Bridge selbst ist kostenlos und open source.</div>
+        <div class="bento-text">Eingehende Anrufe sind bei sipgate kostenlos - kein Inbound-Minutenpreis und kein Media-Streams-Aufschlag wie bei Twilio. Lokale Festnetz- und Mobilfunknummern direkt von sipgate, ohne Aufschlag durch einen US-Vermittler. Die Bridge selbst ist kostenlos und open source.</div>
       </div>
       <div class="bento-card reveal reveal-delay-3">
         <span class="bento-icon">🤝</span>
@@ -1151,7 +154,7 @@
       <div class="bento-card reveal">
         <span class="bento-icon">🔓</span>
         <div class="bento-title">100 % Open Source</div>
-        <div class="bento-text">Quellcode auf GitHub. Kein Vendor Lock-in, keine Black Box. Forken, anpassen, PRs schicken — contributions welcome.</div>
+        <div class="bento-text">Quellcode auf GitHub. Kein Vendor Lock-in, keine Black Box. Forken, anpassen, PRs schicken - contributions welcome.</div>
         <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" target="_blank" class="bento-tag" style="text-decoration:none;">github.com/sipgate/sipgate-sip-stream-bridge →</a>
       </div>
     </div>
@@ -1233,7 +236,7 @@ docker run \
           <tr>
             <td>🔒 DSGVO</td>
             <td class="col-twilio">SCCs + AV-Vertrag nötig</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Eingebaut — EU-Anbieter</span></td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Eingebaut - EU-Anbieter</span></td>
           </tr>
           <tr>
             <td>📞 Rufnummern</td>
@@ -1241,29 +244,19 @@ docker run \
             <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Lokale Festnetz- &amp; Mobilfunknummern</span></td>
           </tr>
           <tr>
+            <td>📥 Eingehende Anrufe</td>
+            <td class="col-twilio">Kostenpflichtig + Media-Streams-Aufschlag</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Kostenlos - im Trunk inklusive</span></td>
+          </tr>
+          <tr>
             <td>💬 Support</td>
             <td class="col-twilio">Englisch, Ticketsystem</td>
             <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Persönlich, direkt erreichbar</span></td>
           </tr>
           <tr>
-            <td>💻 Code-Änderungen</td>
-            <td class="col-twilio">—</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Keine nötig</span></td>
-          </tr>
-          <tr>
             <td>🐳 Deployment</td>
             <td class="col-twilio">Managed</td>
             <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Self-hosted, ein Docker-Befehl</span></td>
-          </tr>
-          <tr>
-            <td>💰 Bridge-Kosten</td>
-            <td class="col-twilio">—</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Kostenlos</span></td>
-          </tr>
-          <tr>
-            <td>🖥️ Image-Größe</td>
-            <td class="col-twilio">—</td>
-            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> ~10 MB (Go-Version)</span></td>
           </tr>
           <tr>
             <td>🎙️ Audio-Qualität</td>
@@ -1288,7 +281,7 @@ docker run \
       <div class="docker-card reveal">
         <div class="docker-card-badge">⭐ Empfohlen</div>
         <div class="docker-card-title">Go-Version</div>
-        <div class="docker-card-sub">Winzig, schnell, stabil — für den Produktionseinsatz.</div>
+        <div class="docker-card-sub">Winzig, schnell, stabil - für den Produktionseinsatz.</div>
         <div class="docker-cmd" id="code3">
           <button class="copy-btn" onclick="copyCode('code3',this)">Kopieren</button>
           <span class="cmd-dim">docker pull </span>ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest
@@ -1302,7 +295,7 @@ docker run \
       <div class="docker-card reveal reveal-delay-1">
         <div class="docker-card-badge" style="background:#AABCFF;color:#1a2b6e;">Node.js</div>
         <div class="docker-card-title">Node.js-Version</div>
-        <div class="docker-card-sub">Referenz-Implementation — ideal zum Anpassen.</div>
+        <div class="docker-card-sub">Referenz-Implementation - ideal zum Anpassen.</div>
         <div class="docker-cmd" id="code4">
           <button class="copy-btn" onclick="copyCode('code4',this)">Kopieren</button>
           <span class="cmd-dim">docker pull </span>ghcr.io/sipgate/sipgate-sip-stream-bridge-node:latest
@@ -1321,10 +314,10 @@ docker run \
           <tr><th>Tag</th><th>Bedeutung</th></tr>
         </thead>
         <tbody>
-          <tr><td>latest</td><td>Immer die neueste stabile Version — für die meisten Anwendungsfälle</td></tr>
+          <tr><td>latest</td><td>Immer die neueste stabile Version - für die meisten Anwendungsfälle</td></tr>
           <tr><td>main</td><td>Aktuellster Stand aus dem Hauptbranch</td></tr>
-          <tr><td>sha-abc1234</td><td>Exakt ein bestimmter Commit — für vollständige Reproduzierbarkeit</td></tr>
-          <tr><td>v1.2.3</td><td>Festgepinnte Version — empfohlen für Produktion</td></tr>
+          <tr><td>sha-abc1234</td><td>Exakt ein bestimmter Commit - für vollständige Reproduzierbarkeit</td></tr>
+          <tr><td>v1.2.3</td><td>Festgepinnte Version - empfohlen für Produktion</td></tr>
         </tbody>
       </table>
     </div>
@@ -1347,11 +340,23 @@ docker run \
       <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>Bis zu 100 parallele Gespräche</span></div>
       <div class="feature-chip reveal reveal-delay-2"><div class="feature-check">✓</div><span>Health Check <span class="feature-code">/health</span></span></div>
       <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Prometheus Metriken <span class="feature-code">/metrics</span></span></div>
-      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>Selbst gehostet — volle Kontrolle</span></div>
+      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>Selbst gehostet - volle Kontrolle</span></div>
       <div class="feature-chip reveal reveal-delay-2"><div class="feature-check">✓</div><span>Verschlüsselte Audioübertragung (SRTP) <span class="feature-code">SRTP_ENABLED=true</span></span></div>
-      <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Anruf-Weiterleitungen — Calls direkt an andere Ziele durchstellen</span></div>
-      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>HD-Audio — 16 kHz statt Twilios 8 kHz <span class="feature-code">AUDIO_MODE=best</span></span></div>
+      <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Anruf-Weiterleitungen - Calls direkt an andere Ziele durchstellen</span></div>
+      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>HD-Audio - 16 kHz statt Twilios 8 kHz <span class="feature-code">AUDIO_MODE=best</span></span></div>
     </div>
+  </div>
+</section>
+
+<!-- FLOW UPSELL -->
+<section style="padding:96px clamp(24px,5vw,80px);background:var(--lavender-light);" id="flow">
+  <div class="section-inner" style="text-align:center;max-width:760px;">
+    <div class="eyebrow reveal">Noch einen Schritt weiter</div>
+    <h2 class="section-h2 reveal reveal-delay-1">Du willst dich gar nicht ums Audio kümmern?</h2>
+    <p class="lead reveal reveal-delay-2" style="margin:0 auto 32px;">
+      STT, TTS, Turn-Detection - gelöste, aber lästige Arbeit. <strong>sipgate flow</strong> übernimmt die KI-Sprachschicht, damit du dich nur auf die Logik deines Voice-Agenten konzentrierst. Auf Wunsch mit komplett EU-gehosteten Sprachmodellen (Finnland) - souverän bis zum Modell.
+    </p>
+    <a href="https://www.sipgate.de/ai/ai-flow" target="_blank" class="btn-primary reveal reveal-delay-3">sipgate flow entdecken</a>
   </div>
 </section>
 
@@ -1378,16 +383,16 @@ docker run \
           <div class="faq-icon">+</div>
         </div>
         <div class="faq-answer">
-          <div class="faq-answer-inner">Ja — du brauchst einen sipgate Trunking-Anschluss. Gibt's unter <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a>. Die Bridge selbst ist kostenlos.</div>
+          <div class="faq-answer-inner">Ja - du brauchst einen sipgate Trunking-Anschluss. Gibt's unter <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a>. Die Bridge selbst ist kostenlos.</div>
         </div>
       </div>
       <div class="faq-item reveal reveal-delay-2">
         <div class="faq-question" onclick="toggleFaq(this)">
-          Ist das wirklich DSGVO-konform?
+          Ist das wirklich DSGVO-konform - und was ist mit dem CLOUD Act?
           <div class="faq-icon">+</div>
         </div>
         <div class="faq-answer">
-          <div class="faq-answer-inner">sipgate sitzt in Düsseldorf, die Server stehen in der Deutschland. Deine Telefondaten verlassen Europa nicht. Im Vergleich zu US-Anbietern entfallen SCCs und ein separater AV-Vertrag.</div>
+          <div class="faq-answer-inner">Ja. Die Bridge läuft self-hosted auf deiner eigenen Infrastruktur. sipgate sitzt in Düsseldorf, die Server stehen in der Deutschland. Anders als bei US-Anbietern entfällt das CLOUD-Act-Risiko (das US-Unternehmen unabhängig vom Serverstandort verpflichtet); SCCs und ein separater AV-Vertrag sind nicht nötig.</div>
         </div>
       </div>
       <div class="faq-item reveal">
@@ -1449,68 +454,13 @@ docker run \
 </section>
 
 <footer>
-  sipgate SIP Stream Bridge — Open Source · Made with ❤️ in Düsseldorf
+  sipgate SIP Stream Bridge - Open Source · Made with ❤️ in Düsseldorf
   <span>|</span>
   <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" target="_blank">GitHub</a>
   <span>|</span>
   Open Source
 </footer>
 
-<script>
-  const hamburger = document.getElementById('hamburger');
-  const mobileMenu = document.getElementById('mobile-menu');
-  hamburger.addEventListener('click', () => {
-    hamburger.classList.toggle('open');
-    mobileMenu.classList.toggle('open');
-  });
-  mobileMenu.querySelectorAll('a').forEach(a => {
-    a.addEventListener('click', () => {
-      hamburger.classList.remove('open');
-      mobileMenu.classList.remove('open');
-    });
-  });
-
-  const revealEls = document.querySelectorAll('.reveal');
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(e => {
-      if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); }
-    });
-  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-  revealEls.forEach(el => observer.observe(el));
-
-  document.querySelectorAll('.hero .reveal').forEach((el, i) => {
-    setTimeout(() => el.classList.add('visible'), i * 100);
-  });
-
-  function toggleFaq(btn) {
-    const item = btn.closest('.faq-item');
-    const answer = item.querySelector('.faq-answer');
-    const isOpen = item.classList.contains('open');
-    document.querySelectorAll('.faq-item').forEach(i => {
-      i.classList.remove('open');
-      i.querySelector('.faq-answer').style.maxHeight = null;
-    });
-    if (!isOpen) {
-      item.classList.add('open');
-      answer.style.maxHeight = answer.scrollHeight + 'px';
-    }
-  }
-
-  function copyCode(id, btn) {
-    const el = document.getElementById(id);
-    const text = el.innerText.replace(/^Kopieren\n?/, '').trim();
-    navigator.clipboard.writeText(text).then(() => {
-      const orig = btn.textContent;
-      btn.textContent = '✓ Kopiert';
-      btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
-    }).catch(() => {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      window.getSelection().removeAllRanges();
-      window.getSelection().addRange(range);
-    });
-  }
-</script>
+<script src="index.js"></script>
 </body>
 </html>

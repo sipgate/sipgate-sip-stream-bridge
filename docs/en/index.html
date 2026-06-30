@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sipgate SIP Stream Bridge - Replace Twilio. CLOUD Act-free. Open Source.</title>
+<meta name="description" content="Drop-in open-source bridge from Twilio Media Streams to sipgate SIP trunking. Self-hosted - your audio never leaves the EU. Free inbound, no code changes.">
+<link rel="alternate" hreflang="de" href="https://sipgate.github.io/sipgate-sip-stream-bridge/">
+<link rel="alternate" hreflang="en" href="https://sipgate.github.io/sipgate-sip-stream-bridge/en/">
+<link rel="alternate" hreflang="x-default" href="https://sipgate.github.io/sipgate-sip-stream-bridge/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <img src="https://cdn.prod.website-files.com/678900e941dcd8f65b4519f8/678900e941dcd8f65b451a42_sipgate_logo_black.svg" alt="sipgate" />
+      <div class="nav-logo-divider"></div>
+      <span class="nav-logo-product">SIP Stream Bridge</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#was">About</a></li>
+      <li><a href="#warum">Why sipgate</a></li>
+      <li><a href="#faq">FAQ</a></li>
+      <li><a href="../" class="language-switch" aria-label="Zur deutschen Version wechseln"><span aria-hidden="true">🌐</span> Deutsch</a></li>
+      <li><a href="#how" class="nav-cta">Get started free</a></li>
+    </ul>
+    <button class="hamburger" id="hamburger" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<div class="mobile-menu" id="mobile-menu">
+  <a href="#was">About</a>
+  <a href="#warum">Why sipgate</a>
+  <a href="#faq">FAQ</a>
+  <a href="../" class="language-switch" aria-label="Zur deutschen Version wechseln"><span aria-hidden="true">🌐</span> Deutsch</a>
+  <a href="#how">Get started free</a>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg-shape"></div>
+  <div class="hero-inner">
+    <div class="hero-badge reveal">
+      <div class="hero-badge-dot"></div>
+      Open Source · Made in Germany
+    </div>
+    <h1 class="hero-headline reveal reveal-delay-1">
+      Twilio Media Streams -<br><em>without Twilio.</em>
+    </h1>
+    <p class="hero-sub reveal reveal-delay-2">
+      Drop-in bridge from Twilio to sipgate SIP trunking.<br>No code changes. Self-hosted - your audio never leaves the EU. Free inbound.
+    </p>
+    <div class="hero-ctas reveal reveal-delay-3">
+      <a href="#how" class="btn-primary">Get started free</a>
+      <a href="#was" class="btn-ghost">Learn more</a>
+    </div>
+    <div class="hero-flow reveal reveal-delay-4">
+      <div class="flow-box">
+        <div class="flow-box-label">Your backend</div>
+        <div class="flow-box-name">Twilio Media Streams</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box bridge">
+        <div class="flow-box-label">SIP Stream Bridge</div>
+        <div class="flow-box-name">translates the protocol</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">
+        <div class="flow-box-label">sipgate</div>
+        <div class="flow-box-name">SIP trunking from Germany</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHAT IS IT -->
+<section class="section-what" id="was">
+  <div class="section-inner">
+    <div class="what-grid">
+      <div class="what-text">
+        <div class="eyebrow reveal">What is it?</div>
+        <h2 class="section-h2 reveal reveal-delay-1">Twilio out, sipgate in. Your code stays.</h2>
+        <p class="reveal reveal-delay-2">
+          Using Twilio Media Streams for voice bots or real-time audio? The SIP Stream Bridge replaces Twilio - not your code. It emulates the Twilio WebSocket interface and routes calls over sipgate SIP trunking.
+        </p>
+        <p class="reveal reveal-delay-3">
+          <strong>Same protocol, same events, same payloads.</strong> Your code keeps running - only Twilio is gone.
+        </p>
+      </div>
+      <div class="what-visual reveal reveal-delay-2">
+        <div class="what-flow-row">
+          <div class="wf-box">
+            <div class="wf-label">Your backend</div>
+            <div class="wf-name">speaks Twilio Media Streams (WebSocket)</div>
+          </div>
+        </div>
+        <div style="font-size:24px;color:var(--grey-dark);">↓</div>
+        <div class="what-flow-row">
+          <div class="wf-box lime" style="max-width:200px;">
+            <div class="wf-label">SIP Stream Bridge</div>
+            <div class="wf-name">Protocol translation</div>
+          </div>
+        </div>
+        <div style="font-size:24px;color:var(--grey-dark);">↓</div>
+        <div class="what-flow-row">
+          <div class="wf-box">
+            <div class="wf-label">sipgate</div>
+            <div class="wf-name">SIP trunking (INVITE, RTP/SRTP)</div>
+          </div>
+        </div>
+        <p class="what-caption">Your backend sends WebSocket frames to the bridge.<br>The bridge maps them to standard SIP and connects to sipgate.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY SIPGATE -->
+<section class="section-why" id="warum">
+  <div class="section-inner">
+    <div class="why-header">
+      <div class="eyebrow reveal">Why switch?</div>
+      <h2 class="section-h2 reveal reveal-delay-1">What sipgate does better.</h2>
+    </div>
+    <div class="bento-grid">
+      <div class="bento-card featured reveal">
+        <span class="bento-icon">🏢</span>
+        <div class="bento-title">Audio never leaves the EU</div>
+        <div class="bento-text">As a US company, Twilio is subject to the CLOUD Act - regardless of server location. The bridge runs self-hosted on your own machine, telephony over a German carrier: your audio touches neither Twilio nor a US cloud. No transatlantic detour, no CLOUD Act.</div>
+        <span class="bento-tag">Self-hosted · CLOUD Act-free</span>
+      </div>
+      <div class="bento-card reveal reveal-delay-1">
+        <span class="bento-icon">🔒</span>
+        <div class="bento-title">GDPR - without the paperwork</div>
+        <div class="bento-text">No data-processing agreement with a US company. No standard contractual clauses. sipgate is based in Germany - so GDPR isn't a legal project, it's the default.</div>
+      </div>
+      <div class="bento-card reveal reveal-delay-2">
+        <span class="bento-icon">💶</span>
+        <div class="bento-title">Fair pricing, no middleman</div>
+        <div class="bento-text">Inbound calls are free with sipgate - no per-minute inbound charge and no Media Streams surcharge like Twilio's. Local landline and mobile numbers directly from sipgate, with no markup from a US middleman. The bridge itself is free and open source.</div>
+      </div>
+      <div class="bento-card reveal reveal-delay-3">
+        <span class="bento-icon">🤝</span>
+        <div class="bento-title">Support that speaks your language</div>
+        <div class="bento-text">sipgate has been around for over 20 years. Technically skilled support comes first. From techies, for techies.</div>
+      </div>
+      <div class="bento-card reveal">
+        <span class="bento-icon">🔓</span>
+        <div class="bento-title">100 % Open Source</div>
+        <div class="bento-text">Source code on GitHub. No vendor lock-in, no black box. Fork it, adapt it, send PRs - contributions welcome.</div>
+        <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" target="_blank" class="bento-tag" style="text-decoration:none;">github.com/sipgate/sipgate-sip-stream-bridge →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section-how" id="how">
+  <div class="section-inner">
+    <div class="how-header">
+      <div class="eyebrow reveal">The switch</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Switching is this easy.</h2>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card reveal">
+        <div class="step-number">1</div>
+        <div class="step-title">Create .env</div>
+        <div class="code-block" id="code1">
+          <button class="copy-btn" onclick="copyCode('code1',this)">Copy</button>
+<span class="k">SIP_USER</span>=<span class="v">1234567t0</span>
+<span class="k">SIP_PASSWORD</span>=<span class="v">meinPasswort</span>
+<span class="k">SIP_DOMAIN</span>=<span class="v">sipconnect.sipgate.de</span>
+<span class="k">SIP_REGISTRAR</span>=<span class="v">sipconnect.sipgate.de</span>
+<span class="k">WS_TARGET_URL</span>=<span class="v">ws://mein-backend.example.com</span>
+<span class="k">SDP_CONTACT_IP</span>=<span class="v">1.2.3.4</span></div>
+        <p class="step-desc">SIP credentials from your sipgate trunking account. Don't have one yet? → <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a></p>
+      </div>
+      <div class="step-card reveal reveal-delay-1">
+        <div class="step-number">2</div>
+        <div class="step-title">Start the container</div>
+        <div class="code-block" id="code2">
+          <button class="copy-btn" onclick="copyCode('code2',this)">Copy</button>
+<span class="c"># Go version (recommended)</span>
+docker run \
+  --env-file <span class="v">.env</span> \
+  --network <span class="v">host</span> \
+  <span class="k">ghcr.io/sipgate/</span><span class="v">sipgate-sip-stream-bridge-go:latest</span></div>
+        <p class="step-desc">One Docker command. ~10 MB image, cold start in milliseconds.</p>
+      </div>
+      <div class="step-card reveal reveal-delay-2">
+        <div class="step-number">3</div>
+        <div class="step-title">Done ✓</div>
+        <div style="background:var(--grey-light);border:1px solid var(--grey);border-radius:var(--radius-md);padding:24px 20px;margin-bottom:14px;text-align:center;">
+          <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+          <div style="font-weight:700;font-size:16px;color:var(--black);margin-bottom:6px;">Backend keeps running.</div>
+          <div style="font-size:13px;color:var(--grey-dark);">No changes.</div>
+        </div>
+        <p class="step-desc">Your backend keeps running, unchanged. Telephony now runs over sipgate instead of Twilio.</p>
+      </div>
+    </div>
+    <div class="how-tagline reveal">
+      Three steps. Five minutes. Zero code changes.
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON TABLE -->
+<section class="section-compare" id="vergleich">
+  <div class="section-inner">
+    <div class="compare-header">
+      <div class="eyebrow reveal">The comparison</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Twilio vs. sipgate + Bridge</h2>
+    </div>
+    <div class="compare-table-wrap reveal reveal-delay-1">
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Twilio</th>
+            <th class="col-sipgate">sipgate + Bridge</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>🌍 Server location</td>
+            <td class="col-twilio">USA 🇺🇸</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Germany 🇪🇺</span></td>
+          </tr>
+          <tr>
+            <td>🔒 GDPR</td>
+            <td class="col-twilio">SCCs + DPA required</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Built in - EU provider</span></td>
+          </tr>
+          <tr>
+            <td>📞 Phone numbers</td>
+            <td class="col-twilio">International</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Local landline &amp; mobile numbers</span></td>
+          </tr>
+          <tr>
+            <td>📥 Inbound calls</td>
+            <td class="col-twilio">Paid + Media Streams surcharge</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Free - included in the trunk</span></td>
+          </tr>
+          <tr>
+            <td>💬 Support</td>
+            <td class="col-twilio">English, ticket system</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Personal, directly reachable</span></td>
+          </tr>
+          <tr>
+            <td>🐳 Deployment</td>
+            <td class="col-twilio">Managed</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Self-hosted, one Docker command</span></td>
+          </tr>
+          <tr>
+            <td>🎙️ Audio quality</td>
+            <td class="col-twilio">8 kHz narrowband (µ-law)</td>
+            <td class="col-sipgate"><span class="check"><span class="check-mark">✓</span> Up to 16 kHz HD audio (G.722)</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- DOCKER IMAGES -->
+<section class="section-docker" id="docker">
+  <div class="section-inner">
+    <div class="docker-header">
+      <div class="eyebrow reveal">Docker Images</div>
+      <h2 class="section-h2 reveal reveal-delay-1">From the GitHub Container Registry.</h2>
+      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">Automatic builds, freely available, no login required.</p>
+    </div>
+    <div class="docker-cards">
+      <div class="docker-card reveal">
+        <div class="docker-card-badge">⭐ Recommended</div>
+        <div class="docker-card-title">Go version</div>
+        <div class="docker-card-sub">Tiny, fast, stable - for production.</div>
+        <div class="docker-cmd" id="code3">
+          <button class="copy-btn" onclick="copyCode('code3',this)">Copy</button>
+          <span class="cmd-dim">docker pull </span>ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest
+        </div>
+        <div class="docker-stats">
+          <span class="docker-stat">~10 MB image</span>
+          <span class="docker-stat">Starts in milliseconds</span>
+          <span class="docker-stat">Stable for weeks</span>
+        </div>
+      </div>
+      <div class="docker-card reveal reveal-delay-1">
+        <div class="docker-card-badge" style="background:#AABCFF;color:#1a2b6e;">Node.js</div>
+        <div class="docker-card-title">Node.js version</div>
+        <div class="docker-card-sub">Reference implementation - ideal for customizing.</div>
+        <div class="docker-cmd" id="code4">
+          <button class="copy-btn" onclick="copyCode('code4',this)">Copy</button>
+          <span class="cmd-dim">docker pull </span>ghcr.io/sipgate/sipgate-sip-stream-bridge-node:latest
+        </div>
+        <div class="docker-stats">
+          <span class="docker-stat">Same features</span>
+          <span class="docker-stat">Readable code</span>
+          <span class="docker-stat">Customizable</span>
+        </div>
+      </div>
+    </div>
+    <div class="tags-table-wrap reveal reveal-delay-2">
+      <div class="tags-table-title">Available tags</div>
+      <table class="tags-table">
+        <thead>
+          <tr><th>Tag</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>latest</td><td>Always the latest stable version - for most use cases</td></tr>
+          <tr><td>main</td><td>Latest state from the main branch</td></tr>
+          <tr><td>sha-abc1234</td><td>An exact commit - for full reproducibility</td></tr>
+          <tr><td>v1.2.3</td><td>Pinned version - recommended for production</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section-features" id="features">
+  <div class="section-inner">
+    <div class="features-header">
+      <div class="eyebrow reveal">Protocol support</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Full protocol compatibility.</h2>
+      <p class="lead reveal reveal-delay-2" style="margin:0 auto;text-align:center;max-width:560px;">The bridge implements the complete Twilio Media Streams protocol.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Inbound &amp; outbound audio tracks</span></div>
+      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>DTMF tones (keypad input)</span></div>
+      <div class="feature-chip reveal reveal-delay-2"><div class="feature-check">✓</div><span>Mark / Clear (precise audio control)</span></div>
+      <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Automatic reconnect</span></div>
+      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>Up to 100 concurrent calls</span></div>
+      <div class="feature-chip reveal reveal-delay-2"><div class="feature-check">✓</div><span>Health Check <span class="feature-code">/health</span></span></div>
+      <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Prometheus metrics <span class="feature-code">/metrics</span></span></div>
+      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>Self-hosted - full control</span></div>
+      <div class="feature-chip reveal reveal-delay-2"><div class="feature-check">✓</div><span>Encrypted audio transport (SRTP) <span class="feature-code">SRTP_ENABLED=true</span></span></div>
+      <div class="feature-chip reveal"><div class="feature-check">✓</div><span>Call forwarding - route calls directly to other destinations</span></div>
+      <div class="feature-chip reveal reveal-delay-1"><div class="feature-check">✓</div><span>HD audio - 16 kHz instead of Twilio's 8 kHz <span class="feature-code">AUDIO_MODE=best</span></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section-faq" id="faq">
+  <div class="section-inner">
+    <div class="faq-header">
+      <div class="eyebrow reveal">FAQ</div>
+      <h2 class="section-h2 reveal reveal-delay-1">Frequently asked questions.</h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item reveal">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Do I have to rewrite my code?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">No. The bridge implements the Twilio Media Streams protocol. Your backend won't notice a difference.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-1">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Do I need a sipgate account?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Yes - you need a sipgate trunking connection. Available at <a href="https://www.sipgatetrunking.de" target="_blank">sipgatetrunking.de</a>. The bridge itself is free.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-2">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Is this really GDPR-compliant - and what about the CLOUD Act?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Yes. The bridge runs self-hosted on your own infrastructure - the audio data never leaves your machine and runs over a German carrier. sipgate is based in Düsseldorf. Unlike US providers, there's no CLOUD Act risk (which binds US companies regardless of server location); SCCs and a separate DPA aren't needed.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          What does the bridge cost?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">The bridge is free and open source. Self-hosted, it runs on the smallest cloud server (1 vCPU, 512 MB RAM). You only pay for your sipgate trunking connection.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-1">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          How many calls can the bridge handle simultaneously?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">Default: up to 100 concurrent calls, configurable. Runs stably for weeks without a restart.</div>
+        </div>
+      </div>
+      <div class="faq-item reveal reveal-delay-2">
+        <div class="faq-question" onclick="toggleFaq(this)">
+          Does it work without Linux?
+          <div class="faq-icon">+</div>
+        </div>
+        <div class="faq-answer">
+          <div class="faq-answer-inner">For production we recommend Linux with <code style="font-family:monospace;background:var(--grey);padding:1px 6px;border-radius:4px;">--network host</code>. Locally on macOS or Windows, Docker Desktop works too.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="section-cta" id="start">
+  <div class="cta-inner section-inner">
+    <div class="cta-eyebrow reveal">Get started</div>
+    <h2 class="cta-headline reveal reveal-delay-1">
+      Live in five minutes.
+    </h2>
+    <div class="terminal reveal reveal-delay-2">
+      <div class="terminal-bar">
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <span class="terminal-title">terminal</span>
+      </div>
+      <div class="terminal-body" id="terminal-main">
+        <button class="copy-btn" style="top:12px;right:12px;" onclick="copyCode('terminal-main',this)">Copy</button>
+        <div><span class="terminal-prompt">$</span><span class="terminal-cmd">docker pull </span><span class="terminal-img">ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest</span></div>
+        <div style="margin-top:8px;"><span class="terminal-prompt">$</span><span class="terminal-cmd">docker run </span><span class="terminal-flag">--env-file </span><span class="terminal-img">.env </span><span class="terminal-flag">--network host </span><span class="terminal-img">ghcr.io/sipgate/sipgate-sip-stream-bridge-go:latest</span></div>
+      </div>
+    </div>
+    <div class="cta-links reveal reveal-delay-3">
+      <a href="https://www.sipgatetrunking.de" class="cta-link outline" target="_blank">Get sipgate trunking</a>
+      <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" class="cta-link dark" target="_blank">GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  sipgate SIP Stream Bridge - Open Source · Made with ❤️ in Düsseldorf
+  <span>|</span>
+  <a href="https://github.com/sipgate/sipgate-sip-stream-bridge" target="_blank">GitHub</a>
+  <span>|</span>
+  Open Source
+</footer>
+
+<script src="../index.js"></script>
+</body>
+</html>
