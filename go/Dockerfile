@@ -3,7 +3,14 @@
 # Stage 2: Runtime — FROM scratch (empty filesystem); only the binary and CA certs are included
 
 # ── Stage 1: Build ───────────────────────────────────────────────────────────
-FROM golang:1.26-alpine AS builder
+# --platform=$BUILDPLATFORM: run the compiler on the native builder arch and
+# cross-compile to $TARGETARCH. Faster than emulating the whole toolchain under
+# QEMU when producing multi-arch images (linux/amd64 + linux/arm64).
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+
+# TARGETARCH is provided automatically by buildx (e.g. "amd64", "arm64").
+# Defaults to amd64 so a plain `docker build` (no buildx) still works.
+ARG TARGETARCH=amd64
 
 WORKDIR /app
 
@@ -19,7 +26,7 @@ RUN go mod download
 # first — CI does this in the "Build operator UI bundle" step; a fresh checkout
 # that skips it embeds the committed placeholder index.html instead.
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
     go build \
     -ldflags="-s -w" \
     -trimpath \
