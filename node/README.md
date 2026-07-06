@@ -69,14 +69,14 @@ This implementation is at **v3.1**: full data-plane parity (PCMU/PCMA/G.722, mar
 All configuration is via environment variables. Copy `../.env.example` to `../.env` and edit. The service validates every variable at startup using Zod and exits immediately with a structured error if anything is missing or invalid:
 
 ```json
-{"level":"error","msg":"Configuration validation failed","errors":{"SIP_USER":["SIP_USER is required — your sipgate SIP-ID (e.g. e12345p0)"]}}
+{"level":"error","msg":"Configuration validation failed","errors":{"SIP_USER":["SIP_USER is required — your sipgate SIP-ID (e.g. 1234567t0)"]}}
 ```
 
 ### Required
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `SIP_USER` | SIP-ID from sipgate portal (Connections › SIP Trunks) | `e12345p0` |
+| `SIP_USER` | SIP-ID from sipgate portal (Connections › SIP Trunks) | `1234567t0` |
 | `SIP_PASSWORD` | SIP password for the SIP-ID above | `s3cr3t` |
 | `SIP_DOMAIN` | SIP domain — used in the `From`/`To` URI | `sipconnect.sipgate.de` |
 | `SIP_REGISTRAR` | Hostname of the SIP registrar | `sipconnect.sipgate.de` |
@@ -144,7 +144,7 @@ pnpm typecheck               # type-check without emitting
 
 You should see:
 ```json
-{"level":30,"event":"startup","sipUser":"e12345p0","sipDomain":"sipconnect.sipgate.de"}
+{"level":30,"event":"startup","sipUser":"1234567t0","sipDomain":"sipconnect.sipgate.de"}
 {"level":30,"event":"sip_booted","msg":"SIP registrar started — waiting for calls"}
 {"level":30,"event":"http_server_started","port":9090}
 ```
@@ -232,7 +232,7 @@ sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protoco
     "tracks": ["inbound", "outbound"],
     "customParameters": {
       "From": "sip:+4915123456789@sipconnect.sipgate.de",
-      "To": "sip:e12345p0@sipconnect.sipgate.de",
+      "To": "sip:1234567t0@sipconnect.sipgate.de",
       "sipCallId": "abc123@192.168.1.1"
     },
     "mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000, "channels": 1}

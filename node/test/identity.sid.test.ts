@@ -36,18 +36,18 @@ describe('newCallSid', () => {
 
 describe('deriveAccountSid', () => {
   it('produces a value matching ^AC[0-9a-f]{32}$ of length 34', () => {
-    const sid = deriveAccountSid('e12345p0');
+    const sid = deriveAccountSid('1234567t0');
     expect(sid).toMatch(ACCOUNT_SID_RE);
     expect(sid).toHaveLength(34);
   });
 
   it('matches "AC" + hex(SHA-256(input)[0:16]) for a fixed input', () => {
-    expect(deriveAccountSid('e12345p0')).toBe(expectedAccountSid('e12345p0'));
+    expect(deriveAccountSid('1234567t0')).toBe(expectedAccountSid('1234567t0'));
   });
 
   it('is deterministic for the same input and distinct for different inputs', () => {
-    expect(deriveAccountSid('e12345p0')).toBe(deriveAccountSid('e12345p0'));
-    expect(deriveAccountSid('e12345p0')).not.toBe(deriveAccountSid('different-user'));
+    expect(deriveAccountSid('1234567t0')).toBe(deriveAccountSid('1234567t0'));
+    expect(deriveAccountSid('1234567t0')).not.toBe(deriveAccountSid('different-user'));
   });
 
   it('handles empty input and still matches the regex + formula', () => {
@@ -69,7 +69,7 @@ describe('regexes and validators', () => {
 
   it('ACCOUNT_SID_RE accepts valid and rejects malformed AccountSids', () => {
     expect(ACCOUNT_SID_RE.test('AC' + HEX32)).toBe(true);
-    expect(ACCOUNT_SID_RE.test(deriveAccountSid('e12345p0'))).toBe(true);
+    expect(ACCOUNT_SID_RE.test(deriveAccountSid('1234567t0'))).toBe(true);
     expect(ACCOUNT_SID_RE.test('AC' + HEX32.toUpperCase())).toBe(false); // uppercase
     expect(ACCOUNT_SID_RE.test('CA' + HEX32)).toBe(false); // wrong prefix
     expect(ACCOUNT_SID_RE.test('AC' + HEX32.slice(0, 28))).toBe(false); // too short
@@ -78,8 +78,8 @@ describe('regexes and validators', () => {
 
   it('isValidCallSid / isValidAccountSid mirror their regexes', () => {
     expect(isValidCallSid(newCallSid())).toBe(true);
-    expect(isValidCallSid(deriveAccountSid('e12345p0'))).toBe(false);
-    expect(isValidAccountSid(deriveAccountSid('e12345p0'))).toBe(true);
+    expect(isValidCallSid(deriveAccountSid('1234567t0'))).toBe(false);
+    expect(isValidAccountSid(deriveAccountSid('1234567t0'))).toBe(true);
     expect(isValidAccountSid(newCallSid())).toBe(false);
   });
 });

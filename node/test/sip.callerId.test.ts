@@ -14,7 +14,7 @@ describe('resolveCallerID', () => {
     const out = resolveCallerID({
       twimlCallerId: '+4930111',
       dialDefaultCallerId: '+4930222',
-      sipUser: '2301086t3',
+      sipUser: '1234567t0',
       callerFrom: '+4915123ani',
     });
     expect(out).toEqual({ callerId: '+4930111' });
@@ -24,7 +24,7 @@ describe('resolveCallerID', () => {
     const out = resolveCallerID({
       twimlCallerId: '',
       dialDefaultCallerId: '+4930222',
-      sipUser: '2301086t3',
+      sipUser: '1234567t0',
       callerFrom: '+4915123ani',
     });
     expect(out).toEqual({ callerId: '+4930222' });
@@ -33,10 +33,10 @@ describe('resolveCallerID', () => {
   it('3. SIP_USER wins when TwiML + default absent', () => {
     const out = resolveCallerID({
       dialDefaultCallerId: '',
-      sipUser: '2301086t3',
+      sipUser: '1234567t0',
       callerFrom: '+4915123ani',
     });
-    expect(out).toEqual({ callerId: '2301086t3' });
+    expect(out).toEqual({ callerId: '1234567t0' });
   });
 
   it('4. inbound From (preserve-ANI) is last-resort when SIP_USER unset', () => {
@@ -66,11 +66,11 @@ describe('resolveCallerID', () => {
     const out = resolveCallerID({
       twimlCallerId: '   ',
       dialDefaultCallerId: '\t',
-      sipUser: ' 2301086t3 ',
+      sipUser: ' 1234567t0 ',
       callerFrom: '+4915123ani',
     });
     // whitespace twiml/default skipped; sipUser present (trimmed) wins.
-    expect(out).toEqual({ callerId: '2301086t3' });
+    expect(out).toEqual({ callerId: '1234567t0' });
   });
 
   it('throws when every present source is whitespace-only', () => {
@@ -139,7 +139,7 @@ describe('normaliseTrunkCallerID', () => {
     ['national 0 no cc untouched', '021193674951', '', '021193674951'],
     ['national 0 no cc arg untouched', '021193674951', undefined, '021193674951'],
     // Non-phone SIP username passes through unchanged.
-    ['sip username passthrough', '2301086t3', '49', '2301086t3'],
+    ['sip username passthrough', '1234567t0', '49', '1234567t0'],
     // Single "0" is NOT rewritten (rule requires length > 1).
     ['lone zero untouched', '0', '49', '0'],
     // Whitespace is trimmed.

@@ -79,7 +79,7 @@ All configuration is via environment variables. Copy `../.env.example` to `../.e
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `SIP_USER` | SIP-ID from sipgate portal (Connections › SIP Trunks) | `e12345p0` |
+| `SIP_USER` | SIP-ID from sipgate portal (Connections › SIP Trunks) | `1234567t0` |
 | `SIP_PASSWORD` | SIP password for the SIP-ID above | `s3cr3t` |
 | `SIP_DOMAIN` | SIP domain — used in the `From`/`To` URI | `sipconnect.sipgate.de` |
 | `SIP_REGISTRAR` | Hostname of the SIP registrar | `sipconnect.sipgate.de` |
@@ -169,7 +169,7 @@ go build -o sipgate-sip-stream-bridge ./cmd/sipgate-sip-stream-bridge && ./sipga
 
 You should see:
 ```json
-{"level":"info","sip_user":"e12345p0","message":"sipgate-sip-stream-bridge starting"}
+{"level":"info","sip_user":"1234567t0","message":"sipgate-sip-stream-bridge starting"}
 {"level":"info","registrar":"sipconnect.sipgate.de","server_expires_s":120,"message":"SIP registration successful"}
 {"level":"info","message":"SIP registration active — ready to accept inbound calls"}
 ```
@@ -344,7 +344,7 @@ sipgate-sip-stream-bridge implements the [Twilio Media Streams WebSocket protoco
     "tracks": ["inbound", "outbound"],
     "customParameters": {
       "From": "sip:+4915123456789@sipconnect.sipgate.de",
-      "To": "sip:e12345p0@sipconnect.sipgate.de",
+      "To": "sip:1234567t0@sipconnect.sipgate.de",
       "sipCallId": "abc123@192.168.1.1"
     },
     "mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000, "channels": 1}

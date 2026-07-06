@@ -38,7 +38,7 @@ func TestRegistrar_NilClientReturnsError(t *testing.T) {
 // Satisfies: SIP-01 success criterion 3 — invalid credentials log format (Test 2).
 func TestRegistrar_403ErrorMessage(t *testing.T) {
 	// Build the error message the same way doRegister builds it
-	user := "e12345p0"
+	user := "1234567t0"
 	err403 := buildForbiddenError(user)
 
 	if !strings.Contains(err403.Error(), "403 Forbidden") {

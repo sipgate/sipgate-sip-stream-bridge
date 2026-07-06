@@ -45,7 +45,7 @@ function makeDialog(sip: FakeSip): OutboundDialog {
     fromUri: 'sip:+4930555@sipconnect.sipgate.de',
     contactUri: 'sip:user@198.51.100.4:5060',
     offerSdp: 'v=0\r\n',
-    username: 'e12345p0',
+    username: '1234567t0',
     password: 'secret',
     log,
   });

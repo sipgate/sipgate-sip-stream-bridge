@@ -137,7 +137,7 @@ export function resolveDisplayCallerID(opts: ResolveDisplayCallerIdOptions): str
  *     `0` (national format), replace that `0` with the country code. An empty
  *     `countryCode` disables this step (numbers stay as-is).
  *
- * Strings that are not phone numbers (e.g. a SIP username such as `"2301086t3"`
+ * Strings that are not phone numbers (e.g. a SIP username such as `"1234567t0"`
  * when the operator deliberately set `DIAL_DEFAULT_CALLER_ID` to the
  * `SIP_USER`) pass through unchanged because none of the rules match.
  *

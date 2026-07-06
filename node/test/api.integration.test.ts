@@ -17,7 +17,7 @@ import { createChildLogger } from '../src/logger/index.js';
 
 // Minimal Config — only the fields the manager + API handler read on these paths.
 const config = {
-  SIP_USER: 'e12345p0',
+  SIP_USER: '1234567t0',
   AUTH_TOKEN: 'test-token',
   SIP_LISTEN_ADDR: '0.0.0.0:5060',
 } as unknown as Config;

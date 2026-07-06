@@ -3,7 +3,7 @@ package identity
 import "testing"
 
 func TestDeriveAccountSidFormat(t *testing.T) {
-	sid := DeriveAccountSid("e12345p0")
+	sid := DeriveAccountSid("1234567t0")
 	if !AccountSidRE.MatchString(sid) {
 		t.Fatalf("AccountSid %q does not match ^AC[0-9a-f]{32}$", sid)
 	}
@@ -13,8 +13,8 @@ func TestDeriveAccountSidFormat(t *testing.T) {
 }
 
 func TestDeriveAccountSidDeterministic(t *testing.T) {
-	a := DeriveAccountSid("e12345p0")
-	b := DeriveAccountSid("e12345p0")
+	a := DeriveAccountSid("1234567t0")
+	b := DeriveAccountSid("1234567t0")
 	if a != b {
 		t.Fatalf("DeriveAccountSid is non-deterministic: %q != %q", a, b)
 	}
@@ -34,7 +34,7 @@ func TestDeriveAccountSidEmptyInput(t *testing.T) {
 func TestAccountSidREMatches(t *testing.T) {
 	valid := []string{
 		"AC" + "0123456789abcdef0123456789abcdef",
-		DeriveAccountSid("e12345p0"),
+		DeriveAccountSid("1234567t0"),
 	}
 	invalid := []string{
 		"AC0123456789ABCDEF0123456789ABCDEF",   // uppercase rejected

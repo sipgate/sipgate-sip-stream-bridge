@@ -530,7 +530,7 @@ func (f *Forwarder) ReadBye(req *siplib.Request, tx siplib.ServerTransaction) er
 //     for instance). For trunks that accept any verified DID, this
 //     fallback is effectively a no-op when steps 1/2 are configured. For
 //     SIP trunks where it isn't a phone number (e.g. sipgate's
-//     "2301086t3"), Phone B sees the username string as Caller-ID —
+//     "1234567t0"), Phone B sees the username string as Caller-ID —
 //     functional but ugly; operator can configure step 2 for cleaner
 //     display.
 //  4. opts.CallerFrom — the inbound caller's From URI ("preserve-ANI").
@@ -597,7 +597,7 @@ func resolveDisplayCallerID(opts DialOpts, callerFrom, defaultCID string) string
 //     single "0" (national format), replace that "0" with the country
 //     code. cc="" disables this step (numbers stay as-is).
 //
-// Inputs that are NOT phone numbers (e.g. SIP usernames like "2301086t3"
+// Inputs that are NOT phone numbers (e.g. SIP usernames like "1234567t0"
 // when the operator deliberately set DIAL_DEFAULT_CALLER_ID to the SIP_USER)
 // pass through unchanged because none of the rules match.
 //

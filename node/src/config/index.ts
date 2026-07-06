@@ -3,7 +3,7 @@ import { z } from 'zod';
 const configSchema = z
   .object({
     // Required env vars
-    SIP_USER: z.string().min(1, 'SIP_USER is required — your sipgate SIP-ID (e.g. e12345p0)'),
+    SIP_USER: z.string().min(1, 'SIP_USER is required — your sipgate SIP-ID (e.g. 1234567t0)'),
     SIP_PASSWORD: z.string().min(1, 'SIP_PASSWORD is required'),
     SIP_DOMAIN: z.string().min(1, 'SIP_DOMAIN is required (e.g. sipconnect.sipgate.de)'),
     SIP_REGISTRAR: z.string().min(1, 'SIP_REGISTRAR is required (e.g. sipconnect.sipgate.de)'),

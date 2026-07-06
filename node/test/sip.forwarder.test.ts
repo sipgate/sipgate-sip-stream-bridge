@@ -44,7 +44,7 @@ function fakeRtp(port: number): RtpHandler {
 }
 
 const config = {
-  SIP_USER: 'e12345p0',
+  SIP_USER: '1234567t0',
   SIP_PASSWORD: 'secret',
   SIP_DOMAIN: 'sipconnect.sipgate.de',
   SIP_REGISTRAR: '203.0.113.9',
@@ -113,7 +113,7 @@ describe('Forwarder', () => {
     const invite = sip.sent.find((m) => m.startsWith('INVITE')) ?? '';
     expect(invite).toBeTruthy();
     // Caller-ID chain: From addr-spec is the SIP_USER (trunk auth identity)…
-    expect(invite).toContain('<sip:e12345p0@sipconnect.sipgate.de>');
+    expect(invite).toContain('<sip:1234567t0@sipconnect.sipgate.de>');
     // …while the inbound ANI is preserved in P-Preferred-Identity (normalised).
     expect(invite).toContain('P-Preferred-Identity: <sip:4930111@sipconnect.sipgate.de>');
     expect(invite).toContain('Content-Type: application/sdp');

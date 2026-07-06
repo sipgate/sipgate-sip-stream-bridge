@@ -11,7 +11,7 @@ import (
 )
 
 func TestLoad_AllRequired_ReturnsConfig(t *testing.T) {
-	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_USER", "1234567t0")
 	t.Setenv("SIP_PASSWORD", "secret")
 	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -20,8 +20,8 @@ func TestLoad_AllRequired_ReturnsConfig(t *testing.T) {
 
 	cfg := config.Load()
 
-	if cfg.SIPUser != "e12345p0" {
-		t.Errorf("SIPUser = %q, want e12345p0", cfg.SIPUser)
+	if cfg.SIPUser != "1234567t0" {
+		t.Errorf("SIPUser = %q, want 1234567t0", cfg.SIPUser)
 	}
 	if cfg.RTPPortMin != 10000 {
 		t.Errorf("RTPPortMin = %d, want 10000 (default)", cfg.RTPPortMin)
@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 		config.Load()
 		os.Exit(0) // should never reach — Load exits
 	case "inverted_rtp_ports":
-		_ = os.Setenv("SIP_USER", "e12345p0")
+		_ = os.Setenv("SIP_USER", "1234567t0")
 		_ = os.Setenv("SIP_PASSWORD", "secret")
 		_ = os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 		_ = os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -55,7 +55,7 @@ func TestMain(m *testing.M) {
 		config.Load()
 		os.Exit(0) // should never reach
 	case "missing_sdp_contact_ip":
-		_ = os.Setenv("SIP_USER", "e12345p0")
+		_ = os.Setenv("SIP_USER", "1234567t0")
 		_ = os.Setenv("SIP_PASSWORD", "secret")
 		_ = os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 		_ = os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -99,7 +99,7 @@ func TestMain(m *testing.M) {
 // setBaseEnv sets all required env vars to plausible values (used by subprocess scenarios
 // that need a valid base config plus one bad DIAL_* var).
 func setBaseEnv() {
-	_ = os.Setenv("SIP_USER", "e12345p0")
+	_ = os.Setenv("SIP_USER", "1234567t0")
 	_ = os.Setenv("SIP_PASSWORD", "secret")
 	_ = os.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 	_ = os.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -143,7 +143,7 @@ func TestLoad_MissingSDPContactIP_DefaultsToLocalIP(t *testing.T) {
 }
 
 func TestLoad_SIPOptionsInterval_DefaultIs30s(t *testing.T) {
-	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_USER", "1234567t0")
 	t.Setenv("SIP_PASSWORD", "secret")
 	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -160,7 +160,7 @@ func TestLoad_SIPOptionsInterval_DefaultIs30s(t *testing.T) {
 }
 
 func TestLoad_SIPOptionsInterval_Override1m(t *testing.T) {
-	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_USER", "1234567t0")
 	t.Setenv("SIP_PASSWORD", "secret")
 	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -179,7 +179,7 @@ func TestLoad_SIPOptionsInterval_Override1m(t *testing.T) {
 // ── v3.0 Dial / B2BUA config tests ──
 
 func TestLoad_DialDefaults(t *testing.T) {
-	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_USER", "1234567t0")
 	t.Setenv("SIP_PASSWORD", "secret")
 	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -206,7 +206,7 @@ func TestLoad_DialDefaults(t *testing.T) {
 }
 
 func TestLoad_DialAllowedPrefixes_CSVParsing(t *testing.T) {
-	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_USER", "1234567t0")
 	t.Setenv("SIP_PASSWORD", "secret")
 	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")
@@ -228,7 +228,7 @@ func TestLoad_DialAllowedPrefixes_CSVParsing(t *testing.T) {
 }
 
 func TestLoad_DialAllowedPrefixes_Normalization(t *testing.T) {
-	t.Setenv("SIP_USER", "e12345p0")
+	t.Setenv("SIP_USER", "1234567t0")
 	t.Setenv("SIP_PASSWORD", "secret")
 	t.Setenv("SIP_DOMAIN", "sipconnect.sipgate.de")
 	t.Setenv("SIP_REGISTRAR", "sipconnect.sipgate.de")

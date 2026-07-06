@@ -16,7 +16,7 @@ import (
 // Field names match v1.0 env var names exactly for drop-in compatibility (CFG-01 through CFG-04).
 type Config struct {
 	// SIP credentials (CFG-01)
-	SIPUser      string `env:"SIP_USER,required"      usage:"SIP username / SIP-ID (e.g. e12345p0)"`
+	SIPUser      string `env:"SIP_USER,required"      usage:"SIP username / SIP-ID (e.g. 1234567t0)"`
 	SIPPassword  string `env:"SIP_PASSWORD,required"  usage:"SIP account password"`
 	SIPDomain    string `env:"SIP_DOMAIN,required"    usage:"SIP registrar domain (e.g. sipconnect.sipgate.de)"`
 	SIPRegistrar string `env:"SIP_REGISTRAR,required" usage:"SIP registrar address (e.g. sipconnect.sipgate.de)"`
