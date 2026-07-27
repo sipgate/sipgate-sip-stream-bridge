@@ -2,6 +2,10 @@
 
 Bridges inbound sipgate SIP calls to a WebSocket backend using the [Twilio Media Streams](https://www.twilio.com/docs/voice/media-streams) protocol — drop-in compatible with any Twilio Media Streams consumer (AI voice bots, transcription, recording, IVR backends).
 
+[![sipgate SIP Stream Bridge – Twilio Media Streams ohne Twilio](docs/assets/sip-stream-bridge-video-title.png)](https://www.youtube.com/watch?v=xT69uooOIH8)
+
+**[Watch the video (German) →](https://www.youtube.com/watch?v=xT69uooOIH8)** — migrating an existing Twilio Media Streams voice bot onto a German SIP trunk in 15 minutes, with zero code changes.
+
 Two implementations live in this repository, both deployed in production:
 
 - **[Go](./go/)** — at **v3.1**: streaming bridge + Twilio-compatible REST control plane (list / read / modify calls in progress, mid-call TwiML interrupt, B2BUA `<Dial>` for forwarding, status-callback HTTP POSTs with `X-Twilio-Signature` HMAC).
