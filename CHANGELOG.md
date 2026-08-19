@@ -13,6 +13,14 @@ derived view; if the two diverge, the CHANGELOG wins.
 
 ### Added
 
+- **Pipecat example** (`examples/pipecat/`): a runnable Pipecat voice agent wired to
+  the bridge, demonstrating that Pipecat's `TwilioFrameSerializer` connects with no
+  changes to the bot's pipeline. Two modes — `echo` (no API keys, fastest end-to-end
+  proof) and `voice` (Deepgram STT → Google LLM → Cartesia TTS). Verified with a real
+  inbound call on Pipecat 1.5.0, unmodified serializer, no shim. `bot.py` / `server.py`
+  are derived from Pipecat's `twilio-chatbot` example and keep its BSD-2-Clause SPDX
+  headers. Linked from the root README under a new "Examples" section.
+
 - **Operator UI** (`/ui`): read-only web monitor for active + recently-terminated
   calls and SIP-registration / active-call health. A single Svelte + Vite bundle
   (`ui/`) built once via `make ui` and embedded same-origin into both backends —

@@ -210,6 +210,15 @@ docker pull ghcr.io/sipgate/sipgate-sip-stream-bridge-node:latest
 
 Release notes: [`docs/release-notes/`](./docs/release-notes/). Changelog: [`CHANGELOG.md`](./CHANGELOG.md) (Keep a Changelog v1.1.0).
 
+## Examples
+
+[`examples/pipecat/`](./examples/pipecat/) — a [Pipecat](https://github.com/pipecat-ai/pipecat)
+voice agent running against the bridge with **no changes to the bot's pipeline**.
+Pipecat's `TwilioFrameSerializer` speaks the Twilio Media Streams protocol, so a bot
+written for Twilio connects to the bridge unchanged. Ships an `echo` mode that needs
+no STT/LLM/TTS API keys (quickest end-to-end proof) and a `voice` mode that is a real
+STT → LLM → TTS agent.
+
 ## Local Integration Testing
 
 [`test-listener/`](./test-listener/) is a minimal Twilio Media Streams WebSocket server for manual testing with either implementation — has its own `package.json` with the `ws` dependency.
@@ -258,6 +267,7 @@ sipgate-sip-stream-bridge/
 │   └── src/                           # bridge, sip, rtp, srtp, ws, observability
 ├── tests/e2e/sipp/                    # 8 sipp XML scenarios + harness
 ├── test-listener/                     # Local Twilio Media Streams listener
+├── examples/pipecat/                  # Pipecat voice-agent example (Python)
 ├── docs/
 │   ├── operator/                      # Operator runbooks
 │   └── release-notes/
