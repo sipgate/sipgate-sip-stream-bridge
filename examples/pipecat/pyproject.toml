@@ -1,0 +1,15 @@
+[project]
+name = "sipgate-sip-stream-bridge-pipecat-example"
+version = "0.1.0"
+description = "Run a Pipecat Twilio Media Streams bot on a self-hosted SIP trunk via the sipgate SIP Stream Bridge."
+requires-python = ">=3.11"
+dependencies = [
+    # `echo` mode needs only the websocket transport:
+    #   pip install "pipecat-ai[websocket]" fastapi uvicorn python-dotenv
+    # `voice` mode adds STT / LLM / TTS + local VAD (the same stack Pipecat's
+    # own `twilio-chatbot` example uses):
+    "pipecat-ai[websocket,silero,deepgram,google,cartesia]>=1.4.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-dotenv>=1.0",
+]
