@@ -9,7 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/pion/rtp/v2 v2.0.0
-	github.com/pion/sdp/v3 v3.0.18
+	github.com/pion/sdp/v3 v3.0.19
 	github.com/pion/srtp/v3 v3.0.12
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
