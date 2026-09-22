@@ -3,7 +3,7 @@ module github.com/sipgate/sipgate-sip-stream-bridge
 go 1.26
 
 require (
-	github.com/emiago/sipgo v1.4.0
+	github.com/emiago/sipgo v1.4.3
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/gobwas/ws v1.4.0
 	github.com/google/uuid v1.6.0
