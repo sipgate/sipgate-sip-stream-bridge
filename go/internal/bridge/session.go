@@ -747,6 +747,11 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn, srtpD
 		if s.state.Load() == StateForwarding {
 			peer := s.peerLeg(currentLegIdx)
 			if peer != nil && peer.outboundQueue != nil {
+				// The callee leg is PCMU-only (BuildSDPOffer). A PCMA caller
+				// leg (twilio-mode fallback) is relayed as μ-law.
+				if leg.alawTranscode {
+					payload = sip.ALawToULaw(payload)
+				}
 				select {
 				case peer.outboundQueue <- outboundFrame{audio: payload}:
 				case <-ctx.Done():
@@ -1208,6 +1213,12 @@ func (s *CallSession) calleeRtpReader(ctx context.Context, leg *Leg, rtpConn *ne
 		if peer == nil || peer.packetQueue == nil {
 			// Should not happen post-CloseStream — defensive.
 			continue
+		}
+
+		// The callee leg speaks PCMU; a PCMA caller leg (twilio-mode
+		// fallback) expects A-law on the wire.
+		if peer.alawTranscode {
+			payload = sip.ULawToALaw(payload)
 		}
 
 		select {

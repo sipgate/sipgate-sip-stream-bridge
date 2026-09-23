@@ -12,6 +12,7 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+	"github.com/pion/rtp/v2"
 	"github.com/rs/zerolog"
 
 	sip "github.com/sipgate/sipgate-sip-stream-bridge/internal/sip"
@@ -172,5 +173,121 @@ func TestMediaFormatFor_TwilioPCMAKeepsMuLaw(t *testing.T) {
 			t.Errorf("mediaFormatFor(%q, %d) = %s/%d transcode=%v, want %s/%d transcode=%v",
 				c.mode, c.pt, enc, rate, transcode, c.wantEncoding, c.wantRate, c.wantTranscode)
 		}
+	}
+}
+
+// --- <Dial> relay with a PCMA caller leg ---
+//
+// The callee leg is PCMU-only (BuildSDPOffer / AcceptSDPAnswer). When the
+// caller leg negotiated PCMA in twilio mode, the relay must convert in both
+// directions, or the two parties hear each other as noise.
+
+// sendTestRTP sends one RTP packet with the given payload type and payload to
+// addr from a throwaway UDP socket.
+func sendTestRTP(t *testing.T, addr net.Addr, pt uint8, payload []byte) {
+	t.Helper()
+	pkt := rtp.Packet{
+		Header:  rtp.Header{Version: 2, PayloadType: pt, SequenceNumber: 1, Timestamp: 160, SSRC: 0x1234},
+		Payload: payload,
+	}
+	raw, err := pkt.Marshal()
+	if err != nil {
+		t.Fatalf("marshal RTP: %v", err)
+	}
+	conn, err := net.DialUDP("udp4", nil, addr.(*net.UDPAddr))
+	if err != nil {
+		t.Fatalf("dial UDP: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.Write(raw); err != nil {
+		t.Fatalf("send RTP: %v", err)
+	}
+}
+
+// listenTestRTP opens a loopback UDP socket for an RTP reader under test and
+// returns it with a stop function that cancels ctx and closes the socket.
+func listenTestRTP(t *testing.T) (*net.UDPConn, context.Context, func()) {
+	t.Helper()
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatalf("listen UDP: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return conn, ctx, func() {
+		cancel()
+		_ = conn.Close()
+	}
+}
+
+func TestRTPRelay_PCMACallerLeg_RelaysMuLawToCallee(t *testing.T) {
+	caller := &Leg{audioPT: 8, dtmfPT: 101, alawTranscode: true, rtpInboundQueue: make(chan []byte, 8)}
+	callee := &Leg{audioPT: 0, outboundQueue: make(chan outboundFrame, 8)}
+	s := &CallSession{callID: "callid-pcma-relay", legs: []*Leg{caller, callee}, log: zerolog.Nop()}
+	s.state.Store(StateForwarding)
+
+	conn, ctx, stop := listenTestRTP(t)
+	s.wg.Add(1)
+	go s.rtpReader(ctx, conn, nil)
+	t.Cleanup(func() { stop(); s.wg.Wait() })
+
+	alaw := sip.ULawToALaw(muLawTestFrame())
+	sendTestRTP(t, conn.LocalAddr(), 8, alaw)
+
+	select {
+	case f := <-callee.outboundQueue:
+		if want := sip.ALawToULaw(alaw); !bytes.Equal(f.audio, want) {
+			t.Fatalf("relayed frame is not the μ-law of the caller's A-law:\n got  %x\n want %x", f.audio, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no frame relayed to the callee leg")
+	}
+}
+
+func TestCalleeRTPReader_PCMACallerLeg_RelaysALawToCaller(t *testing.T) {
+	caller := &Leg{audioPT: 8, alawTranscode: true, packetQueue: make(chan outboundFrame, 8)}
+	callee := &Leg{audioPT: 0}
+	s := &CallSession{callID: "callid-pcma-relay", legs: []*Leg{caller, callee}, log: zerolog.Nop()}
+	s.state.Store(StateForwarding)
+
+	conn, ctx, stop := listenTestRTP(t)
+	s.wg.Add(1)
+	go s.calleeRtpReader(ctx, callee, conn)
+	t.Cleanup(func() { stop(); s.wg.Wait() })
+
+	ulaw := muLawTestFrame()
+	sendTestRTP(t, conn.LocalAddr(), 0, ulaw)
+
+	select {
+	case f := <-caller.packetQueue:
+		if want := sip.ULawToALaw(ulaw); !bytes.Equal(f.audio, want) {
+			t.Fatalf("relayed frame is not the A-law of the callee's μ-law:\n got  %x\n want %x", f.audio, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no frame relayed to the caller leg")
+	}
+}
+
+// A PCMU caller leg is relayed unchanged (the pre-existing behaviour).
+func TestCalleeRTPReader_PCMUCallerLeg_Untouched(t *testing.T) {
+	caller := &Leg{audioPT: 0, packetQueue: make(chan outboundFrame, 8)}
+	callee := &Leg{audioPT: 0}
+	s := &CallSession{callID: "callid-pcmu-relay", legs: []*Leg{caller, callee}, log: zerolog.Nop()}
+	s.state.Store(StateForwarding)
+
+	conn, ctx, stop := listenTestRTP(t)
+	s.wg.Add(1)
+	go s.calleeRtpReader(ctx, callee, conn)
+	t.Cleanup(func() { stop(); s.wg.Wait() })
+
+	ulaw := muLawTestFrame()
+	sendTestRTP(t, conn.LocalAddr(), 0, ulaw)
+
+	select {
+	case f := <-caller.packetQueue:
+		if !bytes.Equal(f.audio, ulaw) {
+			t.Fatalf("PCMU frame was altered:\n got  %x\n want %x", f.audio, ulaw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no frame relayed to the caller leg")
 	}
 }

@@ -44,7 +44,8 @@ derived view; if the two diverge, the CHANGELOG wins.
   dropped by the payload-type filter (silence). twilio mode now answers PCMU
   when offered, otherwise PCMA (never G.722). The WebSocket side keeps
   `audio/x-mulaw`; the session transcodes G.711 A-law ↔ μ-law via lookup
-  tables (`internal/sip/g711.go`). Calls whose offer contains PCMU are
+  tables (`internal/sip/g711.go`). The `<Dial>` relay converts as well, since
+  the callee leg stays PCMU-only. Calls whose offer contains PCMU are
   unchanged byte for byte.
 
 - **Node: no inbound audio behind NAT** (e.g. a Docker bridge network whose
