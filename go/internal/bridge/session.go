@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
+	sip "github.com/sipgate/sipgate-sip-stream-bridge/internal/sip"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/webhook"
 )
 
@@ -839,6 +840,10 @@ func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 				continue
 			}
 
+			// PCMA leg in twilio mode: the WebSocket contract is μ-law.
+			if leg.alawTranscode {
+				payload = sip.ALawToULaw(payload)
+			}
 			encoded := base64.StdEncoding.EncodeToString(payload)
 			timestamp := time.Now().UnixMilli() - startTimeMs
 
@@ -929,6 +934,10 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 			if err != nil {
 				s.log.Warn().Err(err).Str(observability.FieldSIPCallID, s.callID).Msg("wsToRTP: base64 decode failed — skipping")
 				continue
+			}
+			// PCMA leg in twilio mode: the caller expects A-law on the wire.
+			if leg.alawTranscode {
+				pcmuPayload = sip.ULawToALaw(pcmuPayload)
 			}
 
 			// Chunk into 160-byte (20 ms @ 8 kHz PCMU) frames and enqueue for rtpPacer.

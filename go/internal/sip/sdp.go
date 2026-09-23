@@ -202,8 +202,19 @@ func BuildSDPAnswer(ourIP string, ourRTPPort int, callerSDP *CallerSDP, audioMod
 			}
 		}
 	} else {
-		// twilio mode: always PCMU regardless of offer
+		// twilio mode: PCMU when the caller offers it. When the offer lacks
+		// PCMU but has PCMA, answer PCMA. RFC 3264 §6.1: a sendrecv answer
+		// must contain at least one codec from among those listed in the
+		// offer, and the answerer must send using a format listed in both.
+		// A PCMU-only answer shares no audio codec with such an offer, and
+		// strict carriers tear the call down with a BYE right after our
+		// 200 OK. The WebSocket side stays audio/x-mulaw: the session
+		// transcodes A-law <-> μ-law.
+		// An offer with neither PCMU nor PCMA still gets a PCMU answer.
 		codecs = []codecEntry{{0, "PCMU"}}
+		if !offersPT(callerSDP, 0) && offersPT(callerSDP, 8) {
+			codecs = []codecEntry{{8, "PCMA"}}
+		}
 	}
 
 	if len(codecs) > 0 {
@@ -262,4 +273,14 @@ func BuildSDPAnswer(ourIP string, ourRTPPort int, callerSDP *CallerSDP, audioMod
 
 	out, _ := sd.Marshal()
 	return out, negotiatedPT, localSRTPKey, localSRTPSalt
+}
+
+// offersPT reports whether the caller's SDP offer lists the given audio payload type.
+func offersPT(callerSDP *CallerSDP, pt uint8) bool {
+	for _, offered := range callerSDP.AudioPayloadTypes {
+		if offered == pt {
+			return true
+		}
+	}
+	return false
 }

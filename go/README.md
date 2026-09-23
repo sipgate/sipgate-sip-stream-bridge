@@ -108,7 +108,7 @@ Enables per-call dynamic WS routing. See [`docs/operator/VOICE_URL.md`](../docs/
 | `SIP_OPTIONS_INTERVAL` | `30s` | Interval between SIP OPTIONS keepalive pings (Go duration, e.g. `30s`, `1m`); 2 consecutive failures trigger re-registration |
 | `LOG_LEVEL` | `info` | zerolog level: `trace` `debug` `info` `warn` `error` |
 | `HTTP_PORT` | `9090` | Port for `/health`, `/metrics`, and the REST API |
-| `AUDIO_MODE` | `twilio` | `twilio` — PCMU/G.711 μ-law 8 kHz (Twilio-compatible, `mediaFormat: {encoding:"audio/x-mulaw",sampleRate:8000}`); `best` — negotiates highest-quality codec sipgate offers: G.722 (16 kHz) > PCMA > PCMU. Negotiated codec is reflected in the `start` event `mediaFormat`. Validated to one of `twilio` / `best`. |
+| `AUDIO_MODE` | `twilio` | `twilio` — PCMU/G.711 μ-law 8 kHz (Twilio-compatible, `mediaFormat: {encoding:"audio/x-mulaw",sampleRate:8000}`); when the caller does not offer PCMU, the SIP leg negotiates PCMA instead and the bridge transcodes A-law ↔ μ-law, so the WebSocket side stays `audio/x-mulaw`; `best` — negotiates highest-quality codec sipgate offers: G.722 (16 kHz) > PCMA > PCMU. Negotiated codec is reflected in the `start` event `mediaFormat`. Validated to one of `twilio` / `best`. |
 | `SRTP_ENABLED` | `false` | Enable encrypted media. Set `true`/`1` to negotiate SRTP (RTP/SAVP) with SDES key exchange (AES-128-CM-HMAC-SHA1-80, RFC 3711/4568). Falls back to plain RTP/AVP automatically when the offer is unencrypted. |
 
 ### SIP transport (optional)

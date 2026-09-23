@@ -107,7 +107,7 @@ func sendConnected(conn net.Conn) error {
 // string in early boot paths; main.go wires the production value.
 // callID is the SIP Call-ID, forwarded in customParameters.sipCallId for consumer use.
 // req.From().Address.String() and req.To().Address.String() provide SIP URI strings.
-// encoding and sampleRate come from MediaFormatForPT(negotiatedPT) set at session start.
+// encoding and sampleRate come from mediaFormatFor(audioMode, negotiatedPT) set at session start.
 //
 // Identity surfaces (Twilio compatibility): callSid + accountSid appear at BOTH
 // the top-level Start fields (StartEventBody.{CallSid,AccountSid}) AND inside

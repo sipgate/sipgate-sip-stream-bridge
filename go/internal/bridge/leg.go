@@ -22,6 +22,9 @@ import (
 //     state acquired from the SDP offer/answer for this leg.
 //   - mediaEncoding, mediaSampleRate: Twilio mediaFormat values derived from
 //     the negotiated audio payload type for this leg.
+//   - alawTranscode: true when this leg negotiated PCMA in AUDIO_MODE=twilio
+//     because the caller did not offer PCMU. The WebSocket side stays
+//     audio/x-mulaw; the session converts A-law <-> μ-law in both directions.
 //   - localSRTPKey/Salt, remoteSRTPKey/Salt: SRTP master keys for this leg's
 //     RTP socket. nil when SRTP was not negotiated for this leg.
 //   - packetQueue, rtpInboundQueue: the two RTP-side channels for this leg.
@@ -52,6 +55,7 @@ type Leg struct {
 	silenceFrame    []byte
 	mediaEncoding   string
 	mediaSampleRate int
+	alawTranscode   bool
 	localSRTPKey    []byte
 	localSRTPSalt   []byte
 	remoteSRTPKey   []byte

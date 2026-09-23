@@ -533,33 +533,8 @@ func (m *CallManager) StartSessionWithPreRegistered(
 	// CON-02: always release port — covers WS dial failure and call end.
 	defer m.portPool.Release(rtpPort)
 
-	callerRTPAddr := &net.UDPAddr{
-		IP:   net.ParseIP(callerSDP.RTPAddr),
-		Port: callerSDP.RTPPort,
-	}
-
-	// Compute media format fields from negotiated codec.
-	encoding, sampleRate := sip.MediaFormatForPT(audioPT)
-
 	// Build the inbound caller leg — single-leg paths always have exactly one leg.
-	// Per-leg RTP channels (packetQueue, rtpInboundQueue) are allocated here so
-	// that session.run() does not need to know about leg internals.
-	inboundLeg := &Leg{
-		dlg:             dlg,
-		rtpPort:         rtpPort,
-		remoteRTP:       callerRTPAddr,
-		dtmfPT:          callerSDP.DTMFPayloadType,
-		audioPT:         audioPT,
-		silenceFrame:    sip.SilenceFrameForPT(audioPT),
-		mediaEncoding:   encoding,
-		mediaSampleRate: sampleRate,
-		localSRTPKey:    localSRTPKey,
-		localSRTPSalt:   localSRTPSalt,
-		remoteSRTPKey:   callerSDP.RemoteSRTPKey,
-		remoteSRTPSalt:  callerSDP.RemoteSRTPSalt,
-		packetQueue:     make(chan outboundFrame, packetQueueSize),
-		rtpInboundQueue: make(chan []byte, rtpInboundQueueSize),
-	}
+	inboundLeg := m.newCallerLeg(dlg, callerSDP, rtpPort, audioPT, localSRTPKey, localSRTPSalt)
 	// Attach via SetLeg(0, ...) which sets leg.session backref atomically
 	// under legsMu.
 	session.SetLeg(0, inboundLeg)
@@ -661,4 +636,55 @@ func (m *CallManager) StartSession(
 		localSRTPKey, localSRTPSalt,
 		streamURL, nil, log,
 	)
+}
+
+// newCallerLeg builds the inbound caller leg for StartSessionWithPreRegistered
+// from the negotiated payload type and the caller's SDP. Per-leg RTP channels
+// (packetQueue, rtpInboundQueue) are allocated here so that session.run() does
+// not need to know about leg internals. Kept separate so the media-format
+// wiring (mediaEncoding, alawTranscode) can be tested without a SIP dialog or
+// a WebSocket.
+func (m *CallManager) newCallerLeg(
+	dlg *sipgo.DialogServerSession,
+	callerSDP *sip.CallerSDP,
+	rtpPort int,
+	audioPT uint8,
+	localSRTPKey []byte,
+	localSRTPSalt []byte,
+) *Leg {
+	// Compute media format fields from negotiated codec.
+	encoding, sampleRate, alawTranscode := mediaFormatFor(m.cfg.AudioMode, audioPT)
+
+	return &Leg{
+		dlg:     dlg,
+		rtpPort: rtpPort,
+		remoteRTP: &net.UDPAddr{
+			IP:   net.ParseIP(callerSDP.RTPAddr),
+			Port: callerSDP.RTPPort,
+		},
+		dtmfPT:          callerSDP.DTMFPayloadType,
+		audioPT:         audioPT,
+		silenceFrame:    sip.SilenceFrameForPT(audioPT),
+		mediaEncoding:   encoding,
+		mediaSampleRate: sampleRate,
+		alawTranscode:   alawTranscode,
+		localSRTPKey:    localSRTPKey,
+		localSRTPSalt:   localSRTPSalt,
+		remoteSRTPKey:   callerSDP.RemoteSRTPKey,
+		remoteSRTPSalt:  callerSDP.RemoteSRTPSalt,
+		packetQueue:     make(chan outboundFrame, packetQueueSize),
+		rtpInboundQueue: make(chan []byte, rtpInboundQueueSize),
+	}
+}
+
+// mediaFormatFor returns the WebSocket mediaFormat for a negotiated payload
+// type, and whether the session must transcode A-law <-> μ-law. In twilio
+// mode with a PCMA fallback (the caller did not offer PCMU) the SIP leg speaks
+// A-law while the WebSocket keeps the Twilio contract of audio/x-mulaw.
+func mediaFormatFor(audioMode string, audioPT uint8) (encoding string, sampleRate int, alawTranscode bool) {
+	if audioMode != "best" && audioPT == 8 {
+		return "audio/x-mulaw", 8000, true
+	}
+	encoding, sampleRate = sip.MediaFormatForPT(audioPT)
+	return encoding, sampleRate, false
 }

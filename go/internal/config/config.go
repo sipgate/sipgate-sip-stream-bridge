@@ -73,7 +73,7 @@ type Config struct {
 	SIPOptionsInterval time.Duration `env:"SIP_OPTIONS_INTERVAL" default:"30s" usage:"Interval between SIP OPTIONS keepalive pings (e.g. 30s, 1m)"`
 
 	// Audio codec mode (AUDIO_MODE)
-	AudioMode string `env:"AUDIO_MODE" default:"twilio" usage:"Audio codec mode: twilio (PCMU only) or best (G.722 preferred)"`
+	AudioMode string `env:"AUDIO_MODE" default:"twilio" usage:"Audio codec mode: twilio (PCMU; PCMA on the SIP leg when PCMU is not offered) or best (G.722 preferred)"`
 
 	// SRTP media encryption (SRTP_ENABLED)
 	SRTPEnabled bool `env:"SRTP_ENABLED" default:"false" usage:"Enable SRTP media encryption (RTP/SAVP with SDES key exchange)"`
