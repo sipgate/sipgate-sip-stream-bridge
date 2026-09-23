@@ -405,3 +405,83 @@ func TestBuildSDPAnswer_SRTPEnabled_AVPOffer_FallsBack(t *testing.T) {
 		t.Errorf("expected no a=crypto: when offer is plain AVP:\n%s", sdpStr)
 	}
 }
+
+// ─── twilio mode: codec fallback ─────────────────────────────────────────────
+
+// Test 14 — BuildSDPAnswer (twilio mode) picks a G.711 codec from the offer.
+// PCMU when offered; PCMA when the offer lacks PCMU (RFC 3264 §6.1 — a sendrecv
+// answer must contain at least one codec listed in the offer); never G.722.
+// An offer with neither PCMU nor PCMA keeps the old PCMU answer.
+func TestBuildSDPAnswer_TwilioPCMAFallback(t *testing.T) {
+	cases := []struct {
+		name    string
+		offered []uint8
+		wantPT  uint8
+		want    string
+		notWant string
+	}{
+		{"PCMU and PCMA offered", []uint8{0, 8}, 0, "PCMU/8000", "PCMA/8000"},
+		{"PCMU offered last", []uint8{9, 8, 0}, 0, "PCMU/8000", "PCMA/8000"},
+		{"only PCMA offered", []uint8{8}, 8, "PCMA/8000", "PCMU/8000"},
+		{"G.722 and PCMA, no PCMU", []uint8{9, 8}, 8, "PCMA/8000", "G722"},
+		// Nothing we can speak: unchanged behaviour (PCMU answer).
+		{"only G.722 offered", []uint8{9}, 0, "PCMU/8000", "PCMA/8000"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			caller := callerSDPWithPTs(113, c.offered...)
+			out, negotiatedPT, _, _ := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio", false)
+			if negotiatedPT != c.wantPT {
+				t.Errorf("expected negotiatedPT=%d, got=%d", c.wantPT, negotiatedPT)
+			}
+			sdpStr := string(out)
+			if !strings.Contains(sdpStr, c.want) {
+				t.Errorf("expected %s in SDP answer:\n%s", c.want, sdpStr)
+			}
+			if strings.Contains(sdpStr, c.notWant) {
+				t.Errorf("expected no %s in SDP answer:\n%s", c.notWant, sdpStr)
+			}
+		})
+	}
+}
+
+// Test 15 — ParseCallerSDP + BuildSDPAnswer (twilio mode) on a German mobile
+// offer (G.722 + PCMA, no PCMU): the answer must negotiate PCMA. Answering PCMU
+// here made the carrier send a BYE right after the 200 OK.
+func TestBuildSDPAnswer_TwilioMobileOfferWithoutPCMU(t *testing.T) {
+	offer := []byte("v=0\r\n" +
+		"o=- 1 1 IN IP4 192.0.2.10\r\n" +
+		"s=-\r\n" +
+		"c=IN IP4 192.0.2.10\r\n" +
+		"t=0 0\r\n" +
+		"m=audio 42828 RTP/AVP 9 8 97 96\r\n" +
+		"a=rtpmap:9 G722/8000\r\n" +
+		"a=rtpmap:8 PCMA/8000\r\n" +
+		"a=rtpmap:97 telephone-event/8000\r\n" +
+		"a=rtpmap:96 telephone-event/16000\r\n")
+	caller, err := ParseCallerSDP(offer)
+	if err != nil {
+		t.Fatalf("ParseCallerSDP: %v", err)
+	}
+	out, negotiatedPT, _, _ := BuildSDPAnswer("10.0.0.1", 10000, caller, "twilio", false)
+	if negotiatedPT != 8 {
+		t.Errorf("expected negotiatedPT=8 (PCMA), got=%d", negotiatedPT)
+	}
+	result := &sdp.SessionDescription{}
+	if err := result.Unmarshal(out); err != nil {
+		t.Fatalf("BuildSDPAnswer output is not valid SDP: %v", err)
+	}
+	if len(result.MediaDescriptions) == 0 {
+		t.Fatal("BuildSDPAnswer output has no media section")
+	}
+	formats := result.MediaDescriptions[0].MediaName.Formats
+	if len(formats) == 0 || formats[0] != "8" {
+		t.Errorf("expected PCMA (PT 8) as first format, got=%v", formats)
+	}
+	for _, f := range formats {
+		if f == "0" || f == "9" {
+			t.Errorf("expected only PCMA and DTMF formats, got PT %s in %v", f, formats)
+			break
+		}
+	}
+}

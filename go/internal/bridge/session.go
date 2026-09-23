@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/config"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/observability"
+	sip "github.com/sipgate/sipgate-sip-stream-bridge/internal/sip"
 	"github.com/sipgate/sipgate-sip-stream-bridge/internal/webhook"
 )
 
@@ -746,6 +747,11 @@ func (s *CallSession) rtpReader(ctx context.Context, rtpConn *net.UDPConn, srtpD
 		if s.state.Load() == StateForwarding {
 			peer := s.peerLeg(currentLegIdx)
 			if peer != nil && peer.outboundQueue != nil {
+				// The callee leg is PCMU-only (BuildSDPOffer). A PCMA caller
+				// leg (twilio-mode fallback) is relayed as μ-law.
+				if leg.alawTranscode {
+					payload = sip.ALawToULaw(payload)
+				}
 				select {
 				case peer.outboundQueue <- outboundFrame{audio: payload}:
 				case <-ctx.Done():
@@ -839,6 +845,10 @@ func (s *CallSession) wsPacer(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 				continue
 			}
 
+			// PCMA leg in twilio mode: the WebSocket contract is μ-law.
+			if leg.alawTranscode {
+				payload = sip.ALawToULaw(payload)
+			}
 			encoded := base64.StdEncoding.EncodeToString(payload)
 			timestamp := time.Now().UnixMilli() - startTimeMs
 
@@ -929,6 +939,10 @@ func (s *CallSession) wsToRTP(ctx context.Context, wsConn net.Conn, wg *sync.Wai
 			if err != nil {
 				s.log.Warn().Err(err).Str(observability.FieldSIPCallID, s.callID).Msg("wsToRTP: base64 decode failed — skipping")
 				continue
+			}
+			// PCMA leg in twilio mode: the caller expects A-law on the wire.
+			if leg.alawTranscode {
+				pcmuPayload = sip.ULawToALaw(pcmuPayload)
 			}
 
 			// Chunk into 160-byte (20 ms @ 8 kHz PCMU) frames and enqueue for rtpPacer.
@@ -1199,6 +1213,12 @@ func (s *CallSession) calleeRtpReader(ctx context.Context, leg *Leg, rtpConn *ne
 		if peer == nil || peer.packetQueue == nil {
 			// Should not happen post-CloseStream — defensive.
 			continue
+		}
+
+		// The callee leg speaks PCMU; a PCMA caller leg (twilio-mode
+		// fallback) expects A-law on the wire.
+		if peer.alawTranscode {
+			payload = sip.ULawToALaw(payload)
 		}
 
 		select {

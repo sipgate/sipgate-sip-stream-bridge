@@ -35,6 +35,19 @@ derived view; if the two diverge, the CHANGELOG wins.
 
 ### Fixed
 
+- **Go: `AUDIO_MODE=twilio` answered PCMU even when the caller did not offer it.**
+  The SDP answer was always PCMU regardless of the offer, which violates
+  RFC 3264 §6.1. Offers without PCMU are common on German mobile networks
+  (e.g. `m=audio … RTP/AVP 9 8 97 96`: G.722, PCMA, telephone-event); a German
+  carrier (easybell) tore such calls down with a BYE 80–116 ms after the
+  200 OK, and where a carrier let the call through, every PCMA packet was
+  dropped by the payload-type filter (silence). twilio mode now answers PCMU
+  when offered, otherwise PCMA (never G.722). The WebSocket side keeps
+  `audio/x-mulaw`; the session transcodes G.711 A-law ↔ μ-law via lookup
+  tables (`internal/sip/g711.go`). The `<Dial>` relay converts as well, since
+  the callee leg stays PCMU-only. Calls whose offer contains PCMU are
+  unchanged byte for byte.
+
 - **Node: no inbound audio behind NAT** (e.g. a Docker bridge network whose
   auto-detected SDP IP is unroutable). The Node data plane sent only a single
   outbound RTP hole-punch packet at answer, so the NAT pinhole was not held open
